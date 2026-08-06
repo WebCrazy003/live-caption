@@ -1,0 +1,15 @@
+# Python spike
+spike/.venv/
+__pycache__/
+*.pyc
+
+# SwiftPM build artifacts
+.build/
+*.xcodeproj/xcuserdata/
+
+# macOS
+.DS_Store
+
+# Downloaded models / large artifacts
+models/
+*.mlmodelc
