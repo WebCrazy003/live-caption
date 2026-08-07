@@ -37,5 +37,15 @@ let package = Package(
             dependencies: ["LocalCaptionKit"],
             path: "Tests/LocalCaptionKitTests"
         ),
+        // Dev-only: on-device ASR latency/accuracy benchmark to settle B4
+        // (turbo-only vs hybrid). Not part of the app. Run: swift run Benchmark <wav>
+        .executableTarget(
+            name: "Benchmark",
+            dependencies: [
+                "LocalCaptionKit",
+                .product(name: "WhisperKit", package: "WhisperKit"),
+            ],
+            path: "Sources/Benchmark"
+        ),
     ]
 )

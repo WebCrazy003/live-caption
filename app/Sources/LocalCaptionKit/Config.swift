@@ -95,7 +95,7 @@ public struct Config: Codable, Equatable {
         public var interimIntervalMs: Int
         public var maxUtteranceS: Int
         public init(interimModel: String = "tiny.en",
-                    finalModel: String = "large-v3-turbo",
+                    finalModel: String = "small.en",
                     endpointSilenceMs: Int = 600,
                     interimIntervalMs: Int = 500,
                     maxUtteranceS: Int = 20) {

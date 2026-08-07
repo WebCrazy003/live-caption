@@ -33,6 +33,18 @@ public enum Filters {
         return false
     }
 
+    /// Metadata-based junk/hallucination gate (SPEC.md §8.3). Reject a decoded segment when
+    /// Whisper's own confidence signals say it's noise or a repetition loop:
+    /// - `noSpeechProb > 0.6`  (silence mistaken for speech)
+    /// - `avgLogprob < -1.0`   (low-confidence garble)
+    /// - `compressionRatio > 2.4` (repetition, e.g. "come come come…")
+    public static func isLowQuality(avgLogprob: Double, noSpeechProb: Double, compressionRatio: Double) -> Bool {
+        if noSpeechProb > 0.6 { return true }
+        if avgLogprob < -1.0 { return true }
+        if compressionRatio > 2.4 { return true }
+        return false
+    }
+
     public static func wordCount(_ s: String) -> Int {
         s.split(whereSeparator: { $0 == " " || $0 == "\n" }).count
     }

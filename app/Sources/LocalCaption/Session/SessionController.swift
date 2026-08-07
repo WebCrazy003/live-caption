@@ -46,7 +46,8 @@ final class SessionController: ObservableObject {
 
     func prepare() async {
         phase = .preparing
-        await orchestrator.prepareModel()
+        await orchestrator.prepareModel(interimModel: env.config.asr.interimModel,
+                                        finalModel: env.config.asr.finalModel)
         phase = orchestrator.modelReady ? .ready : .failed
     }
 

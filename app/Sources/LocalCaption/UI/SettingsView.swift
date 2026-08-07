@@ -70,8 +70,10 @@ struct SettingsView: View {
             } header: {
                 Text("Speech models")
             } footer: {
-                Text("The app currently runs a single small.en model. These take effect when the "
-                     + "dual-model engine ships; changing models needs a restart.")
+                Text("Interim drives fast partials; final produces committed captions (applied "
+                     + "on next Start). Measured on-device: tiny.en ≈0.45s, small.en ≈2s, "
+                     + "large-v3-turbo ≈3.5s + a 1.5 GB download. small.en matches turbo on clear "
+                     + "audio; pick turbo for hard/noisy audio at higher latency.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
