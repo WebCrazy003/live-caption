@@ -36,15 +36,30 @@ final class StreamingOrchestrator: ObservableObject {
     private var lastBytes: Int64 = 0
     private var speedText = ""
 
-    // streaming params (proven values from the minimal app)
+    // streaming params. Fixed frame geometry + tunables driven from Config (see applyTuning).
     private let sr = 16000.0
     private let hop = 1600                 // 100 ms
     private let samplesPerMs = 16
-    private let interimHops = 5            // 500 ms
-    private let endpointMs = 500           // finalize ~0.5s after speech stops
-    private let silenceRMS: Float = 0.015
-    private let maxUtterS = 15.0
     private let interimTailS = 6.0
+    private var interimHops = 5            // interim cadence in 100 ms hops (500 ms)
+    private var endpointMs = 600           // finalize this long after speech stops
+    private var silenceRMS: Float = 0.015  // VAD energy gate
+    private var maxUtterS = 20.0           // hard cap on utterance length
+
+    /// Apply Config-driven tuning before a session starts. VAD sensitivity 0…3 maps to an
+    /// energy threshold (higher sensitivity → lower gate → catches quieter speech).
+    func applyTuning(endpointSilenceMs: Int, interimIntervalMs: Int,
+                     maxUtteranceS: Int, vadSensitivity: Int) {
+        endpointMs = max(100, endpointSilenceMs)
+        interimHops = max(1, interimIntervalMs / 100)
+        maxUtterS = Double(max(5, maxUtteranceS))
+        switch max(0, min(3, vadSensitivity)) {
+        case 0: silenceRMS = 0.030
+        case 1: silenceRMS = 0.020
+        case 2: silenceRMS = 0.015
+        default: silenceRMS = 0.008
+        }
+    }
 
     // Loop/VAD state (instance-scoped so pause/stop can flush the in-flight utterance).
     private var utter: [Float] = []

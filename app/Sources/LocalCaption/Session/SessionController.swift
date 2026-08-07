@@ -55,6 +55,11 @@ final class SessionController: ObservableObject {
         guard orchestrator.modelReady, phase == .ready || phase == .saved || phase == .failed else { return }
         sessionId = UUID()
         startDate = Date()
+        orchestrator.applyTuning(
+            endpointSilenceMs: env.config.asr.endpointSilenceMs,
+            interimIntervalMs: env.config.asr.interimIntervalMs,
+            maxUtteranceS: env.config.asr.maxUtteranceS,
+            vadSensitivity: env.config.audio.vadSensitivity)
         sessionName = env.config.general.sessionNamePrefix + TimeFormat.fileStamp(startDate)
         transcript = Transcript(); paragraphs = []; current = ""
         savedTxtURL = nil; saveError = nil
