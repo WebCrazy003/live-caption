@@ -21,6 +21,10 @@ final class StreamingOrchestrator: ObservableObject {
     @Published var errorText: String?
 
     private let engine = WhisperEngine()
+
+    /// Human-friendly name of the model in use (e.g. "small.en"), for the UI.
+    var modelLabel: String { engine.modelDisplayName }
+
     private var capture: SystemAudioCapture?
     private let buffer = SampleBuffer()
     private var loopTask: Task<Void, Never>?
@@ -53,18 +57,25 @@ final class StreamingOrchestrator: ObservableObject {
     func start() async {
         guard !isReady else { return }
         do {
-            // 1) Download the model with live percent / MB / speed.
-            status = "Preparing…"
-            totalBytes = (try? await fetchTotalBytes()) ?? 0
-            let totalStr = totalBytes > 0 ? byteStr(totalBytes) : "unknown size"
-            status = "Downloading model (\(totalStr))…"
-            let folder = try await engine.download { [weak self] frac in
-                Task { @MainActor in self?.updateDownload(frac) }
+            // 1) Acquire the model — reuse the on-disk cache if present (no network),
+            //    otherwise download once with live percent / MB / speed.
+            let folder: URL
+            if engine.isModelDownloaded {
+                status = "Loading cached model (\(engine.modelDisplayName))…"
+                folder = engine.localModelFolder
+            } else {
+                status = "Preparing…"
+                totalBytes = (try? await fetchTotalBytes()) ?? 0
+                let totalStr = totalBytes > 0 ? byteStr(totalBytes) : "unknown size"
+                status = "Downloading \(engine.modelDisplayName) (\(totalStr))…"
+                folder = try await engine.download { [weak self] frac in
+                    Task { @MainActor in self?.updateDownload(frac) }
+                }
+                isDownloading = false; downloadFraction = 1
             }
-            isDownloading = false; downloadFraction = 1
 
             // 2) Load on CPU+GPU.
-            status = "Loading model (CPU+GPU)…"; detail = ""; speedText = ""
+            status = "Loading \(engine.modelDisplayName) (CPU+GPU)…"; detail = ""; speedText = ""
             try await engine.load(folder: folder) { [weak self] s in
                 Task { @MainActor in self?.detail = s }
             }

@@ -16,6 +16,30 @@ final class WhisperEngine {
     let modelName = "openai_whisper-small.en"
     let repo = "argmaxinc/whisperkit-coreml"
 
+    /// Human-friendly model name for the UI, e.g. "small.en".
+    var modelDisplayName: String {
+        modelName.replacingOccurrences(of: "openai_whisper-", with: "")
+    }
+
+    /// Where `download(downloadBase:)` lays the model out on disk:
+    /// `<models>/models/<repo>/<variant>/`.
+    var localModelFolder: URL {
+        AppPaths.models.appendingPathComponent("models/\(repo)/\(modelName)", isDirectory: true)
+    }
+
+    /// True if a complete model is already cached on disk (→ load offline, no network).
+    var isModelDownloaded: Bool {
+        let fm = FileManager.default
+        let f = localModelFolder
+        guard fm.fileExists(atPath: f.appendingPathComponent("config.json").path) else { return false }
+        for part in ["AudioEncoder.mlmodelc", "MelSpectrogram.mlmodelc", "TextDecoder.mlmodelc"] {
+            var isDir: ObjCBool = false
+            let ok = fm.fileExists(atPath: f.appendingPathComponent(part).path, isDirectory: &isDir)
+            if !ok || !isDir.boolValue { return false }
+        }
+        return true
+    }
+
     private let sr = 16000.0
 
     private let decodeOptions = DecodingOptions(

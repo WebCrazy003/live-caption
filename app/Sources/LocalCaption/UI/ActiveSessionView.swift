@@ -54,6 +54,9 @@ struct ActiveSessionView: View {
                 .font(.headline)
                 .foregroundStyle(orchestrator.errorText == nil ? Color.primary : Color.red)
             Spacer()
+            Label(orchestrator.modelLabel, systemImage: "waveform")
+                .font(.caption).foregroundStyle(.secondary)
+                .help("Speech model in use (on-device)")
         }
     }
 }
