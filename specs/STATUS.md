@@ -3,7 +3,7 @@
 Native macOS app that live-captions **system/call audio** fully on-device (Swift/SwiftUI +
 WhisperKit), and auto-saves transcripts. This document reflects what is actually built in
 `app/`. The product spec is [`../SPEC.md`](../SPEC.md); the phase plan is
-[`../specs/SEQUENCE.md`](../specs/SEQUENCE.md).
+[`SEQUENCE.md`](SEQUENCE.md).
 
 ---
 
