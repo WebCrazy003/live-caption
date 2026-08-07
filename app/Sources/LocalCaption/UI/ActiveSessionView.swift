@@ -1,62 +1,146 @@
 import SwiftUI
+import AppKit
 import LocalCaptionKit
 
-/// The Active Session screen: hosts the streaming orchestrator and renders live captions
-/// (SPEC-05). Phase 1 preserves the minimal app's captioning end-to-end; the session
-/// header (elapsed clock, status pill) and Pause/Resume/Stop controls are Phase 2.
+/// The Active Session screen (SPEC-05): session header (name · status pill · elapsed),
+/// transport controls (Start / Pause / Resume / Stop), font +/−, and the live caption area.
 struct ActiveSessionView: View {
     @EnvironmentObject var env: AppEnvironment
-    @StateObject private var orchestrator = StreamingOrchestrator()
+    @StateObject private var controller: SessionController
+
+    init(env: AppEnvironment) {
+        _controller = StateObject(wrappedValue: SessionController(env: env))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            statusHeader
-
-            if orchestrator.isDownloading {
-                ProgressView(value: orchestrator.downloadFraction).progressViewStyle(.linear)
-            }
-            if !orchestrator.detail.isEmpty {
-                Text(orchestrator.detail).font(.caption).foregroundStyle(.secondary).monospacedDigit()
-            }
-            if let err = orchestrator.errorText {
-                ScrollView {
-                    Text(err).font(.callout).foregroundStyle(.red)
-                        .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxHeight: 140)
-                Button("Retry") { orchestrator.retry() }
-            }
-
+            header
+            modelStatusArea
             Divider()
-
             CaptionView(
-                paragraphs: orchestrator.paragraphs,
-                current: orchestrator.current,
-                hypothesis: orchestrator.hypothesis,
-                isReady: orchestrator.isReady,
+                paragraphs: controller.paragraphs,
+                current: controller.current,
+                hypothesis: controller.orchestrator.hypothesis,
+                isReady: controller.phase == .recording || controller.phase == .paused,
                 fontSize: Double(env.config.caption.fontSize),
                 autoScroll: env.config.caption.autoScroll
             )
+            transportBar
         }
         .padding()
-        .navigationTitle("New Session")
-        .task { await orchestrator.start() }
+        .navigationTitle(controller.displayName)
+        .task { if controller.phase == .preparing { await controller.prepare() } }
     }
 
-    private var statusHeader: some View {
-        HStack(spacing: 8) {
-            if !orchestrator.isReady && orchestrator.errorText == nil {
-                ProgressView().controlSize(.small)
-            } else if orchestrator.isReady {
-                Circle().fill(.red).frame(width: 9, height: 9)
-            }
-            Text(orchestrator.status)
-                .font(.headline)
-                .foregroundStyle(orchestrator.errorText == nil ? Color.primary : Color.red)
+    // MARK: Header (name · status pill · elapsed)
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            statusPill
             Spacer()
-            Label(orchestrator.modelLabel, systemImage: "waveform")
+            if isLive {
+                Text(controller.elapsed).font(.headline).monospacedDigit()
+            }
+            Label(controller.orchestrator.modelLabel, systemImage: "waveform")
                 .font(.caption).foregroundStyle(.secondary)
                 .help("Speech model in use (on-device)")
         }
+    }
+
+    private var isLive: Bool { controller.phase == .recording || controller.phase == .paused }
+
+    @ViewBuilder private var statusPill: some View {
+        switch controller.phase {
+        case .recording:
+            pill(color: .red, text: "Recording", filled: true)
+        case .paused:
+            pill(color: .orange, text: "Paused", filled: false)
+        case .saved:
+            pill(color: .green, text: "Saved", filled: false)
+        case .saving:
+            pill(color: .secondary, text: "Saving…", filled: false)
+        case .ready:
+            pill(color: .secondary, text: "Ready", filled: false)
+        case .preparing:
+            HStack(spacing: 6) { ProgressView().controlSize(.small); Text(controller.orchestrator.status).font(.headline) }
+        case .failed:
+            pill(color: .red, text: "Error", filled: false)
+        }
+    }
+
+    private func pill(color: Color, text: String, filled: Bool) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(filled ? color : .clear)
+                .overlay(Circle().stroke(color, lineWidth: filled ? 0 : 1.5))
+                .frame(width: 9, height: 9)
+            Text(text).font(.headline)
+        }
+    }
+
+    // MARK: Model download / error area
+
+    @ViewBuilder private var modelStatusArea: some View {
+        if controller.orchestrator.isDownloading {
+            ProgressView(value: controller.orchestrator.downloadFraction).progressViewStyle(.linear)
+        }
+        if !controller.orchestrator.detail.isEmpty {
+            Text(controller.orchestrator.detail).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+        }
+        if let err = controller.orchestrator.errorText {
+            ScrollView {
+                Text(err).font(.callout).foregroundStyle(.red)
+                    .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 120)
+            Button("Retry") { controller.retryPrepare() }
+        }
+        if let saveErr = controller.saveError {
+            Label(saveErr, systemImage: "exclamationmark.triangle").foregroundStyle(.red).font(.callout)
+        }
+        if controller.phase == .saved, let url = controller.savedTxtURL {
+            HStack(spacing: 8) {
+                Label("Saved", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                    .buttonStyle(.link)
+            }.font(.callout)
+        }
+    }
+
+    // MARK: Transport controls
+
+    private var transportBar: some View {
+        HStack(spacing: 12) {
+            switch controller.phase {
+            case .ready, .saved, .failed:
+                Button { Task { await controller.start() } } label: {
+                    Label("Start", systemImage: "record.circle")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!controller.orchestrator.modelReady)
+            case .recording:
+                Button { Task { await controller.pause() } } label: { Label("Pause", systemImage: "pause.fill") }
+                Button(role: .destructive) { Task { await controller.stop() } } label: { Label("Stop", systemImage: "stop.fill") }
+                    .keyboardShortcut(".", modifiers: .command)
+            case .paused:
+                Button { Task { await controller.resume() } } label: { Label("Resume", systemImage: "play.fill") }
+                    .buttonStyle(.borderedProminent)
+                Button(role: .destructive) { Task { await controller.stop() } } label: { Label("Stop", systemImage: "stop.fill") }
+            case .preparing, .saving:
+                EmptyView()
+            }
+
+            Spacer()
+
+            // Font size (live-applies via config).
+            HStack(spacing: 4) {
+                Button { adjustFont(-1) } label: { Image(systemName: "textformat.size.smaller") }
+                Text("\(env.config.caption.fontSize)").font(.caption).monospacedDigit().frame(width: 22)
+                Button { adjustFont(1) } label: { Image(systemName: "textformat.size.larger") }
+            }
+        }
+    }
+
+    private func adjustFont(_ delta: Int) {
+        env.config.caption.fontSize = min(48, max(10, env.config.caption.fontSize + delta))
     }
 }

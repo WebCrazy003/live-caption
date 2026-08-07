@@ -30,4 +30,5 @@ struct LocalCaptionApp: App {
 
 extension Notification.Name {
     static let newSession = Notification.Name("LocalCaption.newSession")
+    static let sessionsChanged = Notification.Name("LocalCaption.sessionsChanged")
 }

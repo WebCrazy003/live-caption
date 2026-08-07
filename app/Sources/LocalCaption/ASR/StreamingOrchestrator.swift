@@ -2,32 +2,33 @@ import Foundation
 import SwiftUI
 import LocalCaptionKit
 
-/// Drives live captioning: capture → VAD endpointing → interim/final decode → paragraphs.
+/// Streaming ASR engine: capture → VAD endpointing → interim/final decode.
 ///
-/// This is the `StreamingOrchestrator` role from SPEC.md §20, decomposed out of the
-/// `minimal/` god-object (`CaptionModel`). Behavior is unchanged from the proven minimal
-/// app; the tuned VAD constants remain hardcoded here (wiring them to `Config.asr` is a
-/// later refinement). Session lifecycle (start/pause/stop/save) is Phase 2 (SPEC-04).
+/// Phase 2 split the model plumbing from the capture lifecycle so a session can be
+/// explicitly started / paused / resumed / stopped, and finalized segments flow out via
+/// `onFinal` (with sample-based, pause-aware timing) to the `SessionController`, which owns
+/// the transcript. This object no longer accumulates paragraphs itself.
 @MainActor
 final class StreamingOrchestrator: ObservableObject {
-    @Published var paragraphs: [String] = []  // completed paragraphs
-    @Published var current = ""               // paragraph currently being built
-    @Published var hypothesis = ""            // interim (in-progress utterance)
-    @Published var status = "Starting…"
+    // Interim (provisional) tail + model/download status for the UI.
+    @Published var hypothesis = ""
+    @Published var status = "Preparing…"
     @Published var detail = ""
     @Published var downloadFraction = 0.0
     @Published var isDownloading = false
-    @Published var isReady = false
+    @Published var modelReady = false
     @Published var errorText: String?
 
-    private let engine = WhisperEngine()
+    /// Emitted for each finalized segment: (text, tStartMs, tEndMs), session-relative.
+    var onFinal: ((String, Int, Int) -> Void)?
 
-    /// Human-friendly name of the model in use (e.g. "small.en"), for the UI.
+    private let engine = WhisperEngine()
     var modelLabel: String { engine.modelDisplayName }
 
     private var capture: SystemAudioCapture?
     private let buffer = SampleBuffer()
     private var loopTask: Task<Void, Never>?
+    private var workerTask: Task<Void, Never>?
     private var totalBytes: Int64 = 0
 
     // download-speed tracking
@@ -38,27 +39,35 @@ final class StreamingOrchestrator: ObservableObject {
     // streaming params (proven values from the minimal app)
     private let sr = 16000.0
     private let hop = 1600                 // 100 ms
+    private let samplesPerMs = 16
     private let interimHops = 5            // 500 ms
     private let endpointMs = 500           // finalize ~0.5s after speech stops
-    private let silenceRMS: Float = 0.015  // higher = less likely to trigger on near-silence
+    private let silenceRMS: Float = 0.015
     private let maxUtterS = 15.0
-    private let interimTailS = 6.0         // interim decodes only the recent tail (stays fast)
+    private let interimTailS = 6.0
 
-    private enum Work { case interim([Float]); case finalize([Float]) }
-    private var workCont: AsyncStream<Work>.Continuation?
+    // Loop/VAD state (instance-scoped so pause/stop can flush the in-flight utterance).
+    private var utter: [Float] = []
+    private var hasSpeech = false
+    private var silenceMs = 0
+    private var sinceInterim = 0
+    private var uttStartSample = 0
+    private var totalSamples = 0
     private var interimInFlight = false
 
-    func retry() {
-        errorText = nil; status = "Starting…"; detail = ""
-        downloadFraction = 0; isDownloading = false; isReady = false
-        Task { await start() }
-    }
+    private enum Work { case interim([Float]); case finalize([Float], Int, Int) }
+    private var workCont: AsyncStream<Work>.Continuation?
 
-    func start() async {
-        guard !isReady else { return }
+    /// Milliseconds of audio consumed while recording (frozen during pause) — the session clock.
+    var recordedMs: Int { totalSamples / samplesPerMs }
+
+    // MARK: Model preparation (once)
+
+    /// Download (if needed) and load the model. No capture. Idempotent.
+    func prepareModel() async {
+        guard !modelReady else { return }
+        errorText = nil
         do {
-            // 1) Acquire the model — reuse the on-disk cache if present (no network),
-            //    otherwise download once with live percent / MB / speed.
             let folder: URL
             if engine.isModelDownloaded {
                 status = "Loading cached model (\(engine.modelDisplayName))…"
@@ -73,105 +82,142 @@ final class StreamingOrchestrator: ObservableObject {
                 }
                 isDownloading = false; downloadFraction = 1
             }
-
-            // 2) Load on CPU+GPU.
             status = "Loading \(engine.modelDisplayName) (CPU+GPU)…"; detail = ""; speedText = ""
             try await engine.load(folder: folder) { [weak self] s in
                 Task { @MainActor in self?.detail = s }
             }
-
-            // 3) Start capturing system audio (Screen Recording permission required).
-            status = "Requesting Screen Recording permission…"; detail = ""
-            let capture = SystemAudioCapture(
-                onSamples: { [buffer] s in buffer.append(s) },
-                onError: { [weak self] e in Task { @MainActor in self?.errorText = String(describing: e) } }
-            )
-            self.capture = capture
-            try await capture.start()
-
-            status = "Listening (system audio)…"; isReady = true
-            startLoop()
+            detail = ""
+            modelReady = true
+            status = "Ready — \(engine.modelDisplayName)"
         } catch {
-            isDownloading = false; isReady = false
+            isDownloading = false; modelReady = false
             status = "Failed"
             errorText = friendlyError(error)
         }
     }
 
-    func stop() {
-        loopTask?.cancel(); loopTask = nil
-        workCont?.finish(); workCont = nil
-        Task { [capture] in await capture?.stop() }
-        capture = nil
-        isReady = false
-        status = "Stopped"
+    // MARK: Capture lifecycle
+
+    /// Begin a fresh recording (resets the session clock). Requires the model be ready.
+    func startCapture() async throws {
+        totalSamples = 0
+        resetUtteranceState()
+        try await beginCapture()
     }
 
-    // MARK: streaming loop (VAD endpointing + interim/final)
-    private func startLoop() {
-        // Serial transcription worker — decodes one request at a time (WhisperKit isn't reentrant),
-        // and runs OFF the VAD loop so endpoint detection is never blocked.
+    /// Restart capture after a pause (keeps the session clock; resets VAD context).
+    func resumeCapture() async throws {
+        resetUtteranceState()
+        try await beginCapture()
+    }
+
+
+    /// Pause: stop capture, flush the in-flight utterance. Returns a final segment if any.
+    func pauseAndFinalize() async -> (String, Int, Int)? {
+        await endCaptureAndFinalize()
+    }
+
+    /// Stop: identical teardown; the session is terminal afterward.
+    func stopAndFinalize() async -> (String, Int, Int)? {
+        await endCaptureAndFinalize()
+    }
+
+    private func beginCapture() async throws {
+        errorText = nil
+        let capture = SystemAudioCapture(
+            onSamples: { [buffer] s in buffer.append(s) },
+            onError: { [weak self] e in Task { @MainActor in self?.errorText = String(describing: e) } }
+        )
+        self.capture = capture
+        do {
+            try await capture.start()   // requests Screen Recording; throws if denied
+        } catch {
+            self.capture = nil
+            errorText = friendlyError(error)
+            throw error
+        }
+        beginLoops()
+    }
+
+    private func endCaptureAndFinalize() async -> (String, Int, Int)? {
+        // Stop the VAD loop and drain the transcription worker (queued finals get emitted).
+        loopTask?.cancel(); await loopTask?.value; loopTask = nil
+        await capture?.stop(); capture = nil
+        workCont?.finish(); await workerTask?.value
+        workerTask = nil; workCont = nil
+        hypothesis = ""; interimInFlight = false
+
+        // Flush a still-open utterance (e.g. paused mid-sentence).
+        guard !utter.isEmpty, hasSpeech else { resetUtteranceState(); return nil }
+        let audio = utter
+        let s = uttStartSample / samplesPerMs
+        let e = totalSamples / samplesPerMs
+        resetUtteranceState()
+        let text = await engine.transcribe(audio)
+        return text.isEmpty ? nil : (text, s, e)
+    }
+
+    private func resetUtteranceState() {
+        utter.removeAll(keepingCapacity: true)
+        hasSpeech = false; silenceMs = 0; sinceInterim = 0
+    }
+
+    // MARK: Loops
+
+    private func beginLoops() {
         let (stream, cont) = AsyncStream<Work>.makeStream()
         workCont = cont
-        Task { @MainActor [weak self] in
+
+        // Serial transcription worker — one decode at a time, off the VAD loop.
+        workerTask = Task { @MainActor [weak self] in
             for await work in stream {
                 guard let self else { break }
                 switch work {
                 case .interim(let audio):
                     self.hypothesis = await self.engine.transcribe(audio)
                     self.interimInFlight = false
-                case .finalize(let audio):
+                case .finalize(let audio, let start, let end):
                     let text = await self.engine.transcribe(audio)
-                    if !text.isEmpty { self.appendFinal(text) }
+                    if !text.isEmpty { self.onFinal?(text, start, end) }
                     self.hypothesis = ""
                 }
             }
         }
 
-        // VAD loop — real-time, never awaits transcription. Detects the pause immediately.
+        // VAD loop — real-time; never awaits a transcription.
         loopTask = Task { @MainActor [weak self] in
             guard let self else { return }
             var frame: [Float] = []
-            var utter: [Float] = []
-            var hasSpeech = false
-            var silenceMs = 0
-            var sinceInterim = 0
             while !Task.isCancelled {
                 frame.append(contentsOf: self.buffer.drain())
                 while frame.count >= self.hop {
                     let h = Array(frame.prefix(self.hop)); frame.removeFirst(self.hop)
-                    utter.append(contentsOf: h)
-                    sinceInterim += 1
+                    if self.utter.isEmpty { self.uttStartSample = self.totalSamples }
+                    self.utter.append(contentsOf: h)
+                    self.totalSamples += self.hop
+                    self.sinceInterim += 1
                     let level = Self.rms(h)
-                    if level >= self.silenceRMS { hasSpeech = true; silenceMs = 0 }
-                    else if hasSpeech { silenceMs += 100 }
+                    if level >= self.silenceRMS { self.hasSpeech = true; self.silenceMs = 0 }
+                    else if self.hasSpeech { self.silenceMs += 100 }
 
-                    // interim: bounded recent tail, at most one in flight
-                    if hasSpeech, sinceInterim >= self.interimHops, silenceMs == 0, !self.interimInFlight {
-                        sinceInterim = 0
+                    if self.hasSpeech, self.sinceInterim >= self.interimHops,
+                       self.silenceMs == 0, !self.interimInFlight {
+                        self.sinceInterim = 0
                         self.interimInFlight = true
-                        let n = min(utter.count, Int(self.interimTailS * self.sr))
-                        self.workCont?.yield(.interim(Array(utter.suffix(n))))
+                        let n = min(self.utter.count, Int(self.interimTailS * self.sr))
+                        self.workCont?.yield(.interim(Array(self.utter.suffix(n))))
                     }
 
-                    // endpoint: hand off the utterance and reset immediately (no waiting)
-                    if (hasSpeech && silenceMs >= self.endpointMs) || Double(utter.count) / self.sr >= self.maxUtterS {
-                        self.workCont?.yield(.finalize(utter))
-                        utter.removeAll(keepingCapacity: true)
-                        hasSpeech = false; silenceMs = 0; sinceInterim = 0
+                    if (self.hasSpeech && self.silenceMs >= self.endpointMs)
+                        || Double(self.utter.count) / self.sr >= self.maxUtterS {
+                        let start = self.uttStartSample / self.samplesPerMs
+                        let end = self.totalSamples / self.samplesPerMs
+                        self.workCont?.yield(.finalize(self.utter, start, end))
+                        self.resetUtteranceState()
                     }
                 }
                 try? await Task.sleep(nanoseconds: 100_000_000)
             }
-        }
-    }
-
-    /// Accumulate finalized utterances into a paragraph; break at ~100 words or ~4 sentences.
-    private func appendFinal(_ text: String) {
-        current = current.isEmpty ? text : current + " " + text
-        if Filters.sentenceCount(current) >= 4 || Filters.wordCount(current) >= 100 {
-            paragraphs.append(current)
-            current = ""
         }
     }
 

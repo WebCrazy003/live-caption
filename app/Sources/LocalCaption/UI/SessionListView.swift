@@ -34,6 +34,7 @@ struct SessionListView: View {
         }
         .onAppear(perform: reload)
         .onReceive(NotificationCenter.default.publisher(for: .newSession)) { _ in reload() }
+        .onReceive(NotificationCenter.default.publisher(for: .sessionsChanged)) { _ in reload() }
     }
 
     private func row(_ rec: SessionRecord) -> some View {

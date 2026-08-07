@@ -15,7 +15,8 @@ struct RootView: View {
             if let id = selection {
                 ReadOnlyPlaceholder(sessionID: id)
             } else {
-                ActiveSessionView()
+                ActiveSessionView(env: env)
+                    .id("active")   // fresh controller per New Session
             }
         }
         .toolbar {
@@ -25,6 +26,9 @@ struct RootView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .newSession)) { _ in
             selection = nil
+        }
+        .sheet(isPresented: .constant(!env.pendingRecoveries.isEmpty)) {
+            RecoveryView()
         }
     }
 }
