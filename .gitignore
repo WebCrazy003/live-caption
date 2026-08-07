@@ -13,3 +13,5 @@ __pycache__/
 # Downloaded models / large artifacts
 models/
 *.mlmodelc
+minimal/.signing/
+minimal/MinimalCaption.app/
