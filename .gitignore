@@ -15,3 +15,5 @@ models/
 *.mlmodelc
 minimal/.signing/
 minimal/MinimalCaption.app/
+app/.signing/
+app/LocalCaption.app/
