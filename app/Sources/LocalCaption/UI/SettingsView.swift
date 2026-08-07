@@ -85,7 +85,7 @@ struct SettingsView: View {
             } header: {
                 Text("Window")
             } footer: {
-                Text("Overlay behaviour arrives in a later update.")
+                Text("Applied live. Note: an always-on-top window can be captured if you screen-share.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -99,7 +99,8 @@ struct SettingsView: View {
             } header: {
                 Text("Clipboard")
             } footer: {
-                Text("Off by default; never reads the clipboard. Actions arrive in a later update.")
+                Text("Off by default; only ever writes, never reads. “Copy last N” in the session "
+                     + "controls always works. (Auto-copy selection arrives in a later update.)")
                     .font(.caption).foregroundStyle(.secondary)
             }
 

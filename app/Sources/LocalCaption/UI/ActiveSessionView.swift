@@ -131,6 +131,19 @@ struct ActiveSessionView: View {
 
             Spacer()
 
+            if env.config.clipboard.autoUpdate {
+                Label("Auto-copy", systemImage: "doc.on.clipboard")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .help("Each final sentence copies the last \(env.config.clipboard.recentSentences) to the clipboard")
+            }
+            Button { controller.copyLastN() } label: {
+                Label(controller.justCopied ? "Copied" : "Copy last \(env.config.clipboard.recentSentences)",
+                      systemImage: controller.justCopied ? "checkmark" : "doc.on.doc")
+            }
+            .disabled(!controller.hasTranscript)
+
+            Divider().frame(height: 16)
+
             // Font size (live-applies via config).
             HStack(spacing: 4) {
                 Button { adjustFont(-1) } label: { Image(systemName: "textformat.size.smaller") }

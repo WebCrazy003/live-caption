@@ -8,8 +8,10 @@ struct LocalCaptionApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(env)
-                .frame(minWidth: 720, minHeight: 480)
+                .frame(minWidth: 640, minHeight: 420)
         }
+        .defaultSize(width: CGFloat(env.config.window.width),
+                     height: CGFloat(env.config.window.height))
         .commands {
             // ⌘N — New Session (handled inside RootView via notification).
             CommandGroup(replacing: .newItem) {

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AppKit
 import LocalCaptionKit
 
 /// Session state machine (SPEC.md §11): `IDLE → RECORDING ⇄ PAUSED → STOPPING → SAVED`.
@@ -18,6 +19,10 @@ final class SessionController: ObservableObject {
     @Published var elapsed = "00:00:00"
     @Published var savedTxtURL: URL?
     @Published var saveError: String?
+    @Published var justCopied = false
+
+    /// True once any final has been committed — gates the "Copy last N" button.
+    var hasTranscript: Bool { !transcript.isEmpty }
 
     let orchestrator = StreamingOrchestrator()
 
@@ -99,6 +104,29 @@ final class SessionController: ObservableObject {
         transcript.append(seg)
         try? journal?.append(seg)          // crash-safety: on disk before anything else
         addToParagraphs(text)
+        if env.config.clipboard.autoUpdate { copyLastN() }   // write-only, opt-in
+    }
+
+    // MARK: Clipboard (write-only; never reads — SPEC.md §9.4)
+
+    private var committedText: String { transcript.segments.map(\.text).joined(separator: " ") }
+
+    /// Copy the last N completed sentences to the clipboard (N from Settings).
+    func copyLastN() {
+        let text = Sentences.lastN(committedText, n: env.config.clipboard.recentSentences)
+        guard !text.isEmpty else { return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+        flashCopied()
+    }
+
+    private func flashCopied() {
+        justCopied = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_400_000_000)
+            self?.justCopied = false
+        }
     }
 
     /// Accumulate finals into a paragraph; break at ~4 sentences or ~100 words.

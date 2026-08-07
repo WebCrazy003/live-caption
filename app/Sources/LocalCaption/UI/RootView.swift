@@ -30,5 +30,7 @@ struct RootView: View {
         .sheet(isPresented: .constant(!env.pendingRecoveries.isEmpty)) {
             RecoveryView()
         }
+        .background(WindowAccessor(alwaysOnTop: env.config.window.alwaysOnTop,
+                                   opacity: env.config.window.opacity))
     }
 }
