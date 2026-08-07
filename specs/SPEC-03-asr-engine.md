@@ -1,6 +1,12 @@
 # SPEC-03 — ASR Engine & Streaming
 
-**Status:** **Architecture validated by spike** · **Depends on:** SPEC-00 (frames from SPEC-02) · **Full detail:** SPEC.md §1A, §8
+**Status:** 🟡 Partial (minimal app) · **Depends on:** SPEC-00 (frames from SPEC-02) · **Full detail:** SPEC.md §1A, §8
+
+> **Progress:** `minimal/` runs live streaming ASR with **`small.en` on CPU+GPU** — VAD
+> endpointing, interim+final tracks, decoupled real-time loop (~1–2s finals), text-level
+> hallucination filter, model download + offline-after. **Remaining:** dual-model **hybrid**
+> (tiny partials + larger finals), **LocalAgreement-2** stabilization, metadata-based filters
+> (`no_speech_prob`/`avg_logprob`/`compression_ratio`), bundled-model build.
 
 ## Goal
 Turn a live 16 kHz audio stream into low-latency interim captions + accurate final

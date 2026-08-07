@@ -1,6 +1,10 @@
 # SPEC-00 — Foundation & App Shell
 
-**Status:** Not started · **Depends on:** — · **Full detail:** SPEC.md §6, §20
+**Status:** 🟡 Partial (minimal app) · **Depends on:** — · **Full detail:** SPEC.md §6, §20
+
+> **Progress:** `minimal/` has a launchable SwiftUI app, SwiftPM building, WhisperKit dep,
+> and off-main threading. **Remaining:** multi-screen navigation shell, GRDB dependency,
+> App Support directory bootstrap.
 
 ## Goal
 A buildable, signed-locally Swift/SwiftUI macOS app skeleton with screen navigation and

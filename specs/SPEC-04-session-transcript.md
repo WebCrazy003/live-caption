@@ -1,6 +1,11 @@
 # SPEC-04 — Session Lifecycle & Transcript Persistence
 
-**Status:** Not started · **Depends on:** SPEC-01, SPEC-02, SPEC-03 · **Full detail:** SPEC.md §9, §11, §12.1
+**Status:** 🔴 Barely (minimal app) · **Depends on:** SPEC-01, SPEC-02, SPEC-03 · **Full detail:** SPEC.md §9, §11, §12.1
+
+> **Progress:** `minimal/` holds an in-memory transcript (paragraphs on screen only).
+> **Remaining (almost all):** state machine (start/pause/resume/stop), **save transcript
+> `.txt`**, crash-recovery journal, recovery-on-launch, disk-space check. **Highest-value
+> next step** — see SEQUENCE.md "fastest-value shortcut".
 
 ## Goal
 The glue: a session state machine, an in-memory transcript, crash-safe journaling, and

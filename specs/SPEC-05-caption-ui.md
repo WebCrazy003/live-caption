@@ -1,6 +1,12 @@
 # SPEC-05 — Live Caption UI
 
-**Status:** Not started · **Depends on:** SPEC-03, SPEC-04 · **Full detail:** SPEC.md §9.2, §13
+**Status:** 🟡 Partial (minimal app) · **Depends on:** SPEC-03, SPEC-04 · **Full detail:** SPEC.md §9.2, §13
+
+> **Progress:** `minimal/ContentView.swift` renders the live caption area — accumulating
+> paragraphs (~100 words / 4 sentences), dimmed provisional tail, **auto-scroll**, selectable
+> text, wrapping, plus loading/download/permission states. **Remaining:** session header
+> (elapsed time, status pill), controls (Pause/Resume/Stop/Settings), adjustable font size,
+> optional timestamps.
 
 ## Goal
 The Active Session screen: render the live transcript with instant interim + committed

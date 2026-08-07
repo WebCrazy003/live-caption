@@ -1,6 +1,11 @@
 # SPEC-02 — Audio Capture (system audio)
 
-**Status:** Design + spike learnings · **Depends on:** SPEC-00 · **Full detail:** SPEC.md §6, §17.2
+**Status:** 🟢 Mostly done (minimal app) · **Depends on:** SPEC-00 · **Full detail:** SPEC.md §6, §17.2
+
+> **Progress:** `minimal/SystemAudioCapture.swift` captures system audio via
+> **ScreenCaptureKit** (decision B3 = ScreenCaptureKit), converts 48k→16k mono, handles the
+> Screen Recording permission with error + Retry, and feeds a thread-safe buffer.
+> **Remaining:** device-disconnect auto-recovery, explicit bounded (drop-oldest) buffer.
 
 ## Goal
 Capture **system (speaker) audio** as a single 16 kHz mono Float32 stream and hand frames

@@ -1,85 +1,82 @@
-# Local Caption — Build Sequence
+# Local Caption — Build Sequence (v2)
 
-Standalone build order for the 10 sub-specs in this folder. For each spec's
-*what-should-be-done / done / blockers*, open the linked file.
+Updated after the **minimal app** was built (commit `832d85c`), which advanced specs
+02/03/05 as a partial vertical slice. This is the remaining sequence to reach the full spec.
 
-Project: native macOS (Swift/SwiftUI + WhisperKit), system-audio-only, on-device.
+Status legend: ✅ done · 🟢 mostly · 🟡 partial · 🔴 barely · ⬜ not started
 
 ---
 
-## Dependency graph
+## Current status
 
-```mermaid
-graph TD
-  S00[00 Foundation & App Shell] --> S01[01 Data Layer]
-  S00 --> S02[02 Audio Capture]
-  S00 --> S03[03 ASR Engine]
-  S02 --> S04[04 Session Lifecycle & Transcript]
-  S03 --> S04
-  S01 --> S04
-  S03 --> S05[05 Live Caption UI]
-  S04 --> S05
-  S01 --> S06[06 Session List]
-  S04 --> S06
-  S01 --> S07[07 Settings]
-  S04 --> S08[08 Window & Clipboard]
-  S05 --> S08
-  S05 --> S09[09 Packaging]
-  S06 --> S09
-  S07 --> S09
-  S08 --> S09
+| Spec | Status | What's left (summary) |
+|------|--------|-----------------------|
+| [00 Foundation](SPEC-00-foundation.md) | 🟡 | nav shell, GRDB dep, App Support dirs |
+| [01 Data Layer](SPEC-01-data-layer.md) | ⬜ | config store + SQLite |
+| [02 Audio Capture](SPEC-02-audio-capture.md) | 🟢 | disconnect recovery, bounded buffer |
+| [03 ASR Engine](SPEC-03-asr-engine.md) | 🟡 | dual-model hybrid, LocalAgreement-2, metadata filters |
+| [04 Session & Transcript](SPEC-04-session-transcript.md) | 🔴 | state machine, save `.txt`, journal, recovery |
+| [05 Caption UI](SPEC-05-caption-ui.md) | 🟡 | session header, controls (pause/resume/stop/font) |
+| [06 Session List](SPEC-06-session-list.md) | ⬜ | list/create/open/rename/delete/search/sort |
+| [07 Settings](SPEC-07-settings.md) | ⬜ | settings UI bound to config |
+| [08 Window & Clipboard](SPEC-08-window-clipboard.md) | ⬜ | always-on-top, opacity, clipboard |
+| [09 Packaging](SPEC-09-packaging.md) | 🟡 | hardened runtime, Developer ID + notarization, DMG |
+
+**What the minimal app already delivers:** ScreenCaptureKit system-audio capture →
+WhisperKit `small.en` (CPU+GPU) → decoupled real-time streaming → paragraphs + auto-scroll
++ hallucination filtering, in a locally-signed launchable app. See `../minimal/`.
+
+---
+
+## Remaining sequence
+
+```
+Phase 1  ▶  00-finish  →  01                 foundation + data layer
+Phase 2  ▶  04         →  05-finish          sessions/lifecycle + caption controls
+Phase 3  ▶  06         ‖  07                  session list ‖ settings (parallel)
+Phase 4  ▶  02-finish  ‖  03-finish          capture hardening ‖ ASR hybrid (parallel, independent)
+Phase 5  ▶  08                               window + clipboard
+Phase 6  ▶  09                               sign + notarize + ship
 ```
 
----
+### Phase 1 — Foundation & data
+1. **00-finish** — navigation shell (List ↔ Active ↔ Settings), add GRDB, App Support dir bootstrap.
+2. **01** — config store (versioned JSON) + SQLite `sessions` table + migrations.
 
-## Ordered plan
+### Phase 2 — Sessions become real
+3. **04** — state machine (start/pause/resume/stop), **save transcript `.txt`**, crash-recovery journal, recovery-on-launch.
+4. **05-finish** — session header (elapsed time, status pill) + controls (Pause/Resume/Stop/Settings, font ±).
 
-### Phase A — Scaffold
-1. **[SPEC-00 Foundation & App Shell](SPEC-00-foundation.md)** — Xcode project, SwiftUI nav, WhisperKit+GRDB deps, Info.plist, App Support dirs. *Everything depends on this.*
-2. **[SPEC-01 Data Layer](SPEC-01-data-layer.md)** — versioned config store + SQLite sessions table. *No deps beyond 00; build alongside it.*
+### Phase 3 — Management & config (parallel)
+5. **06** — Session List: create/open(read-only)/rename/delete/search/sort.
+6. **07** — Settings UI bound to config (model, transcript folder, VAD, paragraph size…).
 
-### Phase B — Core pipeline (the product)
-3. **[SPEC-02 Audio Capture](SPEC-02-audio-capture.md)** — system audio → 16 kHz mono frames. *Needs capture-method decision (B3).*
-4. **[SPEC-03 ASR Engine & Streaming](SPEC-03-asr-engine.md)** — WhisperKit dual-model hybrid, LocalAgreement-2, filters. *Build against file fixtures in parallel with 02. **Already de-risked by the spike.***
-5. **[SPEC-04 Session Lifecycle & Transcript](SPEC-04-session-transcript.md)** — state machine + in-memory transcript + crash-recovery journal + file/DB writing. *Glues 01+02+03.*
+### Phase 4 — Quality (parallel, independent)
+7. **02-finish** — device-disconnect auto-recovery, explicit bounded (drop-oldest) buffer.
+8. **03-finish** — dual-model hybrid (tiny partials + finals), LocalAgreement-2 stabilization, metadata-based filters (`no_speech_prob`/`avg_logprob`/`compression_ratio`).
 
-### Phase C — UI
-6. **[SPEC-05 Live Caption UI](SPEC-05-caption-ui.md)** — Active Session screen, interim/final rendering, auto-scroll. *Needs 03+04.*
-7. **[SPEC-06 Session List & Management](SPEC-06-session-list.md)** — list/create/open/rename/delete/search/sort. *Needs 01+04; parallel with 07.*
-8. **[SPEC-07 Settings](SPEC-07-settings.md)** — settings UI bound to config. *Needs 01; parallel with 06.*
+### Phase 5 — Polish
+9. **08** — always-on-top, opacity, window size/position memory; clipboard copy-last-N (+ optional auto-copy).
 
-### Phase D — Polish
-9. **[SPEC-08 Window & Clipboard](SPEC-08-window-clipboard.md)** — always-on-top/opacity + opt-in clipboard. *Needs 04+05.*
-
-### Phase E — Ship
-10. **[SPEC-09 Packaging & Distribution](SPEC-09-packaging.md)** — codesign, notarize, DMG, offline audit. *Needs everything + Developer cert (B2).*
+### Phase 6 — Ship
+10. **09** — hardened runtime, Developer ID signing + notarization, DMG.
 
 ---
 
 ## Critical path
-
 ```
-00 → 03 → 04 → 05 → 09
+00 → 01 → 04 → 05 → 06 → 09
 ```
-Get **03 (ASR)** right first — it is the core and the only part already proven.
+07, 02-finish, 03-finish, and 08 hang off this spine and can run in parallel.
 
-## First milestone (recommended vertical slice)
+## Blockers
+- ✅ **B1** (Xcode) — resolved, installed.
+- ✅ **B3** (capture method) — resolved, ScreenCaptureKit.
+- ⛔ **B2** (Apple Developer account) — still needed for Phase 6 notarization only.
+- **B4** (hybrid vs single model) — single `small.en` works today; hybrid is Phase 4 step 8.
+- **B5** — minor product decisions (journal encryption, JSON sidecar) surface in Phase 2.
 
-```
-00 + 02 + 03 + 04 + 05  =  "audio in → live captions on screen"
-```
-Ship this working core, then layer on 06 (list), 07 (settings), 08 (polish), 09 (packaging).
-
----
-
-## Blockers gating the start
-
-| ID | Blocker | Unblocks | Action |
-|----|---------|----------|--------|
-| **B1** | Full Xcode not installed (CLT SwiftPM broken) | 00–09 (all Swift work) | Install Xcode |
-| **B3** | Capture method: BlackHole vs ScreenCaptureKit | 02, 07, 09 | Product decision |
-| **B4** | ASR: hybrid vs turbo-only streaming | 03 | Decide after measuring WhisperKit on ANE |
-| **B2** | Apple Developer cert | 09 | Enroll |
-| **B5** | 4 minor product decisions (SPEC.md §22.3–6) | 04, 09 | Product decisions |
-
-**To begin:** resolve **B1** + **B3**, then start Phase A.
+## Fastest-value shortcut
+If you want immediate usefulness before the full foundation: pull **04's "save transcript
+to `.txt`"** forward — it works on today's single-window app and makes it usable for a real
+interview, then return to Phase 1.

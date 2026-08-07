@@ -11,33 +11,41 @@ and *blockers*. Build in the sequence below.
 
 ## Status at a glance
 
-| # | Spec | Status | Hard blocker |
-|---|------|--------|--------------|
-| 00 | [Foundation & App Shell](SPEC-00-foundation.md) | Not started | Xcode |
-| 01 | [Data Layer (Config + SQLite)](SPEC-01-data-layer.md) | Not started | Xcode |
-| 02 | [Audio Capture (system audio)](SPEC-02-audio-capture.md) | Design + spike learnings | Xcode · capture-method decision |
-| 03 | [ASR Engine & Streaming](SPEC-03-asr-engine.md) | **Architecture validated by spike** | Xcode (WhisperKit) |
-| 04 | [Session Lifecycle & Transcript](SPEC-04-session-transcript.md) | Not started | depends on 02/03 |
-| 05 | [Live Caption UI](SPEC-05-caption-ui.md) | Not started | depends on 03/04 |
-| 06 | [Session List & Management](SPEC-06-session-list.md) | Not started | depends on 01/04 |
-| 07 | [Settings](SPEC-07-settings.md) | Not started | depends on 01 |
-| 08 | [Window & Clipboard](SPEC-08-window-clipboard.md) | Clipboard filters validated (spike) | depends on 04/05 |
-| 09 | [Packaging & Distribution](SPEC-09-packaging.md) | Not started | Apple Developer cert |
+Updated after the **minimal app** (`../minimal/`, commit `832d85c`) — a partial vertical
+slice of specs 02/03/05. Build order and remaining work: **[SEQUENCE.md](SEQUENCE.md)**.
 
-**Nothing production is built yet.** What exists is the Python **spike** (`../spike/`)
-that proved the ASR architecture, latency, and filters — see SPEC-03 / SPEC-08.
+Legend: ✅ done · 🟢 mostly · 🟡 partial · 🔴 barely · ⬜ not started
+
+| # | Spec | Status | Remaining |
+|---|------|--------|-----------|
+| 00 | [Foundation & App Shell](SPEC-00-foundation.md) | 🟡 partial | nav shell, GRDB, App Support dirs |
+| 01 | [Data Layer (Config + SQLite)](SPEC-01-data-layer.md) | ⬜ not started | all |
+| 02 | [Audio Capture (system audio)](SPEC-02-audio-capture.md) | 🟢 mostly | disconnect recovery, bounded buffer |
+| 03 | [ASR Engine & Streaming](SPEC-03-asr-engine.md) | 🟡 partial | hybrid, LocalAgreement-2, metadata filters |
+| 04 | [Session Lifecycle & Transcript](SPEC-04-session-transcript.md) | 🔴 barely | state machine, save, journal, recovery |
+| 05 | [Live Caption UI](SPEC-05-caption-ui.md) | 🟡 partial | header, controls (pause/resume/stop/font) |
+| 06 | [Session List & Management](SPEC-06-session-list.md) | ⬜ not started | all |
+| 07 | [Settings](SPEC-07-settings.md) | ⬜ not started | all |
+| 08 | [Window & Clipboard](SPEC-08-window-clipboard.md) | ⬜ not started | all |
+| 09 | [Packaging & Distribution](SPEC-09-packaging.md) | 🟡 partial | hardened runtime, Developer ID, notarize, DMG |
+
+**Built:** the Python **spike** (`../spike/`) that proved the ASR architecture, and the
+**minimal app** (`../minimal/`) — a working native system-audio live captioner. The
+remaining sequence to the full spec is in **[SEQUENCE.md](SEQUENCE.md)**.
 
 ---
 
 ## Cross-cutting blockers (resolve these first)
 
-| ID | Blocker | Blocks | Owner action |
-|----|---------|--------|--------------|
-| **B1** | **Full Xcode not installed** (this Mac has only Command Line Tools; its SwiftPM is broken — trivial packages fail to link) | Every Swift spec (00–09) | Install Xcode from App Store |
-| **B2** | **Apple Developer account + Developer ID cert** | 09 (signing/notarization) | Enroll / obtain cert |
-| **B3** | **Capture method: BlackHole vs ScreenCaptureKit** (SPEC.md §22.1) | 02, and 07/09 (permissions) | Product decision |
-| **B4** | **ASR: hybrid vs turbo-only streaming** (SPEC.md §22.2) | 03 | Decide after measuring WhisperKit on ANE |
-| **B5** | **4 remaining product decisions** (journal encryption, JSON sidecar, bundled model, min-OS) — SPEC.md §22.3–6 | 04, 09 | Product decisions |
+| ID | Blocker | Blocks | Status |
+|----|---------|--------|--------|
+| **B1** | Full Xcode not installed | Every Swift spec | ✅ **Resolved** — Xcode 16.2 installed |
+| **B3** | Capture method: BlackHole vs ScreenCaptureKit | 02, permissions | ✅ **Resolved** — ScreenCaptureKit |
+| **B4** | ASR: hybrid vs single-model streaming | 03 | Single `small.en` works today; hybrid is Phase 4 |
+| **B2** | Apple Developer account + Developer ID cert | 09 (notarization) | ⛔ Still needed for Phase 6 only |
+| **B5** | Product decisions (journal encryption, JSON sidecar, bundled model, min-OS) — SPEC.md §22 | 04, 09 | Surface in Phase 2 |
+
+No blockers remain for Phases 1–5.
 
 ---
 
