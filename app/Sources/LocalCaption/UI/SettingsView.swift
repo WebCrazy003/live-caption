@@ -77,6 +77,25 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
+            // MARK: Live AI summary (SPEC-10)
+            Section {
+                Toggle("Show live AI summary panel", isOn: $env.config.summary.enabled)
+                Stepper(value: $env.config.summary.wordsPerSummary, in: 20...300, step: 10) {
+                    LabeledContent("New summary every", value: "\(env.config.summary.wordsPerSummary) words")
+                }
+                Stepper(value: $env.config.summary.maxBullets, in: 1...6) {
+                    LabeledContent("Max points per card", value: "\(env.config.summary.maxBullets)")
+                }
+            } header: {
+                Text("Live AI summary")
+            } footer: {
+                Text("On-device summary of what the other person wants, in short easy English — a "
+                     + "new card every N words of speech. Needs the local model server running "
+                     + "(app/scripts/summary-server.sh); model \(env.config.summary.model). "
+                     + "Runs over localhost only — nothing leaves your Mac.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
             // MARK: Window (Phase 5)
             Section {
                 Toggle("Always on top", isOn: $env.config.window.alwaysOnTop)

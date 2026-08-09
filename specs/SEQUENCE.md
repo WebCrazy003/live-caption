@@ -25,7 +25,7 @@ distribution (09) and the new Live AI Summary (10) remain.
 | [07 Settings](SPEC-07-settings.md) | ✅ | — |
 | [08 Window & Clipboard](SPEC-08-window-clipboard.md) | ✅ | auto-copy-on-selection (AppKit text view) |
 | [09 Packaging](SPEC-09-packaging.md) | 🟡 | Developer ID + notarization, DMG — blocked on **B2** |
-| [10 Live AI Summary](SPEC-10-live-summary.md) | ⬜ | on-device MLX LLM, summary card every ~100 words, right-side "Key points" panel |
+| [10 Live AI Summary](SPEC-10-live-summary.md) | ✅ | on-device 1B LLM (local mlx-lm server), "Key points" card every ~50 words; native MLX-Swift deferred |
 
 **What the app already delivers:** ScreenCaptureKit system-audio capture → WhisperKit
 dual-model hybrid (tiny.en + small.en) → decoupled real-time streaming with LocalAgreement-2
@@ -51,7 +51,7 @@ Phase 6  ▶  09                               sign + notarize + ship           
 ```
 
 > **Phase 7 — Live AI Summary ([10](SPEC-10-live-summary.md)):** right-side "Key points" panel that
-> adds a short easy-English card every ~100 words of speech, produced by an on-device MLX LLM,
+> adds a short easy-English card every ~50 words of speech, produced by an on-device MLX LLM,
 > distilling captions into "what they want." Depends on 04 (finals) + 05 (layout) — both done — so
 > it can start now, independent of the 09 distribution blocker.
 

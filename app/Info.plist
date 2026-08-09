@@ -22,5 +22,12 @@
     <true/>
     <!-- System audio is captured via ScreenCaptureKit (decision B3); macOS prompts for the
          Screen Recording permission at runtime. No NSMicrophoneUsageDescription is needed. -->
+    <!-- SPEC-10 live summary talks to a local on-device mlx_lm.server over http://127.0.0.1.
+         Allow localhost HTTP only; nothing leaves the machine. -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
 </dict>
 </plist>

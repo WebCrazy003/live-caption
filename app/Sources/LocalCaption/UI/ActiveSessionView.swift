@@ -17,14 +17,7 @@ struct ActiveSessionView: View {
             header
             modelStatusArea
             Divider()
-            CaptionView(
-                paragraphs: controller.paragraphs,
-                current: controller.current,
-                hypothesis: controller.orchestrator.hypothesis,
-                isReady: controller.phase == .recording || controller.phase == .paused,
-                fontSize: Double(env.config.caption.fontSize),
-                autoScroll: env.config.caption.autoScroll
-            )
+            captionArea
             transportBar
         }
         .padding()
@@ -48,6 +41,38 @@ struct ActiveSessionView: View {
     }
 
     private var isLive: Bool { controller.phase == .recording || controller.phase == .paused }
+
+    // MARK: Caption area (captions left, live AI summary right — SPEC-10)
+
+    private var captionView: some View {
+        CaptionView(
+            paragraphs: controller.paragraphs,
+            current: controller.current,
+            hypothesis: controller.orchestrator.hypothesis,
+            isReady: isLive,
+            fontSize: Double(env.config.caption.fontSize),
+            autoScroll: env.config.caption.autoScroll
+        )
+    }
+
+    @ViewBuilder private var captionArea: some View {
+        if env.config.summary.enabled {
+            HStack(alignment: .top, spacing: 12) {
+                captionView.frame(maxWidth: .infinity)
+                Divider()
+                SummaryView(
+                    cards: controller.summaries,
+                    summarizing: controller.summarizing,
+                    unavailable: controller.summaryUnavailable,
+                    fontSize: Double(env.config.caption.fontSize),
+                    isLive: isLive
+                )
+                .frame(minWidth: 240, idealWidth: 320, maxWidth: 420)
+            }
+        } else {
+            captionView
+        }
+    }
 
     @ViewBuilder private var statusPill: some View {
         switch controller.phase {
@@ -141,6 +166,15 @@ struct ActiveSessionView: View {
                       systemImage: controller.justCopied ? "checkmark" : "doc.on.doc")
             }
             .disabled(!controller.hasTranscript)
+
+            Divider().frame(height: 16)
+
+            // Live AI summary panel toggle (SPEC-10). Off = captions get full width, no LLM runs.
+            Button { env.config.summary.enabled.toggle() } label: {
+                Label("Key points", systemImage: "sparkles")
+                    .foregroundStyle(env.config.summary.enabled ? Color.accentColor : Color.secondary)
+            }
+            .help("Show the live AI summary of what the other person wants")
 
             Divider().frame(height: 16)
 

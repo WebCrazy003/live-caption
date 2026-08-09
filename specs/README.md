@@ -30,7 +30,7 @@ Legend: ✅ done · 🟢 mostly · 🟡 partial · 🔴 barely · ⬜ not starte
 | 07 | [Settings](SPEC-07-settings.md) | ✅ done | — |
 | 08 | [Window & Clipboard](SPEC-08-window-clipboard.md) | ✅ done | auto-copy-on-selection (needs AppKit text view) |
 | 09 | [Packaging & Distribution](SPEC-09-packaging.md) | 🟡 partial | Developer ID, notarize, DMG — blocked on **B2** |
-| 10 | [Live AI Summary (on-device)](SPEC-10-live-summary.md) | ⬜ not started | on-device MLX LLM, summary card every ~100 words, right-side "Key points" panel |
+| 10 | [Live AI Summary (on-device)](SPEC-10-live-summary.md) | ✅ done | on-device 1B LLM (local mlx-lm server), "Key points" card every ~50 words; native MLX-Swift deferred |
 
 **Built:** the Python **spike** (`../spike/`) that proved the ASR architecture, the
 **minimal app** (`../minimal/`) vertical slice, and the **full app** (`../app/`, Phases 1–5).

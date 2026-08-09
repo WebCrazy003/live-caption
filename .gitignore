@@ -3,6 +3,10 @@
 __pycache__/
 *.pyc
 
+# Live-summary server runtime files (SPEC-10)
+server.log
+server.pid
+
 # SwiftPM build artifacts
 .build/
 *.xcodeproj/xcuserdata/

@@ -21,6 +21,11 @@ final class SessionController: ObservableObject {
     @Published var saveError: String?
     @Published var justCopied = false
 
+    // Live AI summary (SPEC-10): a growing list of "Key points" cards, one per ~100-word block.
+    @Published var summaries: [SummaryCard] = []
+    @Published var summarizing = false        // a generation is in flight
+    @Published var summaryUnavailable = false // local model server not reachable
+
     /// True once any final has been committed — gates the "Copy last N" button.
     var hasTranscript: Bool { !transcript.isEmpty }
 
@@ -32,6 +37,14 @@ final class SessionController: ObservableObject {
     private var sessionId = UUID()
     private var startDate = Date()
     private var clockTask: Task<Void, Never>?
+
+    // Summary trigger state (SPEC-10). Counts committed final words; at the threshold it
+    // summarizes the accumulated block and resets. Independent of the paragraph counter.
+    private var summaryEngine: SummaryEngine?
+    private var summaryBuffer = ""
+    private var summaryWords = 0
+    private var summaryCardSeq = 0
+    private var summaryFlushPending = false
 
     var displayName: String { sessionName.isEmpty ? "New Session" : sessionName }
 
@@ -69,6 +82,7 @@ final class SessionController: ObservableObject {
         sessionName = env.config.general.sessionNamePrefix + TimeFormat.fileStamp(startDate)
         transcript = Transcript(); paragraphs = []; current = ""
         savedTxtURL = nil; saveError = nil
+        resetSummaryState()
         journal = try? Journal(sessionId: sessionId)
         do { try await orchestrator.startCapture() } catch { phase = .failed; return }
         phase = .recording
@@ -79,6 +93,7 @@ final class SessionController: ObservableObject {
         guard phase == .recording else { return }
         stopClock()
         if let f = await orchestrator.pauseAndFinalize() { ingestFinal(f.0, f.1, f.2) }
+        flushSummary()   // summarize the tail of the utterance before we freeze
         phase = .paused
     }
 
@@ -94,6 +109,7 @@ final class SessionController: ObservableObject {
         phase = .saving
         stopClock()
         if let f = await orchestrator.stopAndFinalize() { ingestFinal(f.0, f.1, f.2) }
+        flushSummary()   // final card for the whole call; does not block the save below
         phase = save() ? .saved : .failed
     }
 
@@ -105,6 +121,7 @@ final class SessionController: ObservableObject {
         transcript.append(seg)
         try? journal?.append(seg)          // crash-safety: on disk before anything else
         addToParagraphs(text)
+        accumulateForSummary(text)         // SPEC-10 word-count trigger
         if env.config.clipboard.autoUpdate { copyLastN() }   // write-only, opt-in
     }
 
@@ -135,6 +152,67 @@ final class SessionController: ObservableObject {
         current = current.isEmpty ? text : current + " " + text
         if Filters.sentenceCount(current) >= 4 || Filters.wordCount(current) >= 100 {
             paragraphs.append(current); current = ""
+        }
+    }
+
+    // MARK: Live AI summary (SPEC-10)
+
+    /// Fresh summary state for a new session.
+    private func resetSummaryState() {
+        summaries = []; summaryBuffer = ""; summaryWords = 0
+        summaryCardSeq = 0; summarizing = false; summaryFlushPending = false; summaryUnavailable = false
+        guard env.config.summary.enabled else { summaryEngine = nil; return }
+        let engine = MLXServerEngine(serverURL: env.config.summary.serverURL,
+                                     model: env.config.summary.model)
+        summaryEngine = engine
+        // Non-blocking availability check so the panel can show a quiet note if the server is down.
+        Task { @MainActor [weak self] in self?.summaryUnavailable = !(await engine.probe()) }
+    }
+
+    /// Add a committed final to the pending block; summarize once it reaches the word threshold.
+    private func accumulateForSummary(_ text: String) {
+        guard env.config.summary.enabled, summaryEngine != nil else { return }
+        let t = text.trimmingCharacters(in: .whitespaces)
+        guard !t.isEmpty else { return }
+        summaryBuffer = summaryBuffer.isEmpty ? t : summaryBuffer + " " + t
+        summaryWords += Filters.wordCount(t)
+        if summaryWords >= env.config.summary.wordsPerSummary, !summarizing {
+            dispatchSummary()
+        }
+    }
+
+    /// Summarize the tail (any remaining words) on pause/stop. Never blocks the save path.
+    private func flushSummary() {
+        guard env.config.summary.enabled, summaryEngine != nil, !summaryBuffer.isEmpty else { return }
+        summaryFlushPending = true
+        if !summarizing { summaryFlushPending = false; dispatchSummary() }
+    }
+
+    /// Send the accumulated block to the engine; reset the buffer. Callers decide *when*
+    /// (threshold or flush); if more text piled up during generation, re-dispatch on completion.
+    private func dispatchSummary() {
+        guard let engine = summaryEngine, !summaryBuffer.isEmpty else { return }
+        let chunk = summaryBuffer
+        let id = summaryCardSeq
+        let maxBullets = env.config.summary.maxBullets
+        summaryBuffer = ""; summaryWords = 0; summaryCardSeq += 1
+        summarizing = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let card = try await engine.summarize(chunk: chunk, id: id, maxBullets: maxBullets)
+                if !card.isEmpty { self.summaries.append(card) }
+                self.summaryUnavailable = false
+            } catch {
+                self.summaryUnavailable = true
+            }
+            self.summarizing = false
+            // Merge-while-busy: enough new words arrived during generation, or a flush is pending.
+            if !self.summaryBuffer.isEmpty,
+               self.summaryWords >= self.env.config.summary.wordsPerSummary || self.summaryFlushPending {
+                self.summaryFlushPending = false
+                self.dispatchSummary()
+            }
         }
     }
 

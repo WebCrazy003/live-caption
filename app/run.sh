@@ -31,6 +31,9 @@ else
   codesign --force --sign - --timestamp=none "$APP"
 fi
 
+echo "▶ Starting live-summary server (SPEC-10, best-effort)…"
+./scripts/summary-server.sh || echo "  ⚠ summary server not started — captions still work; see scripts/summary-server.sh"
+
 echo "▶ Launching…"
 pkill -f "$APP" 2>/dev/null || true
 sleep 1

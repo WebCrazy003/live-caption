@@ -20,6 +20,7 @@ public struct Config: Codable, Equatable {
     public var caption: Caption
     public var window: Window
     public var clipboard: Clipboard
+    public var summary: Summary
 
     public init(
         schemaVersion: Int = Config.currentSchemaVersion,
@@ -28,7 +29,8 @@ public struct Config: Codable, Equatable {
         asr: ASR = ASR(),
         caption: Caption = Caption(),
         window: Window = Window(),
-        clipboard: Clipboard = Clipboard()
+        clipboard: Clipboard = Clipboard(),
+        summary: Summary = Summary()
     ) {
         self.schemaVersion = schemaVersion
         self.general = general
@@ -37,11 +39,12 @@ public struct Config: Codable, Equatable {
         self.caption = caption
         self.window = window
         self.clipboard = clipboard
+        self.summary = summary
     }
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
-        case general, audio, asr, caption, window, clipboard
+        case general, audio, asr, caption, window, clipboard, summary
     }
 
     public init(from decoder: Decoder) throws {
@@ -54,6 +57,8 @@ public struct Config: Codable, Equatable {
         caption = try c.decodeIfPresent(Caption.self, forKey: .caption) ?? d.caption
         window = try c.decodeIfPresent(Window.self, forKey: .window) ?? d.window
         clipboard = try c.decodeIfPresent(Clipboard.self, forKey: .clipboard) ?? d.clipboard
+        // Merge-default (SPEC-10): a config file without `summary` gets defaults — no schema bump.
+        summary = try c.decodeIfPresent(Summary.self, forKey: .summary) ?? d.summary
     }
 
     // MARK: Groups
@@ -150,7 +155,7 @@ public struct Config: Codable, Equatable {
         public var x: Double?
         public var y: Double?
         public init(alwaysOnTop: Bool = true, opacity: Double = 1.0,
-                    width: Double = 480, height: Double = 640, x: Double? = nil, y: Double? = nil) {
+                    width: Double = 860, height: Double = 620, x: Double? = nil, y: Double? = nil) {
             self.alwaysOnTop = alwaysOnTop; self.opacity = opacity
             self.width = width; self.height = height; self.x = x; self.y = y
         }
@@ -187,6 +192,43 @@ public struct Config: Codable, Equatable {
             autoUpdate = try c.decodeIfPresent(Bool.self, forKey: .autoUpdate) ?? x.autoUpdate
             recentSentences = try c.decodeIfPresent(Int.self, forKey: .recentSentences) ?? x.recentSentences
             autoCopySelection = try c.decodeIfPresent(Bool.self, forKey: .autoCopySelection) ?? x.autoCopySelection
+        }
+    }
+
+    /// Live AI summary (SPEC-10). Runs on an on-device MLX model served over localhost by
+    /// `mlx_lm.server` (the native MLX-Swift path can't build the Metal lib from `swift build`
+    /// on this toolchain). A new card is produced every `wordsPerSummary` words of transcript.
+    public struct Summary: Codable, Equatable {
+        public var enabled: Bool
+        public var wordsPerSummary: Int
+        public var maxBullets: Int
+        public var model: String        // model id the local server was started with
+        public var serverURL: String    // localhost only; never leaves the machine
+        public init(enabled: Bool = true,
+                    wordsPerSummary: Int = 50,
+                    maxBullets: Int = 4,
+                    model: String = "mlx-community/Llama-3.2-1B-Instruct-4bit",
+                    serverURL: String = "http://127.0.0.1:8765") {
+            self.enabled = enabled
+            self.wordsPerSummary = wordsPerSummary
+            self.maxBullets = maxBullets
+            self.model = model
+            self.serverURL = serverURL
+        }
+        enum CodingKeys: String, CodingKey {
+            case enabled
+            case wordsPerSummary = "words_per_summary"
+            case maxBullets = "max_bullets"
+            case model
+            case serverURL = "server_url"
+        }
+        public init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self); let x = Summary()
+            enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? x.enabled
+            wordsPerSummary = try c.decodeIfPresent(Int.self, forKey: .wordsPerSummary) ?? x.wordsPerSummary
+            maxBullets = try c.decodeIfPresent(Int.self, forKey: .maxBullets) ?? x.maxBullets
+            model = try c.decodeIfPresent(String.self, forKey: .model) ?? x.model
+            serverURL = try c.decodeIfPresent(String.self, forKey: .serverURL) ?? x.serverURL
         }
     }
 }
