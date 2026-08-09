@@ -64,9 +64,13 @@ struct SummaryView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             if !c.want.isEmpty {
-                (Text("They want you to: ").foregroundStyle(.secondary) + Text(c.want))
-                    .font(bulletFont)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(alignment: .top, spacing: 6) {
+                    Text("ToDo")
+                        .font(bulletFont.weight(.semibold))
+                        .foregroundStyle(.orange)
+                    Text(c.want).font(bulletFont)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(10)

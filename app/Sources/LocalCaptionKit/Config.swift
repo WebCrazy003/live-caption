@@ -205,8 +205,8 @@ public struct Config: Codable, Equatable {
         public var model: String        // model id the local server was started with
         public var serverURL: String    // localhost only; never leaves the machine
         public init(enabled: Bool = true,
-                    wordsPerSummary: Int = 50,
-                    maxBullets: Int = 4,
+                    wordsPerSummary: Int = 90,
+                    maxBullets: Int = 0,
                     model: String = "mlx-community/Llama-3.2-1B-Instruct-4bit",
                     serverURL: String = "http://127.0.0.1:8765") {
             self.enabled = enabled

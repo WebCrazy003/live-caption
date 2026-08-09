@@ -24,11 +24,32 @@ public struct SummaryCard: Identifiable, Equatable, Sendable {
 
     /// Normalize raw model output into a card. Tolerant by design — never throws, never crashes:
     /// - strips Whisper/LLM special tokens (`<|eot_id|>` etc.),
-    /// - maps `MAIN:` / `WANT:` / `- ` lines (case-insensitive), flattening nested `- - ` bullets,
+    /// - maps `SUMMARY:`/`MAIN:` → main and `TODO:`/`WANT:` → want (case-insensitive), plus `- ` bullets, flattening nested `- - ` bullets,
     /// - de-duplicates near-identical bullets (the small-model repetition failure mode),
     /// - caps bullets at `maxBullets`,
     /// - falls back to the first free line (or first bullet) when no `MAIN:` was emitted.
-    public static func parse(_ raw: String, id: Int, maxBullets: Int = 4) -> SummaryCard {
+    /// Ask-phrases that mark a direct request to the listener. Used to gate the ToDo: a small
+    /// model hallucinates tasks out of plain statements, so a ToDo is only trusted when the
+    /// *source* transcript actually contains one of these signals (or a question mark).
+    private static let requestSignals = [
+        "can you", "could you", "would you", "will you", "can we", "could we",
+        "please", "send me", "send us", "let me know", "let us know",
+        "i need you", "we need you", "do you mind", "would you mind",
+        "make sure", "get back to me", "email me", "call me", "you need to",
+    ]
+
+    /// True when `text` reads like a direct request to the listener (has an ask-phrase or "?").
+    public static func looksLikeRequest(_ text: String) -> Bool {
+        if text.contains("?") { return true }
+        let lower = text.lowercased()
+        return requestSignals.contains { lower.contains($0) }
+    }
+
+    /// Parse raw model output into a card. When `requestContext` is supplied (the source
+    /// transcript block), the ToDo is dropped unless that text actually asks something of the
+    /// listener — a deterministic guard against the small model inventing tasks from statements.
+    public static func parse(_ raw: String, id: Int, maxBullets: Int = 4,
+                             requestContext: String? = nil) -> SummaryCard {
         let cleaned = raw.replacingOccurrences(
             of: "<\\|[^|]*\\|>", with: "", options: .regularExpression)
 
@@ -46,8 +67,12 @@ public struct SummaryCard: Identifiable, Equatable, Sendable {
             guard !content.isEmpty else { continue }
             let upper = content.uppercased()
 
-            if upper.hasPrefix("MAIN:") {
+            if upper.hasPrefix("SUMMARY:") {
+                if main.isEmpty { main = tail(content, after: "SUMMARY:") }
+            } else if upper.hasPrefix("MAIN:") {
                 if main.isEmpty { main = tail(content, after: "MAIN:") }
+            } else if upper.hasPrefix("TODO:") {
+                if want.isEmpty { want = tail(content, after: "TODO:") }
             } else if upper.hasPrefix("WANT:") {
                 if want.isEmpty { want = tail(content, after: "WANT:") }
             } else if isBulletLine {
@@ -72,6 +97,10 @@ public struct SummaryCard: Identifiable, Equatable, Sendable {
         // WANT: drop a placeholder "-"; strip a leading dash the model sometimes adds.
         var wantClean = String(want.drop(while: { "-•* ".contains($0) })).trimmingCharacters(in: .whitespaces)
         if wantClean == "-" { wantClean = "" }
+        // Gate: trust a ToDo only when the source block truly asks the listener something.
+        if let ctx = requestContext, !wantClean.isEmpty, !looksLikeRequest(ctx) {
+            wantClean = ""
+        }
 
         // MAIN fallback so a card without an explicit MAIN still shows something.
         if main.isEmpty {

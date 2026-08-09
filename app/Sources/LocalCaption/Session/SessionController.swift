@@ -45,6 +45,10 @@ final class SessionController: ObservableObject {
     private var summaryWords = 0
     private var summaryCardSeq = 0
     private var summaryFlushPending = false
+    // Rolling background: the last few blocks of transcript, fed to the model as context only
+    // so each one-sentence summary understands what came before. Capped to stay small/fast.
+    private var summaryContextTail = ""
+    private let summaryContextMaxWords = 120
 
     var displayName: String { sessionName.isEmpty ? "New Session" : sessionName }
 
@@ -159,7 +163,7 @@ final class SessionController: ObservableObject {
 
     /// Fresh summary state for a new session.
     private func resetSummaryState() {
-        summaries = []; summaryBuffer = ""; summaryWords = 0
+        summaries = []; summaryBuffer = ""; summaryWords = 0; summaryContextTail = ""
         summaryCardSeq = 0; summarizing = false; summaryFlushPending = false; summaryUnavailable = false
         guard env.config.summary.enabled else { summaryEngine = nil; return }
         let engine = MLXServerEngine(serverURL: env.config.summary.serverURL,
@@ -181,6 +185,16 @@ final class SessionController: ObservableObject {
         }
     }
 
+    /// Append a just-summarized block to the rolling background, keeping only the most recent
+    /// `summaryContextMaxWords` words so the context stays small and generation stays fast.
+    private func appendSummaryContext(_ block: String) {
+        summaryContextTail = summaryContextTail.isEmpty ? block : summaryContextTail + " " + block
+        let words = summaryContextTail.split(separator: " ")
+        if words.count > summaryContextMaxWords {
+            summaryContextTail = words.suffix(summaryContextMaxWords).joined(separator: " ")
+        }
+    }
+
     /// Summarize the tail (any remaining words) on pause/stop. Never blocks the save path.
     private func flushSummary() {
         guard env.config.summary.enabled, summaryEngine != nil, !summaryBuffer.isEmpty else { return }
@@ -193,14 +207,17 @@ final class SessionController: ObservableObject {
     private func dispatchSummary() {
         guard let engine = summaryEngine, !summaryBuffer.isEmpty else { return }
         let chunk = summaryBuffer
+        let background = summaryContextTail
         let id = summaryCardSeq
         let maxBullets = env.config.summary.maxBullets
         summaryBuffer = ""; summaryWords = 0; summaryCardSeq += 1
+        // Roll this block into the background tail for the next summary, capped to recent words.
+        appendSummaryContext(chunk)
         summarizing = true
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let card = try await engine.summarize(chunk: chunk, id: id, maxBullets: maxBullets)
+                let card = try await engine.summarize(chunk: chunk, background: background, id: id, maxBullets: maxBullets)
                 if !card.isEmpty { self.summaries.append(card) }
                 self.summaryUnavailable = false
             } catch {

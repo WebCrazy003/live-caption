@@ -6,8 +6,9 @@ protocol SummaryEngine: Sendable {
     /// Availability check — cheap, short timeout. Used to show the "summary unavailable" note
     /// without blocking captions.
     func probe() async -> Bool
-    /// Summarize one block. Throws on any failure; the caller degrades gracefully.
-    func summarize(chunk: String, id: Int, maxBullets: Int) async throws -> SummaryCard
+    /// Summarize one block. `background` is earlier transcript passed as context only.
+    /// Throws on any failure; the caller degrades gracefully.
+    func summarize(chunk: String, background: String, id: Int, maxBullets: Int) async throws -> SummaryCard
 }
 
 enum SummaryEngineError: Error { case badStatus(Int), empty }
@@ -42,14 +43,14 @@ actor MLXServerEngine: SummaryEngine {
         } catch { return false }
     }
 
-    func summarize(chunk: String, id: Int, maxBullets: Int) async throws -> SummaryCard {
+    func summarize(chunk: String, background: String, id: Int, maxBullets: Int) async throws -> SummaryCard {
         let body = ChatRequest(
             model: model,
             messages: [
                 .init(role: "system", content: SummaryPrompt.system),
-                .init(role: "user", content: SummaryPrompt.user(chunk)),
+                .init(role: "user", content: SummaryPrompt.user(chunk, background: background)),
             ],
-            max_tokens: 160,
+            max_tokens: 120,
             temperature: 0,
             stream: false)
 
@@ -68,7 +69,9 @@ actor MLXServerEngine: SummaryEngine {
         guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw SummaryEngineError.empty
         }
-        return SummaryCard.parse(content, id: id, maxBullets: maxBullets)
+        // Gate the ToDo on the *new* block only (not background), so a task must come from
+        // what was just said — not carried over or invented.
+        return SummaryCard.parse(content, id: id, maxBullets: maxBullets, requestContext: chunk)
     }
 
     // MARK: OpenAI-compatible wire types

@@ -89,4 +89,49 @@ final class SummaryTests: XCTestCase {
         XCTAssertTrue(p.contains("Now write the card."))
         XCTAssertFalse(SummaryPrompt.system.isEmpty)
     }
+
+    // MARK: New SUMMARY/TODO shape (SPEC-10 refresh)
+
+    func testParsesSummaryTodoFormat() {
+        let raw = "SUMMARY: They want the design file tomorrow.\nTODO: Send the design file."
+        let c = SummaryCard.parse(raw, id: 0)
+        XCTAssertEqual(c.main, "They want the design file tomorrow.")
+        XCTAssertEqual(c.want, "Send the design file.")
+    }
+
+    func testPromptIncludesBackground() {
+        let p = SummaryPrompt.user("new text", background: "earlier text")
+        XCTAssertTrue(p.contains("earlier text"))
+        XCTAssertTrue(p.contains("new text"))
+        XCTAssertTrue(p.contains("Background"))
+    }
+
+    func testPromptOmitsBackgroundWhenEmpty() {
+        let p = SummaryPrompt.user("new text", background: "   ")
+        XCTAssertFalse(p.contains("Background"))
+    }
+
+    // MARK: ToDo gate — the anti-hallucination guard
+
+    func testLooksLikeRequest() {
+        XCTAssertTrue(SummaryCard.looksLikeRequest("Could you send the file?"))
+        XCTAssertTrue(SummaryCard.looksLikeRequest("please email me the quote"))
+        XCTAssertTrue(SummaryCard.looksLikeRequest("Is that ok?"))            // has "?"
+        XCTAssertFalse(SummaryCard.looksLikeRequest("The weather is nice and we went hiking."))
+        XCTAssertFalse(SummaryCard.looksLikeRequest("The quarterly numbers looked strong."))
+    }
+
+    func testTodoDroppedWhenSourceHasNoRequest() {
+        // Model invented a task from a plain statement — the gate must strip it.
+        let raw = "SUMMARY: The weather is nice.\nTODO: Go hiking"
+        let c = SummaryCard.parse(raw, id: 0, requestContext: "The weather is nice and I went hiking.")
+        XCTAssertEqual(c.main, "The weather is nice.")
+        XCTAssertEqual(c.want, "")               // dropped: no ask in the source
+    }
+
+    func testTodoKeptWhenSourceHasRequest() {
+        let raw = "SUMMARY: They need the file.\nTODO: Send the file by tomorrow."
+        let c = SummaryCard.parse(raw, id: 0, requestContext: "Can you please send me the file by tomorrow?")
+        XCTAssertEqual(c.want, "Send the file by tomorrow.")   // kept: source asks
+    }
 }

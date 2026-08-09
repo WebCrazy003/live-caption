@@ -4,27 +4,46 @@ import Foundation
 /// just the exact instruction + the per-block user message. The engine (app target) sends
 /// these to the on-device model; `SummaryCard.parse` normalizes whatever comes back.
 ///
-/// Design (SPEC-10 §"Why", §"Output format"): very simple English, lead with the ask, do
-/// not invent, and answer in a fixed `MAIN/-/WANT` shape so the parser can be strict.
+/// Design (SPEC-10 §"Why", §"Output format"): very simple English, one clear sentence that
+/// uses the earlier BACKGROUND for context, do not invent, and answer in a fixed
+/// `SUMMARY/TODO` shape so the parser can be strict.
 public enum SummaryPrompt {
     /// System instruction. Kept extractive + "do not invent" to limit hallucination (B8):
     /// the user can't verify the summary against audio they don't follow.
     public static let system = """
     You help a non-native English speaker follow a live call. \
-    Read the transcript part and say, in very simple English (short words, short lines), \
-    what the other person wants. Lead with the main ask. Do NOT invent anything that is \
-    not in the text. If nothing important, say so.
+    You get BACKGROUND (what was said earlier) and the NEW part of the transcript. \
+    Use the background only to understand the new part. \
+    In very simple English (short, common words), write ONE clear sentence that says what is \
+    happening now. Do NOT invent anything that is not in the text.
 
-    Answer ONLY in this exact format:
-    MAIN: <one short line: the single most important ask/point>
-    - <short point in simple words>
-    - <short point in simple words>
-    WANT: <what they want you to do, or "-" if none>
+    For TODO: a task exists ONLY when the other person makes a direct request to you — shown by \
+    words like "can you", "could you", "please", "would you", "send me", "let me know", or \
+    "I need you to". If you do NOT see such a direct request to you, you MUST write exactly "-". \
+    When there is one, write it as a short command to you, starting with a verb, using ONLY words \
+    from the transcript. Never guess a task. Never reuse a task from another call.
+
+    Answer ONLY in this exact format, nothing else:
+    SUMMARY: <one short, clear sentence>
+    TODO: <a short command starting with a verb, or "-" if the text asks nothing of you>
     """
 
-    /// The per-block user message wrapping one ~100-word transcript chunk.
-    public static func user(_ chunk: String) -> String {
+    /// The per-block user message. `background` is the earlier transcript tail (context only);
+    /// `chunk` is the new ~100-word block to summarize.
+    public static func user(_ chunk: String, background: String = "") -> String {
         let trimmed = chunk.trimmingCharacters(in: .whitespacesAndNewlines)
-        return "Transcript part:\n\"\(trimmed)\"\n\nNow write the card."
+        let bg = background.trimmingCharacters(in: .whitespacesAndNewlines)
+        if bg.isEmpty {
+            return "New part of transcript:\n\"\(trimmed)\"\n\nNow write the card."
+        }
+        return """
+        Background (earlier, for context only):
+        "\(bg)"
+
+        New part of transcript:
+        "\(trimmed)"
+
+        Now write the card.
+        """
     }
 }
