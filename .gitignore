@@ -1,5 +1,5 @@
 # Python spike
-spike/.venv/
+.venv/
 __pycache__/
 *.pyc
 
