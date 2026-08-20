@@ -8,7 +8,7 @@ struct LocalCaptionApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(env)
-                .frame(minWidth: 640, minHeight: 420)
+                .frame(minWidth: 360, minHeight: 240)
         }
         .defaultSize(width: CGFloat(env.config.window.width),
                      height: CGFloat(env.config.window.height))
