@@ -159,7 +159,7 @@ struct ActiveSessionView: View {
             if env.config.clipboard.autoUpdate {
                 Label("Auto-copy", systemImage: "doc.on.clipboard")
                     .font(.caption).foregroundStyle(.secondary)
-                    .help("Each final sentence copies the last \(env.config.clipboard.recentSentences) to the clipboard")
+                    .help("At each speech endpoint, immediately copies the last \(env.config.clipboard.recentSentences), including the temporary caption")
             }
             Button { controller.copyLastN() } label: {
                 Label(controller.justCopied ? "Copied" : "Copy last \(env.config.clipboard.recentSentences)",

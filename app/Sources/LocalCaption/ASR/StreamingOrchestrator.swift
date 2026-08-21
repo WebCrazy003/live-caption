@@ -21,6 +21,10 @@ final class StreamingOrchestrator: ObservableObject {
     /// Emitted for each finalized segment: (text, tStartMs, tEndMs), session-relative.
     var onFinal: ((String, Int, Int) -> Void)?
 
+    /// Emitted as soon as VAD detects the end of an utterance, before the slower final
+    /// model runs. The text is the latest interim caption currently visible in the UI.
+    var onSpeechEnded: ((String) -> Void)?
+
     private var engine: WhisperEngine?
     private(set) var interimName = ""
     private(set) var finalName = ""
@@ -201,6 +205,7 @@ final class StreamingOrchestrator: ObservableObject {
                         || Double(self.utter.count) / self.sr >= self.maxUtterS {
                         let start = self.uttStartSample / self.samplesPerMs
                         let end = self.totalSamples / self.samplesPerMs
+                        self.onSpeechEnded?(self.hypothesis)
                         self.workCont?.yield(.finalize(self.utter, start, end))
                         self.resetUtteranceState()
                     }

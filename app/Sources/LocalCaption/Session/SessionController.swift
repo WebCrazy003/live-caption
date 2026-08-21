@@ -57,6 +57,10 @@ final class SessionController: ObservableObject {
         orchestrator.onFinal = { [weak self] text, start, end in
             self?.ingestFinal(text, start, end)
         }
+        orchestrator.onSpeechEnded = { [weak self] interimText in
+            guard let self, self.env.config.clipboard.autoUpdate else { return }
+            self.copyLastN(includingInterim: interimText)
+        }
     }
 
     // MARK: Lifecycle
@@ -135,7 +139,14 @@ final class SessionController: ObservableObject {
 
     /// Copy the last N completed sentences to the clipboard (N from Settings).
     func copyLastN() {
-        let text = Sentences.lastN(committedText, n: env.config.clipboard.recentSentences)
+        copyLastN(includingInterim: "")
+    }
+
+    /// At an endpoint, copy the latest interim immediately instead of waiting for the final
+    /// model. The subsequent final still refreshes the clipboard through `ingestFinal`.
+    private func copyLastN(includingInterim interimText: String) {
+        let text = Sentences.lastN(committedText, appending: interimText,
+                                   n: env.config.clipboard.recentSentences)
         guard !text.isEmpty else { return }
         let pb = NSPasteboard.general
         pb.clearContents()

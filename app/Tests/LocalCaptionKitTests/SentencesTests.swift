@@ -22,4 +22,18 @@ final class SentencesTests: XCTestCase {
     func testNoPunctuation() {
         XCTAssertEqual(Sentences.lastN("just one line", n: 5), "just one line")
     }
+
+    func testLastNIncludesProvisionalCaption() {
+        XCTAssertEqual(
+            Sentences.lastN("One. Two.", appending: "temporary words", n: 2),
+            "Two. temporary words"
+        )
+    }
+
+    func testLastNHandlesOnlyProvisionalCaption() {
+        XCTAssertEqual(
+            Sentences.lastN("", appending: "  available immediately  ", n: 10),
+            "available immediately"
+        )
+    }
 }

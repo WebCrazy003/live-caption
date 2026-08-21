@@ -24,4 +24,17 @@ public enum Sentences {
         guard n > 0 else { return "" }
         return split(text).suffix(n).joined(separator: " ")
     }
+
+    /// Append a provisional caption to committed text before selecting the last `n`
+    /// sentences. This lets clipboard callers expose an utterance at its endpoint without
+    /// waiting for the final transcription pass.
+    public static func lastN(_ text: String, appending provisional: String, n: Int) -> String {
+        let committed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let temporary = provisional.trimmingCharacters(in: .whitespacesAndNewlines)
+        let combined: String
+        if committed.isEmpty { combined = temporary }
+        else if temporary.isEmpty { combined = committed }
+        else { combined = committed + " " + temporary }
+        return lastN(combined, n: n)
+    }
 }
