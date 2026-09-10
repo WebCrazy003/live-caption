@@ -46,4 +46,18 @@ final class JournalTests: XCTestCase {
         let pending = Journal.pending(in: dir)
         XCTAssertEqual(pending.first?.segments.map(\.text), ["ok"])
     }
+
+    func testBackgroundWriterAcknowledgesRecoverableSegments() async throws {
+        let id = UUID()
+        let writer = try JournalWriter(sessionId: id, directory: dir)
+        try await writer.append(seg("first", 1000))
+        try await writer.append(seg("second", 2000))
+        XCTAssertEqual(Journal.pending(in: dir).first?.segments.map(\.text), ["first", "second"])
+        await writer.deleteFile()
+        XCTAssertTrue(Journal.pending(in: dir).isEmpty)
+        do {
+            try await writer.append(seg("after close", 3000))
+            XCTFail("A closed journal must not acknowledge a write")
+        } catch { /* failure must reach the caller */ }
+    }
 }

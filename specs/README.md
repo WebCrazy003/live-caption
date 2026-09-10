@@ -36,6 +36,12 @@ Legend: ✅ done · 🟢 mostly · 🟡 partial · 🔴 barely · ⬜ not starte
 **minimal app** (`../minimal/`) vertical slice, and the **full app** (`../app/`, Phases 1–5).
 Remaining work: **[SEQUENCE.md](SEQUENCE.md)**; shipped-state detail: **[STATUS.md](STATUS.md)**.
 
+## Bug specifications
+
+| ID | Bug | Status |
+|----|-----|--------|
+| BUG-01 | [Live captions pause, then appear in a burst](BUG-01-caption-stalls.md) | Implemented — regression tests pass; extended on-device acceptance pending |
+
 ---
 
 ## Cross-cutting blockers (resolve these first)

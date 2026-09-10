@@ -80,6 +80,8 @@ struct ActiveSessionView: View {
             pill(color: .red, text: "Recording", filled: true)
         case .paused:
             pill(color: .orange, text: "Paused", filled: false)
+        case .pausing:
+            pill(color: .orange, text: "Finishing speech…", filled: false)
         case .saved:
             pill(color: .green, text: "Saved", filled: false)
         case .saving:
@@ -117,7 +119,9 @@ struct ActiveSessionView: View {
                     .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: 120)
-            Button("Retry") { controller.retryPrepare() }
+            if !controller.hasUnsavedSession && (controller.phase == .failed || controller.phase == .ready) {
+                Button("Retry") { controller.retryPrepare() }
+            }
         }
         if let saveErr = controller.saveError {
             Label(saveErr, systemImage: "exclamationmark.triangle").foregroundStyle(.red).font(.callout)
@@ -136,6 +140,13 @@ struct ActiveSessionView: View {
     private var transportBar: some View {
         HStack(spacing: 12) {
             switch controller.phase {
+            case .failed where controller.hasUnsavedSession:
+                Button { Task { await controller.resume() } } label: {
+                    Label("Retry capture", systemImage: "play.fill")
+                }
+                Button { Task { await controller.stop() } } label: {
+                    Label("Retry save", systemImage: "square.and.arrow.down")
+                }
             case .ready, .saved, .failed:
                 Button { Task { await controller.start() } } label: {
                     Label("Start", systemImage: "record.circle")
@@ -150,7 +161,7 @@ struct ActiveSessionView: View {
                 Button { Task { await controller.resume() } } label: { Label("Resume", systemImage: "play.fill") }
                     .buttonStyle(.borderedProminent)
                 Button(role: .destructive) { Task { await controller.stop() } } label: { Label("Stop", systemImage: "stop.fill") }
-            case .preparing, .saving:
+            case .preparing, .pausing, .saving:
                 EmptyView()
             }
 

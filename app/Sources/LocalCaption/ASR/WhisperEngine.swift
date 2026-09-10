@@ -22,9 +22,13 @@ final class WhisperEngine {
     private let repo = "argmaxinc/whisperkit-coreml"
     private let sr = 16000.0
 
-    private let decodeOptions = DecodingOptions(
+    private let finalOptions = DecodingOptions(
         task: .transcribe, language: "en",
-        skipSpecialTokens: true, withoutTimestamps: true)
+        skipSpecialTokens: true, withoutTimestamps: true, windowClipTime: 0)
+    private let interimOptions = DecodingOptions(task: .transcribe, language: "en",
+        temperatureFallbackCount: 0, sampleLength: 128,
+        skipSpecialTokens: true, withoutTimestamps: true, wordTimestamps: true,
+        windowClipTime: 0)
 
     init(interimModel: String, finalModel: String) {
         self.interimName = interimModel
@@ -74,12 +78,26 @@ final class WhisperEngine {
 
         onStatus("Loading \(interimName) + \(finalName)…")
         interim = try await loadModel(folder: interimFolder)
-        // Reuse the same instance if both models are the same variant.
-        final = finalVariant == interimVariant ? interim : (try await loadModel(folder: finalFolder))
+        // The two scheduling lanes must never share mutable decoder/cache state,
+        // including when the same model is selected for both roles.
+        final = try await loadModel(folder: finalFolder)
 
         guard interim?.tokenizer != nil, final?.tokenizer != nil else {
             throw NSError(domain: "WhisperEngine", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Tokenizer failed to load"])
+        }
+        // Loading weights does not warm CoreML's first prediction. Do this before
+        // capture so first-use compilation cannot consume the live decode budget.
+        onStatus("Warming speech models…")
+        let silence = [Float](repeating: 0, count: 32000)
+        var warmFinal = finalOptions
+        warmFinal.temperatureFallbackCount = 0
+        for (model, options) in [(interim, interimOptions), (final, warmFinal)] {
+            let outcome = await run(model, silence, options: options, budget: nil)
+            if case .failure(let message) = outcome {
+                throw NSError(domain: "WhisperEngine", code: 2,
+                              userInfo: [NSLocalizedDescriptionKey: message])
+            }
         }
     }
 
@@ -104,28 +122,58 @@ final class WhisperEngine {
         return wk
     }
 
-    func transcribeInterim(_ audio: [Float]) async -> String { await run(interim, audio) }
-    func transcribeFinal(_ audio: [Float]) async -> String { await run(final, audio) }
+    func transcribeInterim(_ audio: [Float]) async -> SpeechOutcome {
+        await run(interim, audio, options: interimOptions, budget: 2)
+    }
 
-    /// Decode + SPEC §8.3 per-segment metadata filtering + text blocklist backstop.
-    private func run(_ wk: WhisperKit?, _ audio: [Float]) async -> String {
-        guard let wk, Double(audio.count) / sr > 0.2 else { return "" }
+    func transcribeFinal(_ audio: [Float]) async -> SpeechOutcome {
+        await run(final, audio, options: finalOptions, budget: nil)
+    }
+
+    /// Final accuracy options/filters are retained; windowClipTime is zero because
+    /// its default skips <=1 s utterances entirely. Interim decoding has a token
+    /// ceiling and cooperative deadline; an outstanding CoreML call is never overlapped
+    /// with a replacement decode on the same instance.
+    private func run(_ wk: WhisperKit?, _ audio: [Float], options: DecodingOptions,
+                     budget: Double?) async -> SpeechOutcome {
+        guard let wk else { return .failure("Speech model is not loaded") }
+        guard Double(audio.count) / sr > 0.2 else { return .empty }
+        let deadline = budget.map { ProcessInfo.processInfo.systemUptime + $0 }
         do {
-            let results = try await wk.transcribe(audioArray: audio, decodeOptions: decodeOptions)
+            try Task.checkCancellation()
+            let results: [TranscriptionResult] = try await wk.transcribe(audioArray: audio, decodeOptions: options) { _ in
+                if let deadline, ProcessInfo.processInfo.systemUptime >= deadline { return false }
+                return nil
+            }
+            try Task.checkCancellation()
+            if let deadline, ProcessInfo.processInfo.systemUptime >= deadline { return .timedOut }
             var kept: [String] = []
+            var words: [CaptionWord] = []
+            var rejected = false
+            var fallbacks = 0
             for result in results {
+                fallbacks += Int(result.timings.totalDecodingFallbacks)
                 for seg in result.segments {
                     if Filters.isLowQuality(avgLogprob: Double(seg.avgLogprob),
                                             noSpeechProb: Double(seg.noSpeechProb),
                                             compressionRatio: Double(seg.compressionRatio)) {
+                        rejected = true
                         continue
                     }
                     let cleaned = Filters.clean(seg.text)
-                    if !cleaned.isEmpty { kept.append(cleaned) }
+                    if !cleaned.isEmpty {
+                        kept.append(cleaned)
+                        words += (seg.words ?? []).map {
+                            CaptionWord(Filters.clean($0.word), start: Double($0.start), end: Double($0.end))
+                        }
+                    }
                 }
             }
             let text = Filters.clean(kept.joined(separator: " "))
-            return Filters.isHallucination(text) ? "" : text
-        } catch { return "" }
+            if text.isEmpty { return rejected ? .filtered : .empty }
+            if Filters.isHallucination(text) { return .filtered }
+            return .success(text: text, words: words, fallbacks: fallbacks)
+        } catch is CancellationError { return .cancelled }
+        catch { return .failure(error.localizedDescription) }
     }
 }

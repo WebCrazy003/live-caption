@@ -14,11 +14,13 @@ final class AppEnvironment: ObservableObject {
 
     /// True if the config on disk was corrupt and had to be repaired to defaults.
     let configWasRepaired: Bool
+    private let configURL: URL?
 
     /// Leftover journals from a crash/quit, offered for recovery on launch (SPEC.md §9.3).
     @Published var pendingRecoveries: [RecoveredSession] = []
 
     init() {
+        configURL = AppPaths.configFile
         _ = try? AppPaths.bootstrap()
 
         let loaded = Config.loadOrRepair(from: AppPaths.configFile)
@@ -37,8 +39,14 @@ final class AppEnvironment: ObservableObject {
         self.pendingRecoveries = Journal.pending()
     }
 
+    /// Explicit dependencies for previews/tests; does not read or persist user settings.
+    init(config: Config, store: Store) {
+        self.config = config; self.store = store
+        configWasRepaired = false; configURL = nil
+    }
+
     private func persist() {
-        try? config.write(to: AppPaths.configFile)
+        if let configURL { try? config.write(to: configURL) }
     }
 
     // MARK: Crash recovery

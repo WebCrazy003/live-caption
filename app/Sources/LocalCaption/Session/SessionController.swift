@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import AppKit
 import LocalCaptionKit
+import Combine
 
 /// Session state machine (SPEC.md §11): `IDLE → RECORDING ⇄ PAUSED → STOPPING → SAVED`.
 /// Owns the in-memory transcript, the crash-recovery journal, the elapsed clock, and the
@@ -9,7 +10,7 @@ import LocalCaptionKit
 @MainActor
 final class SessionController: ObservableObject {
     enum Phase: Equatable {
-        case preparing, ready, recording, paused, saving, saved, failed
+        case preparing, ready, recording, pausing, paused, saving, saved, failed
     }
 
     @Published var phase: Phase = .preparing
@@ -28,12 +29,16 @@ final class SessionController: ObservableObject {
 
     /// True once any final has been committed — gates the "Copy last N" button.
     var hasTranscript: Bool { !transcript.isEmpty }
+    var hasUnsavedSession: Bool { journal != nil || (!transcript.isEmpty && phase != .saved) }
 
     let orchestrator = StreamingOrchestrator()
 
     private let env: AppEnvironment
     private var transcript = Transcript()
-    private var journal: Journal?
+    private var journal: JournalWriter?
+    private var orchestratorObservation: AnyCancellable?
+    private var transitioning = false
+    private var capturePauseRequested = false
     private var sessionId = UUID()
     private var startDate = Date()
     private var clockTask: Task<Void, Never>?
@@ -55,11 +60,25 @@ final class SessionController: ObservableObject {
     init(env: AppEnvironment) {
         self.env = env
         orchestrator.onFinal = { [weak self] text, start, end in
-            self?.ingestFinal(text, start, end)
+            await self?.ingestFinal(text, start, end)
         }
         orchestrator.onSpeechEnded = { [weak self] interimText in
             guard let self, self.env.config.clipboard.autoUpdate else { return }
             self.copyLastN(includingInterim: interimText)
+        }
+        orchestrator.onFinalized = { [weak self] pendingText in
+            guard let self, self.env.config.clipboard.autoUpdate else { return }
+            self.copyLastN(includingInterim: pendingText)
+        }
+        // Nested ObservableObject changes must invalidate captions and status
+        // immediately, independently of the elapsed-time clock.
+        orchestratorObservation = orchestrator.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
+        orchestrator.onCaptureMustPause = { [weak self] in
+            guard let self else { return }
+            self.capturePauseRequested = true
+            if !self.transitioning { self.finishTransition() }
         }
     }
 
@@ -73,13 +92,18 @@ final class SessionController: ObservableObject {
     }
 
     func retryPrepare() {
+        guard !transitioning, !hasUnsavedSession, phase != .recording, phase != .paused, phase != .pausing,
+              phase != .saving else { return }
         orchestrator.errorText = nil
         if orchestrator.modelReady { phase = .ready }
         else { Task { await prepare() } }
     }
 
     func start() async {
-        guard orchestrator.modelReady, phase == .ready || phase == .saved || phase == .failed else { return }
+        guard !transitioning, !hasUnsavedSession, orchestrator.modelReady,
+              phase == .ready || phase == .saved || phase == .failed else { return }
+        transitioning = true
+        defer { finishTransition() }
         sessionId = UUID()
         startDate = Date()
         orchestrator.applyTuning(
@@ -91,46 +115,76 @@ final class SessionController: ObservableObject {
         transcript = Transcript(); paragraphs = []; current = ""
         savedTxtURL = nil; saveError = nil
         resetSummaryState()
-        journal = try? Journal(sessionId: sessionId)
-        do { try await orchestrator.startCapture() } catch { phase = .failed; return }
+        do { journal = try JournalWriter(sessionId: sessionId) }
+        catch { saveError = "Could not create recovery journal: \(error.localizedDescription)"; phase = .failed; return }
+        do { try await orchestrator.startCapture() }
+        catch {
+            // No processing loop starts on capture failure. Remove its empty
+            // journal so permission retry can start a new session safely.
+            await journal?.deleteFile(); journal = nil
+            phase = .failed; return
+        }
         phase = .recording
         startClock()
     }
 
     func pause() async {
-        guard phase == .recording else { return }
+        guard !transitioning, phase == .recording else { return }
+        transitioning = true
+        defer { finishTransition() }
+        phase = .pausing
         stopClock()
-        if let f = await orchestrator.pauseAndFinalize() { ingestFinal(f.0, f.1, f.2) }
+        await orchestrator.pauseAndFinalize()
+        elapsed = TimeFormat.clock(orchestrator.recordedMs / 1000)
         flushSummary()   // summarize the tail of the utterance before we freeze
         phase = .paused
     }
 
     func resume() async {
-        guard phase == .paused else { return }
+        guard !transitioning, phase == .paused || (phase == .failed && hasUnsavedSession) else { return }
+        transitioning = true
+        defer { finishTransition() }
         do { try await orchestrator.resumeCapture() } catch { phase = .failed; return }
         phase = .recording
         startClock()
     }
 
     func stop() async {
-        guard phase == .recording || phase == .paused else { return }
+        guard !transitioning, phase == .recording || phase == .paused ||
+              (phase == .failed && hasUnsavedSession) else { return }
+        transitioning = true
+        defer { finishTransition() }
         phase = .saving
         stopClock()
-        if let f = await orchestrator.stopAndFinalize() { ingestFinal(f.0, f.1, f.2) }
+        await orchestrator.stopAndFinalize()
         flushSummary()   // final card for the whole call; does not block the save below
-        phase = save() ? .saved : .failed
+        phase = await save() ? .saved : .failed
+    }
+
+    private func finishTransition() {
+        transitioning = false
+        guard capturePauseRequested else { return }
+        capturePauseRequested = false
+        if phase == .recording { Task { @MainActor [weak self] in await self?.pause() } }
     }
 
     // MARK: Transcript ingestion
 
-    private func ingestFinal(_ text: String, _ startMs: Int, _ endMs: Int) {
+    private func ingestFinal(_ text: String, _ startMs: Int, _ endMs: Int) async {
         let seg = TranscriptSegment(text: text, tStartMs: startMs, tEndMs: endMs,
                                     createdAt: TimeFormat.iso(Date()))
+        do {
+            guard let journal else { throw CocoaError(.fileWriteUnknown) }
+            try await journal.append(seg)
+        }
+        catch {
+            // Retain the decoded segment in memory for Stop/save; never pretend
+            // that a failed disk write is durable or silently swallow the failure.
+            saveError = "Recovery journal write failed: \(error.localizedDescription). Stop to save the transcript."
+        }
         transcript.append(seg)
-        try? journal?.append(seg)          // crash-safety: on disk before anything else
         addToParagraphs(text)
         accumulateForSummary(text)         // SPEC-10 word-count trigger
-        if env.config.clipboard.autoUpdate { copyLastN() }   // write-only, opt-in
     }
 
     // MARK: Clipboard (write-only; never reads — SPEC.md §9.4)
@@ -143,7 +197,7 @@ final class SessionController: ObservableObject {
     }
 
     /// At an endpoint, copy the latest interim immediately instead of waiting for the final
-    /// model. The subsequent final still refreshes the clipboard through `ingestFinal`.
+    /// model. Final completion refreshes it after the matching provisional is retired.
     private func copyLastN(includingInterim interimText: String) {
         let text = Sentences.lastN(committedText, appending: interimText,
                                    n: env.config.clipboard.recentSentences)
@@ -248,7 +302,7 @@ final class SessionController: ObservableObject {
 
     /// Write `.txt` + `.json` and the DB row; delete the journal. Returns false on failure
     /// (journal is kept so the session stays recoverable).
-    private func save() -> Bool {
+    private func save() async -> Bool {
         if !current.isEmpty { paragraphs.append(current); current = "" }
         let end = Date()
         let duration = orchestrator.recordedMs / 1000
@@ -266,8 +320,9 @@ final class SessionController: ObservableObject {
                 durationSeconds: duration,
                 transcriptFile: result.txtURL.path)
             _ = try? env.store.insert(rec)
-            journal?.deleteFile(); journal = nil
+            await journal?.deleteFile(); journal = nil
             savedTxtURL = result.txtURL
+            saveError = nil
             NotificationCenter.default.post(name: .sessionsChanged, object: nil)
             return true
         } catch {

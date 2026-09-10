@@ -3,6 +3,7 @@ import Foundation
 /// LocalAgreement-2 interim stabilization (SPEC.md §8.2, glossary): commit only the tokens
 /// agreed by the two most recent hypotheses, keeping the rest provisional, so the committed
 /// prefix of the live (dimmed) line never flickers backward. Reset per utterance.
+/// Requires a fixed audio origin. Moving windows use `RollingCaption` instead.
 public struct LocalAgreement {
     private var previous: [String] = []
     public private(set) var committed: [String] = []

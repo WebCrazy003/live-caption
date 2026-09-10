@@ -29,7 +29,7 @@ public final class Journal {
 
     /// Append one segment as a JSON line and flush to disk.
     public func append(_ segment: TranscriptSegment) throws {
-        guard let handle else { return }
+        guard let handle else { throw CocoaError(.fileWriteUnknown) }
         var data = try JSONEncoder().encode(segment)
         data.append(0x0A) // newline
         try handle.write(contentsOf: data)

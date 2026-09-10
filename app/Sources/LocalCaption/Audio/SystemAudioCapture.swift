@@ -3,22 +3,11 @@ import AVFoundation
 import CoreMedia
 import ScreenCaptureKit
 
-/// Thread-safe FIFO of audio samples shared between the capture callback and the loop.
-final class SampleBuffer: @unchecked Sendable {
-    private let lock = NSLock()
-    private var data: [Float] = []
-    func append(_ s: [Float]) { lock.lock(); data.append(contentsOf: s); lock.unlock() }
-    func drain() -> [Float] {
-        lock.lock(); defer { lock.unlock() }
-        let d = data; data.removeAll(keepingCapacity: true); return d
-    }
-}
-
 /// Captures system (speaker) audio via ScreenCaptureKit and delivers it as
 /// 16 kHz mono Float32 chunks. Requires the Screen Recording permission (decision B3).
 ///
-/// Ported unchanged from `minimal/` — SPEC-02's remaining work (bounded ring buffer,
-/// device-disconnect auto-recovery) is Phase 4.
+/// The orchestrator supplies a bounded sample handoff. Stream failures are surfaced
+/// to the session controller, which pauses and finalizes retained audio.
 @available(macOS 13.0, *)
 final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     private var stream: SCStream?
@@ -29,6 +18,8 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unc
                                              sampleRate: 16000, channels: 1, interleaved: false)!
     private let audioQueue = DispatchQueue(label: "systemaudio.audio")
     private let screenQueue = DispatchQueue(label: "systemaudio.screen")
+    // Accessed only on audioQueue. The fence in stop defines the capture cutoff.
+    private var acceptingAudio = true
 
     init(onSamples: @escaping ([Float]) -> Void, onError: @escaping (Error) -> Void) {
         self.onSamples = onSamples
@@ -61,6 +52,14 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unc
     }
 
     func stop() async {
+        // Process callbacks already queued, then stop accepting audio even if the
+        // OS takes a long time to stop the stream. This bounds overload shutdown.
+        await withCheckedContinuation { continuation in
+            audioQueue.async {
+                self.acceptingAudio = false
+                continuation.resume()
+            }
+        }
         try? await stream?.stopCapture()
         stream = nil
     }
@@ -70,7 +69,7 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unc
 
     // MARK: SCStreamOutput
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .audio, sampleBuffer.isValid, sampleBuffer.numSamples > 0 else { return }
+        guard type == .audio, acceptingAudio, sampleBuffer.isValid, sampleBuffer.numSamples > 0 else { return }
         if let floats = convertToMono16k(sampleBuffer), !floats.isEmpty { onSamples(floats) }
     }
 

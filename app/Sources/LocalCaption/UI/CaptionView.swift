@@ -1,10 +1,12 @@
 import SwiftUI
+import OSLog
 
 /// Incremental live-caption renderer (SPEC.md §9.2): completed paragraphs, then the
 /// building paragraph with a dimmed provisional tail, with auto-scroll to bottom.
 /// Extracted from the minimal app's `ContentView`. Font size is driven by config for
 /// live-apply. "Jump to latest" on manual scroll-up is Phase 2 (SPEC-05).
 struct CaptionView: View {
+    private static let logger = Logger(subsystem: "com.livecaption.app", category: "caption-latency")
     let paragraphs: [String]
     let current: String
     let hypothesis: String
@@ -38,7 +40,10 @@ struct CaptionView: View {
             }
             .onChange(of: paragraphs.count) { scrollToBottom(proxy) }
             .onChange(of: current) { scrollToBottom(proxy) }
-            .onChange(of: hypothesis) { scrollToBottom(proxy) }
+            .onChange(of: hypothesis) {
+                Self.logger.info("caption_observed")
+                scrollToBottom(proxy)
+            }
         }
     }
 
