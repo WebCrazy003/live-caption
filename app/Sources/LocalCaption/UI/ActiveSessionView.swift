@@ -7,6 +7,7 @@ import LocalCaptionKit
 struct ActiveSessionView: View {
     @EnvironmentObject var env: AppEnvironment
     @StateObject private var controller: SessionController
+    @State private var showingIssues = false
 
     init(env: AppEnvironment) {
         _controller = StateObject(wrappedValue: SessionController(env: env))
@@ -30,6 +31,20 @@ struct ActiveSessionView: View {
     private var header: some View {
         HStack(spacing: 10) {
             statusPill
+            if controller.orchestrator.errorText != nil || controller.saveError != nil {
+                Button { showingIssues.toggle() } label: {
+                    Label("Session issues", systemImage: "info.circle")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .popover(isPresented: $showingIssues) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Session issues").font(.headline)
+                        if let issue = controller.orchestrator.errorText { Text(issue) }
+                        if let issue = controller.saveError { Text(issue) }
+                    }
+                    .textSelection(.enabled).padding().frame(width: 360)
+                }
+            }
             Spacer()
             if isLive {
                 Text(controller.elapsed).font(.headline).monospacedDigit()
@@ -113,7 +128,7 @@ struct ActiveSessionView: View {
         if !controller.orchestrator.detail.isEmpty {
             Text(controller.orchestrator.detail).font(.caption).foregroundStyle(.secondary).monospacedDigit()
         }
-        if let err = controller.orchestrator.errorText {
+        if !controller.hasUnsavedSession, let err = controller.orchestrator.errorText {
             ScrollView {
                 Text(err).font(.callout).foregroundStyle(.red)
                     .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
@@ -123,7 +138,7 @@ struct ActiveSessionView: View {
                 Button("Retry") { controller.retryPrepare() }
             }
         }
-        if let saveErr = controller.saveError {
+        if !controller.hasUnsavedSession, let saveErr = controller.saveError {
             Label(saveErr, systemImage: "exclamationmark.triangle").foregroundStyle(.red).font(.callout)
         }
         if controller.phase == .saved, let url = controller.savedTxtURL {
@@ -167,11 +182,9 @@ struct ActiveSessionView: View {
 
             Spacer()
 
-            if env.config.clipboard.autoUpdate {
-                Label("Auto-copy", systemImage: "doc.on.clipboard")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .help("At each speech endpoint, immediately copies the last \(env.config.clipboard.recentSentences), including the temporary caption")
-            }
+            Toggle("Auto-copy", isOn: $env.config.clipboard.autoUpdate)
+                .toggleStyle(.switch).controlSize(.small)
+                .help("Automatically copy recent captions at speech endpoints and final updates")
             Button { controller.copyLastN() } label: {
                 Label(controller.justCopied ? "Copied" : "Copy last \(env.config.clipboard.recentSentences)",
                       systemImage: controller.justCopied ? "checkmark" : "doc.on.doc")
