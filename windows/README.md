@@ -9,26 +9,12 @@ config schema and the [conformance vectors](../testdata) (§6.1).
 
 ## Status
 
-Following the Mac-first build order in §16.1.
+**See [`STATUS.md`](STATUS.md)** for current progress, what is verified versus merely
+compiled, known gaps and the remaining work.
 
-| Stage | Work | Where | Status |
-|---|---|---|---|
-| **A1** | Core logic port + shared vectors + test suite | Mac | ✅ **done** — 33 tests green |
-| A2 | `LocalCaption.Bench` harness | Mac | ⬜ not started |
-| A3 | ASR engine wrapper, model/backend plumbing | Mac | ⬜ not started |
-| A4 | Audio + WPF layers, drafted against the spec | Mac | ⬜ not started |
-| B0 | Run the bench + loopback probe on the G15 | G15 | ⬜ blocked on A2/A3 |
-| B1–B6 | WASAPI, CUDA, lifecycle, UI, packaging | G15 | ⬜ not started |
-
-**What A1 settled.** `LocalCaption.Core` targets plain `net10.0` — no WPF, no Whisper.net,
-no WASAPI — so it builds and its whole suite runs on macOS, which is what let the most
-correctness-critical part of the port be verified before any Windows-specific code exists.
-Ported and passing: `SpeechSegmenter`, `RollingCaption`, `LocalAgreement`, `CaptionPipeline`,
-`CaptureBuffer`/`CaptureProcessor`, `Filters`, `Sentences`, `Transcript`/`TranscriptWriter`,
-`Journal`/`JournalWriter`, `Config`, `Store`/`SessionRecord`, `TimeFormat`, `AppPaths`.
-
-**What A1 could not prove.** Nothing here has seen real audio, a GPU or a window. Stage A
-is a correctness exercise; B0–B2 are where the port becomes an application.
+In short: stages **A1–A3 are done** (core logic, ASR wrapper, bench harness — 66 tests
+green on the Mac); **B0 on the G15 is next**. Nothing built so far has seen real audio, a
+GPU or a window.
 
 ## Build and test
 
@@ -56,20 +42,23 @@ cd ../app && swift test
 windows/
 ├── LocalCaption.slnx              ← .NET 10 defaults to the .slnx solution format
 ├── src/
-│   └── LocalCaption.Core/         ← pure logic. NO WPF, NO Whisper.net, NO WASAPI.
-│       ├── Audio/                 SpeechStream (segmenter, requests), CaptureBuffer
-│       ├── Captions/              RollingCaption, LocalAgreement, CaptionPipeline,
-│       │                          SerialDispatcher, Filters, Sentences
-│       ├── Data/                  Config, Store, Journal, Files, SessionFiles
-│       ├── Transcripts/           Transcript, TranscriptWriter, TimeFormat
-│       └── AppPaths.cs
+│   ├── LocalCaption.Core/         ← pure logic. NO WPF, NO Whisper.net, NO WASAPI.
+│   │   ├── Audio/                 SpeechStream (segmenter, requests), CaptureBuffer
+│   │   ├── Captions/              RollingCaption, LocalAgreement, CaptionPipeline,
+│   │   │                          SerialDispatcher, Filters, SegmentQuality, Sentences
+│   │   ├── Data/                  Config, Store, Journal, Files, SessionFiles
+│   │   ├── Transcripts/           Transcript, TranscriptWriter, TimeFormat
+│   │   └── AppPaths.cs
+│   ├── LocalCaption.Asr/          ← whisper.cpp via Whisper.net; models, backend, word timings
+│   └── LocalCaption.Bench/        ← the §5.4 B0 harness (not shipped)
 └── tests/
-    └── LocalCaption.Core.Tests/   ← reads ../../testdata, shared with macOS
+    ├── LocalCaption.Core.Tests/   ← reads ../../testdata, shared with macOS
+    └── LocalCaption.Asr.Tests/    ← runs without the native library
 ```
 
-`LocalCaption.Core` must not take a dependency on WPF or Whisper.net. That separation is
-what keeps this suite fast and a future convergence cheap — the projects in §15 that do not
-exist yet (`LocalCaption.Audio`, `.Asr`, `.App`, `.Bench`) are where those belong.
+`LocalCaption.Core` must not take a dependency on WPF, Whisper.net or WASAPI. That
+separation is what keeps this suite fast and a future convergence cheap. The §15 projects
+still to come — `LocalCaption.Audio` and `LocalCaption.App` — are where that code belongs.
 
 ## Things worth knowing before changing this code
 
@@ -89,13 +78,6 @@ exist yet (`LocalCaption.Audio`, `.Asr`, `.App`, `.Bench`) are where those belon
 
 ## Deliberate divergences from macOS
 
-These are spec decisions, not drift:
-
-| | macOS | Windows | Why |
-|---|---|---|---|
-| `asr.final_model` | `small.en` | `large-v3-turbo` | The RTX 3070 affords it (§0.5) |
-| `summary.enabled` | `true` | `false` | Live AI Summary out of scope (§1.3) |
-| `audio.*`, `asr.backend/threads` | — | added | Capture mode, device, backend (§9.2) |
-| Always-on-top / opacity | shipped | kept in schema, cut from UI | Pointless over remote desktop (§7.3) |
-
-The `config.json` schema stays interchangeable in both directions regardless.
+There are four, and they are spec decisions rather than drift —
+[`STATUS.md`](STATUS.md#deliberate-divergences-from-macos) lists them with the reason for
+each. `config.json` stays interchangeable in both directions regardless.
