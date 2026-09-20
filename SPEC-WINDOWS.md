@@ -1245,17 +1245,22 @@ change.
 
 ### 18.2 Owner decisions — all closed
 
-| Decision | Answer |
-|---|---|
-| Port strategy | Separate native Windows app |
-| Scope | Full parity **except** the live AI summary (§1.3, §16.7) |
-| Repository | `windows/` in this repo; `testdata/` at the root, shared |
-| Code signing | Skip (W4) |
-| Always-on-top + opacity | **Cut** (§7.3) |
-| Clipboard | Jump Desktop sync off during sessions; auto-copy safe, still off by default (§4.7.4, §12.1) |
-| Accuracy / WER | Match the macOS position — latency validated, WER not (§14.7, §20) |
-| Two-codebase divergence | Accepted |
-| Development model | **Mac-first** (§16.1); Windows details supplied on request (§16.3) |
+Every decision taken during planning, and the section that implements it. Nothing here is
+still open; §18.1 covers the items that remain *measurements*.
+
+| Decision | Answer | Where it lands |
+|---|---|---|
+| Target machine | ASUS ROG Zephyrus G15 — profiled, W1 closed | §0.5 |
+| **Remote operation** | **Interviews are taken over Jump Desktop — a first-class supported configuration** | §4.7 |
+| Port strategy | Separate native Windows app | §2 |
+| Scope | Full parity **except** the live AI summary | §1.3, §16.7 |
+| Repository | `windows/` in this repo; `testdata/` at the root, shared | §15, §6.1 |
+| Code signing | Skip — SmartScreen interstitial accepted | §11, W4 |
+| Always-on-top + opacity | **Cut** — unreadable over re-encoded video | §7.3 |
+| Clipboard | Jump Desktop sync off during sessions; auto-copy safe, still off by default | §4.7.4, §12.1 |
+| Accuracy / WER | Match the macOS position — latency validated, WER not | §14.7, §20 |
+| Two-codebase divergence | Accepted | §19 |
+| Development model | **Mac-first**; Windows details supplied on request | §16.1, §16.3 |
 
 ### W1 — closed (profiled 2026-09-20)
 
