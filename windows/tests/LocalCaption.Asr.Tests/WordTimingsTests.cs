@@ -155,4 +155,21 @@ public class WordTimingsTests
         Assert.Equal("done.", word.Text);
         Assert.Equal("done", word.Normalized);
     }
+    [Fact]
+    public void WhisperCppMarkupNeverBecomesAWord()
+    {
+        // Seen on screen with the GPU build: "for your country. [_BEG_] [_BEG_] [_BEG_] And
+        // so my fellow ... mirror[_TT_100]". whisper.cpp renders its internal tokens in
+        // square brackets, and asking for token timestamps — which the interim lane does —
+        // is what makes it emit them. WhisperKit never produced these, so the ported filter
+        // did not know the shape.
+        var words = WordTimings.FromTokens(Segment(
+            Token("[_BEG_]", 0, 0),
+            Token(" hello", 0, 40),
+            Token("<|0.50|>", 40, 50),
+            Token(" world", 50, 90),
+            Token("[_TT_100]", 90, 90)));
+
+        Assert.Equal(["hello", "world"], words.Select(w => w.Text));
+    }
 }

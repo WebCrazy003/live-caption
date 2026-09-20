@@ -68,28 +68,91 @@ public sealed class Journal : IDisposable
         var recovered = new List<RecoveredSession>();
         foreach (var file in Directory.GetFiles(directory, "*.jsonl").OrderBy(f => f, StringComparer.Ordinal))
         {
-            string[] lines;
-            try { lines = File.ReadAllLines(file); } catch (IOException) { continue; }
+            // A journal someone still has open is a session that is still running, not one
+            // that died. Offering it for recovery would invite the user to delete a live
+            // recording's only durable record — which is what a second copy of the app did,
+            // the first time one was launched while another was recording.
+            if (IsInUse(file)) continue;
 
-            var segments = new List<TranscriptSegment>();
-            foreach (var line in lines)
-            {
-                if (string.IsNullOrWhiteSpace(line)) continue;
-                // A crash can leave the final line half-written. Skip it and keep the rest —
-                // recovering all but the last segment beats recovering nothing.
-                try
-                {
-                    if (JsonSerializer.Deserialize<TranscriptSegment>(line) is { } segment)
-                        segments.Add(segment);
-                }
-                catch (JsonException) { }
-            }
+            IReadOnlyList<TranscriptSegment> segments;
+            try { segments = Read(file); } catch (IOException) { continue; }
 
             var name = System.IO.Path.GetFileNameWithoutExtension(file);
             var id = Guid.TryParse(name, out var parsed) ? parsed : Guid.NewGuid();
             recovered.Add(new RecoveredSession(id, file, segments));
         }
         return recovered;
+    }
+
+    /// <summary>
+    /// Whether another handle still holds this journal — i.e. its session is still running.
+    /// </summary>
+    /// <remarks>
+    /// Asking for exclusive access is the question: if it is refused, someone else has the
+    /// file. <see cref="Pending"/> deliberately reads with a permissive share set, so it
+    /// cannot tell a live journal from an orphaned one without this.
+    /// </remarks>
+    private static bool IsInUse(string file)
+    {
+        try
+        {
+            using var _ = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.None);
+            return false;
+        }
+        catch (IOException)
+        {
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Read a journal that another handle may still have open for writing.
+    /// </summary>
+    /// <remarks>
+    /// <b>Windows-only hazard.</b> <see cref="File.ReadAllLines(string)"/> opens with
+    /// <see cref="FileShare.Read"/>, which denies write sharing — so on Windows it throws
+    /// against the live <see cref="Journal"/>'s own append handle, and the scan skips the
+    /// file entirely and reports nothing to recover. Unix ignores share modes, so the macOS
+    /// build cannot see this. Ask for the permissive share set explicitly.
+    /// </remarks>
+    private static string[] ReadSharedLines(string file)
+    {
+        using var stream = new FileStream(file, FileMode.Open, FileAccess.Read,
+                                          FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream, Files.Utf8NoBom);
+        var lines = new List<string>();
+        while (reader.ReadLine() is { } line) lines.Add(line);
+        return [.. lines];
+    }
+
+    /// <summary>
+    /// Every segment in one journal, whether or not its session is still running.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="Pending"/> on purpose: "what is in this file" and "what
+    /// should be offered for recovery" are different questions, and only the second one
+    /// cares whether the session that owns it is still alive.
+    /// </remarks>
+    public static IReadOnlyList<TranscriptSegment> Read(string path)
+    {
+        var segments = new List<TranscriptSegment>();
+        foreach (var line in ReadSharedLines(path))
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            // A crash can leave the final line half-written. Skip it and keep the rest —
+            // recovering all but the last segment beats recovering nothing.
+            try
+            {
+                if (JsonSerializer.Deserialize<TranscriptSegment>(line) is { } segment)
+                    segments.Add(segment);
+            }
+            catch (JsonException) { }
+        }
+        return segments;
     }
 
     /// <summary>Remove a specific journal file, used when a recovery is discarded.</summary>

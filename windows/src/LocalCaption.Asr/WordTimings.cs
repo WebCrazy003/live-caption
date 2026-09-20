@@ -28,6 +28,22 @@ public static class WordTimings
     private const double CentisecondsToSeconds = 0.01;
 
     /// <summary>
+    /// Whether a token is whisper's own markup rather than speech.
+    /// </summary>
+    /// <remarks>
+    /// <b>Two shapes, and only one of them was obvious.</b> The model's special tokens print
+    /// as <c>&lt;|…|&gt;</c>, but whisper.cpp renders its <i>internal</i> ones in square
+    /// brackets — <c>[_BEG_]</c>, <c>[_TT_100]</c>, <c>[_SOT_]</c> — and the interim lane
+    /// asks for token timestamps, which is exactly what makes it emit them. They reached the
+    /// screen: "for your country. [_BEG_] [_BEG_] [_BEG_] And so my fellow … mirror[_TT_100]".
+    /// <para>WhisperKit on macOS never produced either shape, so the ported filter had no
+    /// reason to know about them.</para>
+    /// </remarks>
+    private static bool IsMarkup(string raw) =>
+        (raw.StartsWith("<|", StringComparison.Ordinal) && raw.EndsWith("|>", StringComparison.Ordinal)) ||
+        (raw.StartsWith("[_", StringComparison.Ordinal) && raw.EndsWith("]", StringComparison.Ordinal));
+
+    /// <summary>
     /// Group a segment's tokens into words, timed relative to the start of the decoded
     /// window. Returns an empty list when the segment carries no usable timings.
     /// </summary>
@@ -46,8 +62,7 @@ public static class WordTimings
             var raw = token.Text;
             if (string.IsNullOrEmpty(raw)) continue;
             // Special/timestamp tokens are markup, not speech.
-            if (raw.StartsWith("<|", StringComparison.Ordinal) && raw.EndsWith("|>", StringComparison.Ordinal))
-                continue;
+            if (IsMarkup(raw)) continue;
 
             var (tokenStart, tokenEnd) = TimesOf(token);
             var startsWord = raw[0] is ' ' or '\n' || text.Length == 0;

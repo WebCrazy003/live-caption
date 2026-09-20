@@ -126,6 +126,22 @@ public sealed class PersistenceTests : IDisposable
     }
 
     [Fact]
+    public void ALiveJournalIsNotOfferedForRecovery()
+    {
+        // A second copy of the app, launched while the first is recording, must not offer to
+        // "recover" the running session — accepting would delete the only durable record of a
+        // recording in progress. Found by launching a packaged build during a soak.
+        using var live = new Journal(Guid.NewGuid(), _dir);
+        live.Append(Seg("still recording", 0, 1000));
+
+        Assert.Empty(Journal.Pending(_dir));
+
+        // Once its owner lets go, it is an orphan like any other.
+        live.Dispose();
+        Assert.Single(Journal.Pending(_dir));
+    }
+
+    [Fact]
     public void CleanStopDeletesJournal()
     {
         using var journal = new Journal(Guid.NewGuid(), _dir);
@@ -151,10 +167,17 @@ public sealed class PersistenceTests : IDisposable
     [Fact]
     public async Task WriterAcknowledgesRecoverableSegmentsAndFailsAfterClose()
     {
-        using var writer = new JournalWriter(Guid.NewGuid(), _dir);
+        var id = Guid.NewGuid();
+        using var writer = new JournalWriter(id, _dir);
         await writer.AppendAsync(Seg("first", 0, 1000));
         await writer.AppendAsync(Seg("second", 1000, 2000));
-        Assert.Equal(["first", "second"], Journal.Pending(_dir)[0].Segments.Select(s => s.Text));
+
+        // Read directly rather than through Pending: the session is still running, so it is
+        // deliberately not offered for recovery. What is being asserted here is that the
+        // appends reached the disk and can be read back while the writer still holds the
+        // file — which on Windows needs the share set spelled out.
+        var path = Path.Combine(_dir, $"{id.ToString("D").ToUpperInvariant()}.jsonl");
+        Assert.Equal(["first", "second"], Journal.Read(path).Select(s => s.Text));
 
         writer.DeleteFile();
         Assert.Empty(Journal.Pending(_dir));

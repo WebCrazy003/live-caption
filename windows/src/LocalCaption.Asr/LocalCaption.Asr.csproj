@@ -7,6 +7,10 @@
   <ItemGroup>
     <PackageReference Include="Whisper.net" Version="1.9.1" />
     <PackageReference Include="Whisper.net.Runtime" Version="1.9.1" />
+    <!-- §5.2: CUDA is the primary backend on the RTX 3070 and the CPU runtime is the
+         fallback. Both are bundled rather than fetched on demand, so a machine that is
+         known to have the GPU has no first-run failure mode. Windows-only payload. -->
+    <PackageReference Include="Whisper.net.Runtime.Cuda.Windows" Version="1.9.1" />
   </ItemGroup>
 
   <PropertyGroup>

@@ -1,17 +1,40 @@
 using LocalCaption.Core.Audio;
 using LocalCaption.Core.Captions;
 using Whisper.net;
+using Whisper.net.LibraryLoader;
 
 namespace LocalCaption.Asr;
 
 /// <summary>What a loaded engine ended up using, for the log and the Settings readout.</summary>
+/// <param name="Backend">The backend that was <i>asked for</i> after probing.</param>
+/// <param name="Library">
+/// The native library whisper.cpp <i>actually</i> loaded. Not the same thing: Whisper.net
+/// walks its runtime order and falls back to the CPU library without raising anything when
+/// a GPU one cannot load — a missing CUDA dependency looks exactly like a slow machine.
+/// §5.2 requires the active backend to be visible rather than merely felt, and this is the
+/// field that makes it so.
+/// </param>
 public sealed record EngineInfo(
     string InterimModel, string FinalModel, AsrBackend Backend,
-    bool WordTimings, int Threads, string RuntimeInfo)
+    bool WordTimings, int Threads, string RuntimeInfo, string Library = "unknown")
 {
+    /// <summary>
+    /// True when CUDA was asked for and something else loaded — the §5.8 symptom that would
+    /// otherwise present only as captions quietly getting slower.
+    /// </summary>
+    /// <remarks>
+    /// CUDA only. Metal is not a separate runtime library in Whisper.net — the macOS build
+    /// reports it in the <c>Cpu</c> slot — so asking the same question there would raise a
+    /// false alarm on every Mac development run.
+    /// </remarks>
+    public bool FellBack =>
+        Backend is AsrBackend.Cuda &&
+        !Library.Equals(nameof(AsrBackend.Cuda), StringComparison.OrdinalIgnoreCase);
+
     public override string ToString() =>
-        $"{Backend.ToString().ToLowerInvariant()} · interim={InterimModel} final={FinalModel} · " +
-        $"threads={Threads} · word-timings={(WordTimings ? "dtw" : "none")}";
+        $"{Backend.ToString().ToLowerInvariant()}→{Library.ToLowerInvariant()} · interim={InterimModel} final={FinalModel} · " +
+        $"threads={Threads} · word-timings={(WordTimings ? "dtw" : "none")}" +
+        (FellBack ? "  ⚠ fell back to the CPU library" : "");
 }
 
 /// <summary>
@@ -107,9 +130,25 @@ public sealed class WhisperEngine : IAsyncDisposable
 
         Info = new EngineInfo(InterimName, FinalName, backend,
                               WordTimings: interimSpec.Heads != WhisperAlignmentHeadsPreset.None,
-                              Threads, WhisperFactory.GetRuntimeInfo() ?? "unknown");
+                              Threads, WhisperFactory.GetRuntimeInfo() ?? "unknown",
+                              Library: LoadedLibrary());
         onStatus?.Invoke($"Ready — {Info}");
         return Info;
+    }
+
+    /// <summary>
+    /// Which native library Whisper.net settled on, read after the first factory is built.
+    /// </summary>
+    /// <remarks>
+    /// Whisper.net resolves this once per process, on first load, by trying each library in
+    /// its runtime order and moving on when one will not load. Nothing is thrown and nothing
+    /// is logged, so without reading it back a CUDA build that silently ran on the CPU is
+    /// indistinguishable from a CUDA build that was simply slow (§5.2).
+    /// </remarks>
+    private static string LoadedLibrary()
+    {
+        try { return RuntimeOptions.LoadedLibrary?.ToString() ?? "cpu"; }
+        catch (Exception) { return "unknown"; }
     }
 
     /// <summary>Two specs, or one when both roles chose the same model.</summary>

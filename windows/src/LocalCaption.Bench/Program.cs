@@ -59,6 +59,9 @@ if (options.WavPath is null)
     Console.WriteLine("note: synthetic audio — timings are valid, the transcript text is not.");
 Console.WriteLine();
 
+// W2 (§5.7): whether DTW word timings hold still enough for RollingCaption's anchor.
+if (options.WordTimings) return await WordTimingCheck.RunAsync(audio, options);
+
 var results = new List<Row>();
 
 foreach (var backend in options.Backends)
@@ -90,10 +93,11 @@ async Task<Row> MeasureAsync(ModelSpec spec, AsrBackend backend, float[] samples
 {
     var loadWatch = Stopwatch.StartNew();
     await using var engine = new WhisperEngine(spec.Name, spec.Name, backend, opts.Threads);
+    EngineInfo info;
     try
     {
-        await engine.PrepareAsync(opts.ModelsDirectory, onStatus: opts.Verbose ? Console.Error.WriteLine : null,
-                                  onDownload: opts.Verbose ? Report : null);
+        info = await engine.PrepareAsync(opts.ModelsDirectory, onStatus: opts.Verbose ? Console.Error.WriteLine : null,
+                                         onDownload: opts.Verbose ? Report : null);
     }
     catch (Exception e)
     {
@@ -124,7 +128,7 @@ async Task<Row> MeasureAsync(ModelSpec spec, AsrBackend backend, float[] samples
 
     return new Row(backend, spec.Name, loadWatch.Elapsed.TotalMilliseconds,
                    Percentile(timings, 50), Percentile(timings, 90),
-                   samples.Length / 16000.0, words, text);
+                   samples.Length / 16000.0, words, text, Runtime: info.Library);
 }
 
 async Task MeasureContentionAsync(string interimName, string finalName, AsrBackend backend,
@@ -211,7 +215,8 @@ static string Verdict(List<Row> rows, double audioSeconds)
 }
 
 internal sealed record Row(AsrBackend Backend, string Model, double LoadMs, double P50, double P90,
-                           double AudioSeconds, int Words, string Text, string? Error = null)
+                           double AudioSeconds, int Words, string Text, string? Error = null,
+                           string Runtime = "?")
 {
     public static Row Failed(AsrBackend backend, string model, string error) =>
         new(backend, model, 0, 0, 0, 0, 0, "", error);
@@ -221,15 +226,20 @@ internal sealed record Row(AsrBackend Backend, string Model, double LoadMs, doub
         if (Error is not null) return $"{Backend.ToString().ToLowerInvariant(),-10} {Model,-18} FAILED — {Error}";
         var rtf = AudioSeconds > 0 ? P50 / 1000 / AudioSeconds : 0;
         var preview = Text.Length > 44 ? Text[..44] + "…" : Text;
+        // Requested→loaded, never just requested. Whisper.net falls back to the CPU library
+        // silently when a GPU one will not load, and a benchmark that labels those numbers
+        // "cuda" is worse than no benchmark at all.
+        var lane = $"{Backend.ToString().ToLowerInvariant()}→{Runtime.ToLowerInvariant()}";
         return string.Format(CultureInfo.InvariantCulture,
-            "{0,-10} {1,-18} {2,7:0}  {3,6:0} / {4,6:0}  {5,5:0.00}  {6,3}w  {7}",
-            Backend.ToString().ToLowerInvariant(), Model, LoadMs, P50, P90, rtf, Words, preview);
+            "{0,-14} {1,-18} {2,7:0}  {3,6:0} / {4,6:0}  {5,5:0.00}  {6,3}w  {7}",
+            lane, Model, LoadMs, P50, P90, rtf, Words, preview);
     }
 }
 
 internal sealed record BenchOptions(
     IReadOnlyList<string> Models, IReadOnlyList<AsrBackend> Backends, string ModelsDirectory,
-    string? WavPath, double SyntheticSeconds, int Runs, int Threads, bool Contention, bool Verbose)
+    string? WavPath, double SyntheticSeconds, int Runs, int Threads, bool Contention, bool Verbose,
+    bool WordTimings)
 {
     public static BenchOptions? Parse(string[] args)
     {
@@ -246,6 +256,8 @@ internal sealed record BenchOptions(
                   --runs <n>          Decodes per cell. Default 5.
                   --threads <n>       0 = physical cores. Default 0.
                   --no-contention     Skip the concurrent-lane measurement.
+                  --word-timings      W2 instead of the matrix: decode overlapping windows and
+                                      measure how far a word's timing moves between them.
                   --verbose           Show load and download progress.
 
                 Writes nothing. Capture the output into windows/BENCH-RESULTS.md.
@@ -276,6 +288,7 @@ internal sealed record BenchOptions(
             Runs: int.TryParse(Value("--runs"), out var r) ? r : 5,
             Threads: int.TryParse(Value("--threads"), out var t) ? t : 0,
             Contention: !args.Contains("--no-contention"),
-            Verbose: args.Contains("--verbose"));
+            Verbose: args.Contains("--verbose"),
+            WordTimings: args.Contains("--word-timings"));
     }
 }
