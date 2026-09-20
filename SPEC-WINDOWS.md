@@ -1,8 +1,12 @@
 # Local Caption for Windows — Port Plan & Technical Specification
 
-- **Version:** 1.4 (plan spec — nothing built yet)
-- **Status:** Draft for review · **W1 + W5 closed** · remote-over-Jump-Desktop confirmed as
-  a supported configuration (§4.7)
+- **Version:** 2.0 — **complete; ready to build**
+- **Status:** All owner decisions closed (§18). Every remaining item is a measurement with a
+  documented default (§18.1), so **implementation can start immediately** and does not wait
+  on the Windows machine.
+- **Development model:** **Mac-first** — see §16.1. The pure-logic layer is written and
+  tested on the Mac; Windows-only work happens on the G15 later, with the owner supplying
+  any machine details on request (§16.3).
 - **Target:** **ASUS ROG Zephyrus G15 (GA503QR)** — Ryzen 9 5900HS · RTX 3070 Laptop 8 GB ·
   32 GB RAM · Windows 11 Pro build 26200 · x64 (§0.5)
 - **Source of truth for behaviour:** [`SPEC.md`](SPEC.md) (macOS v2.0) + [`specs/STATUS.md`](specs/STATUS.md) (what actually shipped)
@@ -17,7 +21,7 @@
 >    two platforms' `config.json` files remain interchangeable (§9.2).
 >
 > Decisions I made are tagged **[DECISION]**. Decisions that still need the owner are
-> tagged **[NEEDS OWNER]** and collected in §18. **Do not start Phase 1 until W1 is closed.**
+> tagged **[NEEDS OWNER]** and collected in §18 — **all of which are now closed** (§18.2).
 
 ---
 
@@ -29,7 +33,9 @@
 - §3–§12 are the corrected, Windows-specific spec, layer by layer. Each section opens with
   the macOS mechanism it replaces, so it can be read next to `SPEC.md`.
 - §13–§17 are budgets, testing, structure, phases and risks.
-- §18 is the blocker list. **W1 gates everything.**
+- §18 is the blocker list — **all owner decisions are closed**; §18.1 gives a default for
+  every remaining measurement, so nothing blocks the start of work.
+- §20 records the limitations accepted up front, and §21 the definition of done.
 
 ---
 
@@ -59,7 +65,7 @@
    transcripts than the Mac (§5.3).
 3. **Turbo-only streaming is worth re-testing.** `SPEC.md` §22.2 left this open and the Mac
    answered "no, use a hybrid" on the hardware it had. This GPU may answer differently —
-   Phase 0 must check (§5.4).
+   stage B0 must check (§5.4).
 4. **.NET 10 LTS**, not .NET 8 — the runtime is already installed. Only the SDK needs
    adding on the dev machine (§2.1).
 5. **Capture architecture changed.** Four render endpoints, one of them a remote-desktop
@@ -166,7 +172,7 @@ These are acceptance criteria, verified with a network monitor (§17.13).
 | Option | Why not |
 |---|---|
 | **Electron / Tauri + web UI** | The hard parts here are audio capture, a sample-accurate clock, and two resident ML contexts — all of which end up in a native sidecar anyway. You'd pay the IPC and bundling cost for a UI that is a list, a text pane and a settings form. |
-| **Python + PySide6 + faster-whisper** | Fastest to a prototype and genuinely excellent on NVIDIA (CTranslate2). Rejected for the same reason v1 of the macOS plan was: packaging a 2 GB PyInstaller bundle with CUDA DLLs, and an interpreter that antivirus and SmartScreen both dislike. Keep it as the **Phase 0 benchmark harness** only (§5.4). |
+| **Python + PySide6 + faster-whisper** | Fastest to a prototype and genuinely excellent on NVIDIA (CTranslate2). Rejected for the same reason v1 of the macOS plan was: packaging a 2 GB PyInstaller bundle with CUDA DLLs, and an interpreter that antivirus and SmartScreen both dislike. Keep it as a second data point for the **A2/B0 benchmark** only (§5.4). |
 | **C++/Qt** | Maximum control, ~3× the implementation time, no reuse from the Swift app. |
 | **Avalonia (one UI for both platforms)** | The owner ruled out convergence. Also would mean re-testing the already-tuned macOS UI. |
 | **Windows built-in `SpeechRecognizer` / Azure Speech** | Either obsolete and inaccurate, or cloud — breaks the core privacy promise. |
@@ -381,10 +387,10 @@ the misconfiguration visible in seconds rather than after the interview.
 
 **3. Virtual-driver loopback is unvalidated (W9).** Jump Desktop's speaker is a software
 driver, not hardware. Loopback on it may fail to initialise, report an unexpected mix
-format, or stall its device position. **Phase 0 must include a 20-line loopback probe run
+format, or stall its device position. **B0 must include a 20-line loopback probe run
 against that endpoint while a Jump Desktop session is live**, checking: `Initialize`
 succeeds · reported mix format · packets arrive during silence · `u64DevicePosition`
-advances monotonically. This is cheap now and expensive in Phase 2.
+advances monotonically. This is cheap now and expensive in B1.
 
 **4. Clipboard — resolved by operating procedure.** **[DECISION, owner]** *Jump Desktop
 clipboard sync will be turned OFF while Local Caption is running.*
@@ -482,7 +488,7 @@ model download" rule, and the same download-progress UI.
 The Mac chose `small.en` only because turbo cost ~3.5 s there (`specs/STATUS.md`). With
 8 GB of VRAM there is no reason to quantize and no reason to settle for the smaller model:
 turbo + tiny.en together occupy well under 3 GB, leaving headroom for a meeting app also
-using the GPU. Confirm the latency in Phase 0 and fall back to `small.en` if it disappoints.
+using the GPU. Confirm the latency in B0 and fall back to `small.en` if it disappoints.
 
 Keep the **config-friendly names identical to macOS** (`tiny.en`, `small.en`,
 `large-v3-turbo`) so `config.json` stays portable; map name → filename in a table that is
@@ -493,13 +499,13 @@ weights does not warm the first prediction, and the same is true of whisper.cpp'
 GPU kernel compile. **Do not skip this**; it is the difference between a clean first
 caption and a 3-second stall.
 
-### 5.4 Phase 0: benchmark before you build ⭐
+### 5.4 B0: benchmark before you build ⭐
 
 The macOS architecture was not guessed — it came from `spike/RESULTS.md` measuring real
 decode times, which killed the original CPU plan outright. **Do the same on the ASUS
 before writing app code.**
 
-W1 means Phase 0 is no longer a survival question — CUDA on a 3070 will clear the budgets.
+W1 means B0 is no longer a survival question — CUDA on a 3070 will clear the budgets.
 It is now a **tuning and configuration** question, and it has to answer three things:
 
 1. **Is `large-v3-turbo` fast enough to be the default final model?** (§5.3 assumes yes.)
@@ -585,7 +591,7 @@ whisper.cpp options, in order of preference:
 2. **Token timestamps** (`token_timestamps = true`) grouped into words on leading-space
    token boundaries. Coarser, workable.
 
-**Validate this in Phase 0**, not in Phase 3.
+**Validate this in B0**, not in B2.
 
 ### 5.7.1 Fallback if word timings are unusable
 
@@ -610,7 +616,7 @@ total. On a 3070 where `tiny.en` runs ~40–100 ms, that is still ~150 ms agains
 budget.
 
 **Therefore:** if W2 fails, switch the interim track to fixed-origin windows +
-`LocalAgreement`, and accept slightly different flicker behaviour. Measure both in Phase 0
+`LocalAgreement`, and accept slightly different flicker behaviour. Measure both in B0
 and pick on evidence. This is the kind of trade-off the Mac could not afford and this
 machine can.
 
@@ -958,7 +964,7 @@ notice for users who screen-share.
 
 ## 13. Performance budgets
 
-**These remain estimates until Phase 0 measures the machine (§5.4)** — the macOS numbers
+**These remain estimates until B0 measures the machine (§5.4)** — the macOS numbers
 came from measurement and overturned the original plan, so treat the table below as a
 sizing guide, nothing more. What W1 *does* settle is that the GPU path has large headroom.
 
@@ -1023,8 +1029,19 @@ Fixed budgets that do not depend on the hardware:
 5. **Cross-platform parity** — run the same WAV fixture through both apps; the `.json`
    sidecars must agree on segment text and on timestamps within a stated tolerance.
 6. **Soak** — 3 h continuous, memory and handle counts flat, no dropped-sample runaway.
-7. **Real-audio WER pass** — noisy, multi-speaker recordings. This is still outstanding on
-   macOS (`specs/STATUS.md`); doing it once on Windows fixtures benefits both.
+6b. **End-to-end latency** — budgets in §13 are *decode* time; what the user experiences is
+   audio-in → pixels-on-screen, which also includes VAD endpointing, queue wait and render.
+   `CaptionMetric` (`queueMs`, `decodeMs`, `audioLagMs`) already carries everything needed
+   and ports over from macOS — assert its p50/p90 over the soak run rather than only
+   trusting the benchmark. Measure the **remote leg once, by hand**: play a click-then-speech
+   fixture on the G15 and time until the words appear in the Jump Desktop window. Record the
+   number in `BENCH-RESULTS.md`; it is a property of the link, not of the app, and it is not
+   an acceptance gate.
+7. **Accuracy** — **[DECISION, owner] match the macOS position exactly.** The shipped Mac
+   app validates latency, not word-error rate, on clean fixtures only; Windows does the
+   same and inherits the same documented limitation (§20). No WER gate, no real-audio
+   corpus, no accuracy acceptance criterion. Revisit for both platforms together if live
+   transcripts disappoint in use.
 8. **Manual** — side-by-side layout over a Teams/Zoom call,
    monitor unplug, headphone/Bluetooth switch mid-session, clipboard contention with a
    clipboard manager running.
@@ -1036,7 +1053,7 @@ Fixed budgets that do not depend on the hardware:
 ```text
 windows/
 ├── LocalCaption.sln
-├── BENCH-RESULTS.md                 ← Phase 0 output; the Windows spike/RESULTS.md
+├── BENCH-RESULTS.md                 ← B0 output; the Windows spike/RESULTS.md
 ├── src/
 │   ├── LocalCaption.Core/           ← pure logic, NO WPF, NO whisper.cpp (ports LocalCaptionKit)
 │   │   ├── Audio/{CaptureBuffer,CaptureProcessor,SpeechSegmenter}.cs
@@ -1047,7 +1064,7 @@ windows/
 │   ├── LocalCaption.Audio/          ← WASAPI loopback, resampler, device notifications
 │   ├── LocalCaption.Asr/            ← Whisper.net engine, backend probe, model download
 │   ├── LocalCaption.App/            ← WPF: views, view-models, SessionController, WindowInterop
-│   └── LocalCaption.Bench/          ← Phase 0 console benchmark (not shipped)
+│   └── LocalCaption.Bench/          ← A2/B0 console benchmark (not shipped)
 ├── tests/
 │   ├── LocalCaption.Core.Tests/     ← reads ../../testdata (shared with macOS)
 │   ├── LocalCaption.Audio.Tests/
@@ -1063,44 +1080,81 @@ the test suite fast and what keeps a future convergence cheap.
 
 ## 16. Build sequence
 
+### 16.1 [DECISION, owner] Mac-first
+
+Work starts on the Mac and moves to the G15 only when it must. Nothing in Stage A needs
+Windows, and Stage A is the largest and most correctness-critical part of the port.
+
 ```
-Phase 0  ▶  LocalCaption.Bench + loopback probe on the G15 ← GATE: answers W2, W7, W9; sets defaults
-Phase 1  ▶  Core logic port + shared test vectors          (no UI, no audio, no ML)
-Phase 2  ▶  WASAPI loopback + resampler                    ‖ parallel with Phase 1
-Phase 3  ▶  Whisper.net engine + streaming orchestrator    → first live captions
-Phase 4  ▶  Session lifecycle, transcript, journal, recovery
-Phase 5  ▶  Caption UI, clipboard, source picker, level meter
-Phase 6  ▶  Session list + settings
-Phase 7  ▶  Packaging, soak, WER pass
+── STAGE A · on the Mac ───────────────────────────────────────────────────────
+A1  Core logic port + shared testdata/ vectors + xUnit suite   (no UI, no audio, no ML)
+A2  LocalCaption.Bench harness, smoke-tested on macOS CPU      (runs for real in B0)
+A3  ASR engine wrapper + model/backend plumbing                (compiles; CUDA untested)
+A4  Audio + WPF layers written against the spec                (compiled/verified in B)
+
+── STAGE B · on the G15 ───────────────────────────────────────────────────────
+B0  Run the bench + loopback probe          → answers W2, W7, W9; fills BENCH-RESULTS.md
+B1  WASAPI process + endpoint loopback      → real audio in
+B2  ASR on CUDA + streaming orchestrator    → FIRST LIVE CAPTIONS
+B3  Session lifecycle, transcript, journal, recovery
+B4  Caption UI, clipboard, source picker, level meter
+B5  Session list + settings
+B6  Packaging, soak
 ```
 
-**Critical path:** `0 → 1 → 3 → 4 → 5 → 7`. Phase 2 and Phase 6 hang off it.
+**Critical path:** `A1 → A3 → B0 → B2 → B3 → B4 → B6`.
 
-**Phase 0 must not be skipped even though W1 is closed.** It no longer answers "can this
-machine do it" — it answers **W2** (do usable word timestamps come out of Whisper.net?) and
-**W7** (is the dual-model hybrid even needed on a 3070?). W7 in particular can *remove*
-work from Phase 3, so measuring first is cheaper than building first.
+**Why this order works.** `LocalCaption.Core` targets plain `net10.0` — no WPF, no
+Whisper.net, no WASAPI — so it builds and its full test suite runs on macOS. That is A1:
+the segmenter, `RollingCaption`, `LocalAgreement`, `CaptionPipeline`, filters, config,
+store, journal and transcript writer, verified against the shared vectors (§6.1) before any
+Windows-specific code exists. It is also the part where a subtle porting error would be
+most expensive to find later.
 
-**First milestone (vertical slice), end of Phase 3:** loopback audio in → live captions on
-screen. Everything after that is layering, exactly as the macOS build went.
+**What Stage A cannot prove.** Anything touching WASAPI, CUDA or WPF compiles at best and is
+unverified at worst. Treat A4 as *drafted, not done* — B1/B2/B4 are where those become real.
 
-Rough effort, assuming one experienced .NET developer:
+**B0 still must not be skipped.** It answers **W2** (usable word timestamps?) and **W7** (is
+the hybrid even needed on a 3070?). W7 can *remove* work from B2, so measuring before
+building is cheaper. But per §18.1 every open question has a documented default, so Stage A
+never blocks on it.
 
-| Phase | Work | Estimate |
-|---|---|---|
-| 0 | Benchmark harness + measurement (W2 word timings, W7 turbo-only, GPU contention) **+ loopback probe incl. the Jump Desktop endpoint (W9)** | 2–3 days |
-| 1 | Core logic port + vectors + tests | 4–6 days |
-| 2 | WASAPI **process + endpoint** loopback, resampling, device changes, silence padding, sleep prevention | 5–7 days |
-| 3 | ASR engine, CUDA+CPU backends, word timings, dGPU-loss fallback (§5.8), orchestrator | 5–8 days |
-| 4 | Lifecycle, transcript, journal, recovery | 3–4 days |
-| 5 | Caption view, clipboard, source picker + level meter (§4.5–4.7) | 4–6 days |
-| 6 | Session list, settings | 3–4 days |
-| 7 | Packaging, soak, WER, polish | 3–5 days |
-|  | **Total** | **~6–8 weeks** |
+**First milestone (vertical slice), end of B2:** audio in → live captions on screen.
 
-The increase over v1.0 (~5–7 weeks) is the second capture mode, the remote-session
-requirements and their test suite — the cost of making the confirmed Jump Desktop
-workflow actually reliable rather than incidentally working.
+### 16.2 Prerequisites
+
+- **Mac:** .NET 10 SDK — `brew install --cask dotnet-sdk`.
+- **G15:** .NET 10 SDK (the runtime is already there, §0.5); a Claude Code session on the
+  machine, or the owner relaying commands and output.
+
+### 16.3 Working method for Windows details
+
+The owner supplies machine specifics on request rather than the work stopping. Anything
+needed will be asked for as a **single copy-pasteable PowerShell block writing to a file**,
+in the style of the §18 hardware probe — never a list of things to go and look up. Expect
+requests for: audio endpoint mix formats, the Jump Desktop endpoint's loopback behaviour
+(W9), `nvidia-smi` under load, and the benchmark output itself.
+
+### 16.4 Effort
+
+| Stage | Work | Where | Estimate |
+|---|---|---|---|
+| A1 | Core logic port + vectors + tests | Mac | 4–6 days |
+| A2 | Bench harness | Mac | 1 day |
+| A3 | ASR engine wrapper, model/backend plumbing | Mac | 2–3 days |
+| A4 | Audio + WPF layers drafted | Mac | 3–4 days |
+| B0 | Run bench + loopback probe, fill `BENCH-RESULTS.md` | G15 | 0.5 day |
+| B1 | WASAPI process + endpoint loopback, resampling, device changes, silence padding, sleep prevention | G15 | 4–6 days |
+| B2 | ASR on CUDA, dGPU-loss fallback (§5.8), orchestrator | G15 | 4–6 days |
+| B3 | Lifecycle, transcript, journal, recovery | G15 | 2–3 days |
+| B4 | Caption view, clipboard, source picker + level meter | G15 | 4–5 days |
+| B5 | Session list, settings | G15 | 3–4 days |
+| B6 | Packaging, soak | G15 | 3–4 days |
+|  | **Total** | | **~6–8 weeks** |
+
+Roughly **a third of the work happens on the Mac.** The Windows-side estimates are lower
+than v1.2's equivalents because A3/A4 arrive already written — B1/B2/B4 are verification
+and repair rather than greenfield.
 
 ### 16.7 Deferred: the Live AI Summary on Windows
 
@@ -1123,7 +1177,7 @@ CUDA/CPU offload decision.
    ±100 ms (§4.3).
 4. Two Whisper models run fully on-device; **zero** network traffic after the models are
    present, verified with a network monitor.
-5. Interim partials meet the p90 budget set by Phase 0; finals ≤ ~2 s p50 on the target
+5. Interim partials meet the p90 budget set by B0; finals ≤ ~2 s p50 on the target
    machine; **committed text is never rewritten**.
 6. Whisper silence-hallucinations suppressed — a 5-minute silent soak produces no captions.
 7. The window frame is restored on launch and validated against currently connected
@@ -1160,16 +1214,48 @@ CUDA/CPU offload decision.
 | ID | Blocker | Blocks | Status |
 |----|---------|--------|--------|
 | **W1** | Target-hardware profile of the ASUS | §5, §13, all phases | ✅ **CLOSED** 2026-09-20 — ROG Zephyrus G15, RTX 3070 8 GB, CUDA 12.5 (§0.5) |
-| W2 | Word-timestamp support in Whisper.net (DTW alignment heads) | §5.7, RollingCaption fidelity | ⚠ Verify in Phase 0 — **has a strong fallback** (§5.7.1): fixed-origin windows + LocalAgreement-2, which the encoder floor makes affordable on this GPU |
+| W2 | Word-timestamp support in Whisper.net (DTW alignment heads) | §5.7, RollingCaption fidelity | ⚠ Verify in B0 — **has a strong fallback** (§5.7.1): fixed-origin windows + LocalAgreement-2, which the encoder floor makes affordable on this GPU |
 | W3 | Interim budget / streaming-transducer fallback | §5.5 | ✅ **De-risked** by W1 — GPU path has 5–10× headroom; applies only to the CPU fallback |
-| **W7** | **Hybrid vs turbo-only** — can one resident `large-v3-turbo` serve both lanes on this GPU? Re-opens `SPEC.md` §22.2 / B4 on better hardware | §5.4, whole ASR architecture | ▶ **Answered by Phase 0.** Could remove the dual-model split entirely |
-| W4 | Code-signing certificate — needed only if the app goes beyond the owner's machine | §11 | **[NEEDS OWNER]**, non-blocking for v1 |
+| **W7** | **Hybrid vs turbo-only** — can one resident `large-v3-turbo` serve both lanes on this GPU? Re-opens `SPEC.md` §22.2 / macOS blocker B4 on better hardware | §5.4, whole ASR architecture | ▶ **Answered by B0.** Could remove the dual-model split entirely |
+| W4 | Code-signing certificate | §11 | ✅ **CLOSED — skip it.** Owner's machine only; click through SmartScreen once, add a Defender exclusion |
 | W5 | Process-loopback app picker | §4.1, §4.5 | ✅ **CLOSED — in v1, as the default capture mode.** Owner confirmed remote use, which makes endpoint routing the fragile part |
-| W6 | AvalonEdit vs RichTextBox for the caption view | §7.2 | Decide in Phase 5 from a spike |
+| W6 | AvalonEdit vs RichTextBox for the caption view | §7.2 | ▶ **Default: AvalonEdit** (§18.1). Revisit in B4 only if it fights WPF |
 | **W8** | dGPU removal at runtime (MUX / Eco / Armoury Crate) | §5.8 | ▶ Specified; must be implemented and soak-tested |
-| **W9** | **Does WASAPI loopback work on the Jump Desktop Virtual Speaker?** Init, mix format, silence behaviour, device-position monotonicity | §4.7.3, mode B viability | ⚠ **Probe in Phase 0** — cheap now, expensive in Phase 2. Mode A is the mitigation if it fails |
+| **W9** | **Does WASAPI loopback work on the Jump Desktop Virtual Speaker?** Init, mix format, silence behaviour, device-position monotonicity | §4.7.3, mode B viability | ⚠ **Probe in B0** — cheap now, expensive in B1. Mode A is the mitigation if it fails |
 | **W10** | Clipboard round-trip reliability under Jump Desktop sync | §4.7.4, §7.4 | ✅ **CLOSED** — owner will disable Jump Desktop clipboard sync during sessions; auto-copy is safe. Retry stays for Windows Clipboard History/Office |
 | **W11** | **Windows cloud clipboard sync uploads copied captions to a Microsoft account** — breaks §1.2 via a setting the app does not own | §12.1, privacy invariant | ▶ **Specified**: detect, disclose, never auto-change; keep auto-copy off by default |
+
+### 18.1 Every open item has a default — nothing blocks Stage A
+
+W2, W6, W7 and W9 are **measurements, not decisions**. Each has a documented default, so
+implementation proceeds without waiting on the G15 and the measurement either confirms the
+default or triggers a contained change.
+
+| Item | Build this by default | If the measurement disagrees |
+|---|---|---|
+| **W2** word timestamps | `RollingCaption` with word-timed merge, exactly as macOS | Switch the interim track to fixed-origin windows + `LocalAgreement` (§5.7.1). Already written and tested; keep both paths behind one flag in A1 so the switch is a config change, not a rewrite |
+| **W7** hybrid vs turbo-only | The **dual-model hybrid**, as macOS ships | Collapse to one resident model. This only *deletes* code — the two-lane isolation rule and the interim/final split disappear |
+| **W6** caption control | **AvalonEdit** | Fall back to `RichTextBox` with a capped visible document |
+| **W9** virtual-endpoint loopback | Mode A (process loopback) is already the default | If mode B also proves unusable on the Jump Desktop endpoint, document it as unsupported rather than fixing it — mode A covers the real workflow |
+
+**Design consequence for A1:** build W2's two merge strategies behind a single seam
+(`ICaptionMerger` with `RollingCaption` and `LocalAgreementMerger` implementations) rather
+than committing to one. It costs almost nothing now and makes the B0 result a one-line
+change.
+
+### 18.2 Owner decisions — all closed
+
+| Decision | Answer |
+|---|---|
+| Port strategy | Separate native Windows app |
+| Scope | Full parity **except** the live AI summary (§1.3, §16.7) |
+| Repository | `windows/` in this repo; `testdata/` at the root, shared |
+| Code signing | Skip (W4) |
+| Always-on-top + opacity | **Cut** (§7.3) |
+| Clipboard | Jump Desktop sync off during sessions; auto-copy safe, still off by default (§4.7.4, §12.1) |
+| Accuracy / WER | Match the macOS position — latency validated, WER not (§14.7, §20) |
+| Two-codebase divergence | Accepted |
+| Development model | **Mac-first** (§16.1); Windows details supplied on request (§16.3) |
 
 ### W1 — closed (profiled 2026-09-20)
 
@@ -1194,7 +1280,7 @@ remain the real engineering content of this port.
 **One residual question for the owner, non-blocking:** the machine has a **Jump Desktop
 Virtual Speaker**, which suggests it is sometimes driven remotely. If interviews will be
 taken *while connected over Jump Desktop*, say so — it makes §4.6's endpoint picker a
-Phase 5 requirement rather than a nicety, and adds a test case (capture must follow the
+B4 requirement rather than a nicety, and adds a test case (capture must follow the
 virtual endpoint, and must survive the session connecting and disconnecting mid-call).
 
 ---
@@ -1233,3 +1319,52 @@ Things that get **harder** on Windows:
   never had** (§4.7): a second capture mode, sleep prevention, a level meter, clipboard
   contention handling, and a test suite that can only run against a live Jump Desktop
   session. This is the single largest scope difference from v1.0 of this plan.
+
+---
+
+## 20. Known limitations, accepted up front
+
+Mirrors `specs/STATUS.md`'s "Known limitations" for the macOS build. These are **decided,
+not overlooked** — recording them here stops them being rediscovered as bugs.
+
+- **Word-error rate on real audio is not validated.** Latency is measured; accuracy is not.
+  The macOS model comparison used a single clean TTS clip on which everything scored
+  perfectly, so it says nothing about noisy rooms, accents, codec artefacts or crosstalk.
+  **[DECISION, owner] Windows matches the macOS position** — no WER gate, no real-audio
+  corpus, no accuracy acceptance criterion. If live transcripts disappoint in use, fix it
+  for both platforms together against shared fixtures in `testdata/`.
+- **The interim track is the least accurate model and the one you read live.** `tiny.en`
+  drives the provisional line; the accurate model only lands at the endpoint. Interim text
+  will be visibly wrong sometimes. That is the design, not a defect.
+- **The hallucination blocklist judges text alone.** A final segment consisting only of
+  "Yeah.", "Okay." or "No, no, no." is dropped, because those are also Whisper's classic
+  silence hallucinations. Real short answers can therefore be lost from the transcript.
+  Tracked as a fix to the **shared** logic; §6.1's vectors are where the regression test
+  belongs, and fixing it on macOS fixes it here.
+- **No speaker diarization.** A single mixed stream with no per-speaker labels.
+- **English only.**
+- **No microphone capture** — the transcript is of the other participant(s).
+- **Raw audio is never kept**, so a session cannot be re-transcribed with a better model.
+- **No live AI summary** in v1 (§1.3); the path to adding it is §16.7.
+- **No always-on-top or opacity** (§7.3) — cut deliberately for the remote workflow.
+- **Not code-signed** (W4). SmartScreen will warn on a clean machine.
+- **Model changes apply at the next Start**, as on macOS — models load when capture begins.
+- **Mode B (endpoint loopback) on a remote-desktop virtual endpoint is unproven** (W9) and
+  may be documented as unsupported; mode A covers the intended workflow.
+- **Clipboard privacy depends on OS settings the app does not own** (§12.1).
+
+---
+
+## 21. Definition of done
+
+The port is finished when, on the G15:
+
+1. All §17 acceptance criteria pass.
+2. `BENCH-RESULTS.md` is committed with real numbers, and W2, W7 and W9 are closed against
+   §18.1 — either confirming the defaults or recording the change made.
+3. The `LocalCaption.Core` suite passes on **both** macOS and Windows from the same
+   `testdata/` vectors, with no platform-conditional expectations.
+4. A real 60-minute interview has been captioned end to end over Jump Desktop, with the
+   transcript saved, the journal deleted, and nothing lost.
+5. `STATUS.md` for Windows exists alongside the macOS one, recording what was built, what
+   was measured, and what §20 limitations still stand.
