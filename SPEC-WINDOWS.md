@@ -1,6 +1,6 @@
 # Local Caption for Windows — Port Plan & Technical Specification
 
-- **Version:** 1.3 (plan spec — nothing built yet)
+- **Version:** 1.4 (plan spec — nothing built yet)
 - **Status:** Draft for review · **W1 + W5 closed** · remote-over-Jump-Desktop confirmed as
   a supported configuration (§4.7)
 - **Target:** **ASUS ROG Zephyrus G15 (GA503QR)** — Ryzen 9 5900HS · RTX 3070 Laptop 8 GB ·
@@ -107,7 +107,9 @@ Feature-for-feature parity with the shipped macOS app (`specs/STATUS.md` phases 
 - No audio, transcript or metadata leaves the device at runtime. No telemetry.
 - The **only** lifetime network use is the one-time speech-model download.
 - Raw audio is discarded after inference and never persisted.
-- The clipboard is **written, never read**.
+- The clipboard is **written, never read**. ⚠ Caveat: the clipboard is shared OS state.
+  If Windows' own "sync across your devices" is enabled, copied captions leave the machine —
+  see §12.1, which specifies detection and disclosure.
 
 These are acceptance criteria, verified with a network monitor (§17.13).
 
@@ -384,23 +386,27 @@ against that endpoint while a Jump Desktop session is live**, checking: `Initial
 succeeds · reported mix format · packets arrive during silence · `u64DevicePosition`
 advances monotonically. This is cheap now and expensive in Phase 2.
 
-**4. ⚠ Clipboard becomes hazardous — keep auto-update OFF.** "Copy last N" writes to the
-**G15's** clipboard. Jump Desktop syncs clipboards, so it usually reaches the user's local
-machine, but:
+**4. Clipboard — resolved by operating procedure.** **[DECISION, owner]** *Jump Desktop
+clipboard sync will be turned OFF while Local Caption is running.*
 
-- `clipboard.auto_update` writes on *every speech endpoint* — every few seconds. Over a
-  synced clipboard that continuously overwrites whatever the user copied locally. Copy an
-  email address on your own machine, and three seconds later it's a caption fragment.
-- Remote clipboard monitors hold the clipboard open, making the `COMException` in §7.4
-  **likely rather than theoretical**. Raise the retry budget to **10 attempts over ~500 ms**
-  and never let it throw into the session.
-- Sync is event-driven and coalesces; rapid successive writes may not all propagate, so the
-  clipboard is not a reliable transport here.
+That removes the whole hazard class: no overwriting the local machine's clipboard, no
+bidirectional ping-pong, no churn on the sync channel, and no remote clipboard monitor
+holding the Windows clipboard open. The clipboard stays local to the G15, which is where
+the user is working anyway — everything (meeting, captions, notes) runs there and is merely
+*viewed* remotely. **Auto-copy is therefore safe to use.**
 
-**[DECISION]** `clipboard.auto_update` stays **off by default** (as on macOS) and Settings
-carries an explicit note about remote sessions. Manual "Copy last N" remains the primary
-path. The `.txt`/`.json` transcript on the G15 is the durable artifact — recommend a synced
-folder or a share for it rather than relying on clipboard round-trips.
+Two things still apply and must be built:
+
+- **Keep the retry.** Jump Desktop is not the only clipboard consumer. **Windows 11
+  Clipboard History (`Win+V`) is on by default** and monitors every change, as do Office and
+  most clipboard managers. Keep the 10-attempt / ~500 ms backoff in §7.4 and never let
+  `Clipboard.SetText` throw into a recording session.
+- **See §12 — Windows Clipboard *cloud* sync is a privacy-invariant problem**, and it is
+  independent of Jump Desktop.
+
+`clipboard.auto_update` still ships **off by default**, matching macOS and §12's reasoning —
+but the user can now safely switch it on, and Settings should say so rather than warn.
+Add a **global hotkey for "Copy last N"** so the manual path costs nothing.
 
 **5. Add a live audio level meter + the active source name to the Active Session header.**
 The single worst outcome of this whole setup is recording 40 minutes of silence because the
@@ -911,6 +917,43 @@ account; Windows has a looser but non-zero equivalent.
 - Nothing is sent anywhere; the app should function fully with the network adapter
   disabled once models are downloaded.
 
+### 12.1 ⚠ The clipboard can break the privacy invariant — and it is not our clipboard
+
+§1.2 promises that no transcript text leaves the device. **Windows can violate that on the
+app's behalf, through a setting the app does not own.**
+
+`Settings → System → Clipboard` has **"Sync across your devices"**. When it is on, every
+clipboard write is uploaded to the user's **Microsoft account** and pushed to their other
+Windows machines. With `clipboard.auto_update` enabled, that means **transcript text is
+shipped to Microsoft's cloud every few seconds** — from an app whose entire proposition is
+that nothing ever leaves the machine.
+
+This has no macOS counterpart of the same severity: Apple's Universal Clipboard is
+device-to-device over Bluetooth/Wi-Fi between the user's own hardware, not a cloud round
+trip through an account.
+
+**[DECISION] Required behaviour:**
+
+1. **Detect it.** Read `HKCU\Software\Microsoft\Clipboard` →
+   `CloudClipboardAutomaticUpload` (and `EnableClipboardHistory`) at startup and when the
+   clipboard settings change.
+2. **Surface it honestly.** If cloud sync is on, show a one-line, dismissible notice in
+   Settings next to the clipboard group: *"Windows is syncing your clipboard to your
+   Microsoft account. Copied captions will leave this device. Turn off Settings → System →
+   Clipboard → Sync across your devices."* Link straight to `ms-settings:clipboard`.
+3. **Do not silently disable the feature, and do not change the OS setting.** It is the
+   user's machine and their call; the app's duty is to make the consequence visible.
+4. **Keep `clipboard.auto_update` off by default** — this is the reason, over and above
+   matching macOS. A default-on feature that quietly uploads interview transcripts would be
+   indefensible.
+5. State the dependency plainly in the README and in §1.2: *the privacy invariant holds for
+   everything the app controls; the clipboard is shared OS state, and clipboard features are
+   only as private as the OS's clipboard settings.*
+
+Clipboard **history** alone (local, `Win+V`, no cloud) is a much smaller issue — copied
+captions linger in a local buffer until reboot — but it is worth one sentence in the same
+notice for users who screen-share.
+
 ---
 
 ## 13. Performance budgets
@@ -969,8 +1012,9 @@ Fixed budgets that do not depend on the hardware:
 2b. **Remote-session suite (§4.7)** — run with a live Jump Desktop connection:
    connect *and* disconnect mid-recording (both modes) · meeting app pinned to Realtek
    while remote (mode A must still capture; mode B must visibly show a dead level meter) ·
-   clipboard contention under active sync · confirm the machine does not sleep across a
-   90-minute unattended session.
+   clipboard contention with Windows Clipboard History enabled · **cloud-clipboard
+   detection and notice (§12.1)** · confirm the machine does not sleep across a 90-minute
+   unattended session.
 3. **Pipeline replay** — feed WAV fixtures through segmenter → pipeline with a stub decoder
    and assert final ordering, interim coalescing, backlog/overload signalling. Direct port
    of `EngineReplayTests` / `CaptionPipelineTests`.
@@ -1124,7 +1168,8 @@ CUDA/CPU offload decision.
 | W6 | AvalonEdit vs RichTextBox for the caption view | §7.2 | Decide in Phase 5 from a spike |
 | **W8** | dGPU removal at runtime (MUX / Eco / Armoury Crate) | §5.8 | ▶ Specified; must be implemented and soak-tested |
 | **W9** | **Does WASAPI loopback work on the Jump Desktop Virtual Speaker?** Init, mix format, silence behaviour, device-position monotonicity | §4.7.3, mode B viability | ⚠ **Probe in Phase 0** — cheap now, expensive in Phase 2. Mode A is the mitigation if it fails |
-| **W10** | Clipboard round-trip reliability under Jump Desktop sync | §4.7.4, §7.4 | ▶ Mitigated by design (auto-update off, 10× retry); confirm in the §14.2b suite |
+| **W10** | Clipboard round-trip reliability under Jump Desktop sync | §4.7.4, §7.4 | ✅ **CLOSED** — owner will disable Jump Desktop clipboard sync during sessions; auto-copy is safe. Retry stays for Windows Clipboard History/Office |
+| **W11** | **Windows cloud clipboard sync uploads copied captions to a Microsoft account** — breaks §1.2 via a setting the app does not own | §12.1, privacy invariant | ▶ **Specified**: detect, disclose, never auto-change; keep auto-copy off by default |
 
 ### W1 — closed (profiled 2026-09-20)
 
