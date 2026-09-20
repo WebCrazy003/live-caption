@@ -21,3 +21,7 @@ minimal/.signing/
 minimal/MinimalCaption.app/
 app/.signing/
 app/LocalCaption.app/
+
+# .NET build artifacts (Windows port)
+windows/**/bin/
+windows/**/obj/
