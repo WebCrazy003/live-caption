@@ -543,6 +543,15 @@ it replaces every latency number in §13 with a measured one. Commit it as
 A throwaway Python `faster-whisper` script is a legitimate way to get a second data point
 here — it is not shipped.
 
+> **`LocalCaption.Bench` cannot be dry-run on the Mac** (found in A2, 2026-09-20).
+> Whisper.net 1.9.1's `Whisper.net.Runtime` depends on `Whisper.net.Runtime.Metal`; both
+> ship a ggml library, both run ggml's static initialiser, and the second `abort()`s inside
+> `dlopen`. It is a native abort, not a catchable exception, and it is upstream — 1.8.1 and
+> 1.7.4 do not load on arm64 at all, and Metal-only omits the base library. Windows is
+> unaffected. The bench detects macOS and refuses with an explanation rather than crashing.
+> **Consequence:** B0 is the first time any of this code executes. Budget for first-run
+> breakage there rather than assuming A3 arrives pre-exercised.
+
 ### 5.5 Contingency if the interim budget is missed (CPU-only machines)
 
 **W1 makes this unlikely on the GPU path** — it now applies only to the CPU fallback
@@ -1214,7 +1223,7 @@ CUDA/CPU offload decision.
 | ID | Blocker | Blocks | Status |
 |----|---------|--------|--------|
 | **W1** | Target-hardware profile of the ASUS | §5, §13, all phases | ✅ **CLOSED** 2026-09-20 — ROG Zephyrus G15, RTX 3070 8 GB, CUDA 12.5 (§0.5) |
-| W2 | Word-timestamp support in Whisper.net (DTW alignment heads) | §5.7, RollingCaption fidelity | ⚠ Verify in B0 — **has a strong fallback** (§5.7.1): fixed-origin windows + LocalAgreement-2, which the encoder floor makes affordable on this GPU |
+| W2 | Word-timestamp support in Whisper.net (DTW alignment heads) | §5.7, RollingCaption fidelity | 🟡 **API confirmed** 2026-09-20 (A3) — `WhisperFactoryOptions.UseDtwTimeStamps` + `HeadsPreset`, with presets for `TinyEn`/`BaseEn`/`SmallEn`/`LargeV3Turbo`. Wired and unit-tested. **Still open:** whether the timings are *accurate enough* for the 350 ms anchor — needs real audio in B0. Fallback (§5.7.1) unchanged |
 | W3 | Interim budget / streaming-transducer fallback | §5.5 | ✅ **De-risked** by W1 — GPU path has 5–10× headroom; applies only to the CPU fallback |
 | **W7** | **Hybrid vs turbo-only** — can one resident `large-v3-turbo` serve both lanes on this GPU? Re-opens `SPEC.md` §22.2 / macOS blocker B4 on better hardware | §5.4, whole ASR architecture | ▶ **Answered by B0.** Could remove the dual-model split entirely |
 | W4 | Code-signing certificate | §11 | ✅ **CLOSED — skip it.** Owner's machine only; click through SmartScreen once, add a Defender exclusion |
@@ -1233,7 +1242,7 @@ default or triggers a contained change.
 
 | Item | Build this by default | If the measurement disagrees |
 |---|---|---|
-| **W2** word timestamps | `RollingCaption` with word-timed merge, exactly as macOS | Switch the interim track to fixed-origin windows + `LocalAgreement` (§5.7.1). Already written and tested; keep both paths behind one flag in A1 so the switch is a config change, not a rewrite |
+| **W2** word timestamps | `RollingCaption` with word-timed merge, exactly as macOS | Switch the interim track to fixed-origin windows + `LocalAgreement` (§5.7.1). Already written and tested. ⚠ **The `ICaptionMerger` seam below was NOT built in A1** — both mergers exist but the interim track calls `RollingCaption` directly, so the switch is currently a small code change rather than a config one |
 | **W7** hybrid vs turbo-only | The **dual-model hybrid**, as macOS ships | Collapse to one resident model. This only *deletes* code — the two-lane isolation rule and the interim/final split disappear |
 | **W6** caption control | **AvalonEdit** | Fall back to `RichTextBox` with a capped visible document |
 | **W9** virtual-endpoint loopback | Mode A (process loopback) is already the default | If mode B also proves unusable on the Jump Desktop endpoint, document it as unsupported rather than fixing it — mode A covers the real workflow |
