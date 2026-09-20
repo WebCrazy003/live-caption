@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\LocalCaption.Audio\LocalCaption.Audio.csproj" />
+    <ProjectReference Include="..\LocalCaption.Core\LocalCaption.Core.csproj" />
+    <ProjectReference Include="..\LocalCaption.Session\LocalCaption.Session.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- §7.2 [DECISION]: virtualised rendering, so an hour-long transcript stays fluid, and
+         Replace(offset, length, text) gives the same append-only update the macOS NSTextView
+         gets. A FlowDocument with thousands of Paragraphs degrades badly, and rebuilding one
+         per update drops the selection. -->
+    <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
+    <!-- §11's installer. The package is needed in the app itself, not just at pack time:
+         VelopackApp.Build().Run() is what handles the install, update and uninstall hooks
+         the installer invokes on this executable. -->
+    <PackageReference Include="Velopack" Version="0.0.1298" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ApplicationTitle>Local Caption</ApplicationTitle>
+    <AssemblyName>LocalCaption</AssemblyName>
+  </PropertyGroup>
+
+</Project>

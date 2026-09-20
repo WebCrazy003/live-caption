@@ -25,3 +25,7 @@ app/LocalCaption.app/
 # .NET build artifacts (Windows port)
 windows/**/bin/
 windows/**/obj/
+
+# §11 publish output
+windows/publish/
+windows/artifacts/
