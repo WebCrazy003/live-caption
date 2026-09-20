@@ -1,8 +1,11 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/LocalCaption.Asr/LocalCaption.Asr.csproj" />
+    <Project Path="src/LocalCaption.Bench/LocalCaption.Bench.csproj" />
     <Project Path="src/LocalCaption.Core/LocalCaption.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/LocalCaption.Asr.Tests/LocalCaption.Asr.Tests.csproj" />
     <Project Path="tests/LocalCaption.Core.Tests/LocalCaption.Core.Tests.csproj" />
   </Folder>
 </Solution>
