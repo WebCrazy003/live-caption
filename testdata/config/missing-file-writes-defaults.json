@@ -1,0 +1,11 @@
+{
+  "name": "missing-file-writes-defaults",
+  "description": "No file at all is not an error: write the defaults and carry on. This is first launch.",
+  "input": null,
+  "expect_repaired": false,
+  "expect_backup_count": 0,
+  "expect_file_exists": true,
+  "expect": {
+    "schema_version": 2
+  }
+}

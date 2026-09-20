@@ -1,0 +1,50 @@
+{
+  "name": "commit-and-monotonicity",
+  "description": "LocalAgreement-2: commit only what the last two hypotheses agree on, and never un-commit. The third step feeds a SHORTER hypothesis \u2014 the committed prefix must hold, which is what stops the live line flickering backward.",
+  "steps": [
+    {
+      "op": "update",
+      "hypothesis": [
+        "the",
+        "quick",
+        "brown"
+      ],
+      "expect_committed": [],
+      "expect_provisional": [
+        "the",
+        "quick",
+        "brown"
+      ]
+    },
+    {
+      "op": "update",
+      "hypothesis": [
+        "the",
+        "quick",
+        "brown",
+        "fox"
+      ],
+      "expect_committed": [
+        "the",
+        "quick",
+        "brown"
+      ],
+      "expect_provisional": [
+        "fox"
+      ]
+    },
+    {
+      "op": "update",
+      "hypothesis": [
+        "the",
+        "quick"
+      ],
+      "expect_committed": [
+        "the",
+        "quick",
+        "brown"
+      ],
+      "expect_provisional": []
+    }
+  ]
+}

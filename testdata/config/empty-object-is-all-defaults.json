@@ -1,0 +1,13 @@
+{
+  "name": "empty-object-is-all-defaults",
+  "description": "An empty JSON object is valid and yields a wholly default config \u2014 every group is optional, including `summary` (SPEC-10 merge-default).",
+  "input": "{}",
+  "expect_repaired": false,
+  "expect_backup_count": 0,
+  "expect": {
+    "schema_version": "$default",
+    "caption.font_size": "$default",
+    "summary.words_per_summary": "$default",
+    "window.width": "$default"
+  }
+}

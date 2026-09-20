@@ -1,0 +1,58 @@
+{
+  "name": "no-lexical-overlap-falls-back-to-audio-time",
+  "description": "With no matching word the new window owns its time range, and a hypothesis whose end_sample is behind the high-water mark is a stale result and must be rejected.",
+  "steps": [
+    {
+      "words": [
+        {
+          "text": "one",
+          "start": 0.0,
+          "end": 0.8
+        },
+        {
+          "text": "two",
+          "start": 1.0,
+          "end": 1.8
+        },
+        {
+          "text": "three",
+          "start": 2.0,
+          "end": 2.8
+        }
+      ],
+      "start_sample": 0,
+      "end_sample": 48000,
+      "expect_accepted": true
+    },
+    {
+      "words": [
+        {
+          "text": "corrected",
+          "start": 0.0,
+          "end": 0.8
+        },
+        {
+          "text": "words",
+          "start": 1.0,
+          "end": 1.8
+        }
+      ],
+      "start_sample": 16000,
+      "end_sample": 64000,
+      "expect_accepted": true
+    },
+    {
+      "words": [
+        {
+          "text": "stale",
+          "start": 0.0,
+          "end": 0.8
+        }
+      ],
+      "start_sample": 0,
+      "end_sample": 16000,
+      "expect_accepted": false
+    }
+  ],
+  "expect_text": "one corrected words"
+}

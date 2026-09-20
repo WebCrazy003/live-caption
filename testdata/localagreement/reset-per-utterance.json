@@ -1,0 +1,45 @@
+{
+  "name": "reset-per-utterance",
+  "description": "State is per-utterance. After reset the first hypothesis is wholly provisional again \u2014 nothing leaks across an endpoint.",
+  "steps": [
+    {
+      "op": "update",
+      "hypothesis": [
+        "a",
+        "b"
+      ],
+      "expect_committed": [],
+      "expect_provisional": [
+        "a",
+        "b"
+      ]
+    },
+    {
+      "op": "update",
+      "hypothesis": [
+        "a",
+        "b"
+      ],
+      "expect_committed": [
+        "a",
+        "b"
+      ],
+      "expect_provisional": []
+    },
+    {
+      "op": "reset"
+    },
+    {
+      "op": "update",
+      "hypothesis": [
+        "c",
+        "d"
+      ],
+      "expect_committed": [],
+      "expect_provisional": [
+        "c",
+        "d"
+      ]
+    }
+  ]
+}

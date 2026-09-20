@@ -1,0 +1,32 @@
+{
+  "name": "last-n",
+  "description": "'Copy last N sentences'. N <= 0 copies nothing; N past the start copies everything.",
+  "kind": "last_n",
+  "cases": [
+    {
+      "text": "One. Two. Three. Four.",
+      "n": 2,
+      "expect": "Three. Four."
+    },
+    {
+      "text": "One. Two. Three. Four.",
+      "n": 10,
+      "expect": "One. Two. Three. Four."
+    },
+    {
+      "text": "One. Two. Three. Four.",
+      "n": 0,
+      "expect": ""
+    },
+    {
+      "text": "One. Two.",
+      "n": -1,
+      "expect": ""
+    },
+    {
+      "text": "just one line",
+      "n": 5,
+      "expect": "just one line"
+    }
+  ]
+}

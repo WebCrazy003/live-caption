@@ -1,0 +1,11 @@
+{
+  "name": "truncated-file-repairs",
+  "description": "A write interrupted by power loss leaves a truncated file. Same repair path \u2014 the app must never refuse to start because of its own config.",
+  "input": "{ \"schema_version\": 2, \"caption\": { \"font_si",
+  "expect_repaired": true,
+  "expect_backup_count": 1,
+  "expect_reload_clean": true,
+  "expect": {
+    "schema_version": "$default"
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "name": "repeated-phrase-anchors-by-time",
+  "description": "'we can' occurs twice. The 350 ms midpoint window must anchor on the SECOND occurrence, so the real repetition survives and the punctuation correction lands.",
+  "steps": [
+    {
+      "words": [
+        {
+          "text": "we",
+          "start": 0.0,
+          "end": 0.24
+        },
+        {
+          "text": "can",
+          "start": 0.3,
+          "end": 0.54
+        },
+        {
+          "text": "we",
+          "start": 0.6,
+          "end": 0.84
+        },
+        {
+          "text": "can",
+          "start": 0.9,
+          "end": 1.14
+        },
+        {
+          "text": "do",
+          "start": 1.2,
+          "end": 1.44
+        },
+        {
+          "text": "this",
+          "start": 1.5,
+          "end": 1.74
+        }
+      ],
+      "start_sample": 0,
+      "end_sample": 32000,
+      "expect_accepted": true
+    },
+    {
+      "words": [
+        {
+          "text": "we",
+          "start": 0.0,
+          "end": 0.24
+        },
+        {
+          "text": "can",
+          "start": 0.3,
+          "end": 0.54
+        },
+        {
+          "text": "do",
+          "start": 0.6,
+          "end": 0.84
+        },
+        {
+          "text": "this,",
+          "start": 0.9,
+          "end": 1.14
+        },
+        {
+          "text": "today",
+          "start": 1.2,
+          "end": 1.44
+        }
+      ],
+      "start_sample": 9600,
+      "end_sample": 40000,
+      "expect_accepted": true
+    }
+  ],
+  "expect_text": "we can we can do this, today"
+}

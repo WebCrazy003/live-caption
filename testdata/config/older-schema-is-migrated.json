@@ -1,0 +1,12 @@
+{
+  "name": "older-schema-is-migrated",
+  "description": "schema_version below current is migrated in place and rewritten. v1 had no distinct on-disk shape, so today this is a version bump; the vector exists so that a real future migration has a home.",
+  "input": "{ \"schema_version\": 1, \"caption\": { \"font_size\": 22 } }",
+  "expect_repaired": false,
+  "expect_backup_count": 0,
+  "expect_rewritten": true,
+  "expect": {
+    "schema_version": 2,
+    "caption.font_size": 22
+  }
+}

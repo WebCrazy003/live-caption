@@ -1,0 +1,44 @@
+{
+  "name": "split",
+  "description": "Split on terminal punctuation, keeping the mark; a trailing fragment without punctuation is still a sentence (the live line usually is one).",
+  "kind": "split",
+  "cases": [
+    {
+      "text": "Hi there. How are you? Good!",
+      "expect": [
+        "Hi there.",
+        "How are you?",
+        "Good!"
+      ]
+    },
+    {
+      "text": "Done. Half a thought",
+      "expect": [
+        "Done.",
+        "Half a thought"
+      ]
+    },
+    {
+      "text": "",
+      "expect": []
+    },
+    {
+      "text": "   ",
+      "expect": []
+    },
+    {
+      "text": "no punctuation at all",
+      "expect": [
+        "no punctuation at all"
+      ]
+    },
+    {
+      "text": "Tight.Packed.Marks.",
+      "expect": [
+        "Tight.",
+        "Packed.",
+        "Marks."
+      ]
+    }
+  ]
+}

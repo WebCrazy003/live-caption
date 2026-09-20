@@ -1,0 +1,212 @@
+{
+  "name": "moving-windows-keep-advancing",
+  "description": "A 6 s sliding tail advances one second at a time. Each hypothesis shares a lexical prefix with the last; the merge must extend the line rather than restart it.",
+  "steps": [
+    {
+      "words": [
+        {
+          "text": "one",
+          "start": 0.0,
+          "end": 0.8
+        },
+        {
+          "text": "two",
+          "start": 1.0,
+          "end": 1.8
+        },
+        {
+          "text": "three",
+          "start": 2.0,
+          "end": 2.8
+        },
+        {
+          "text": "four",
+          "start": 3.0,
+          "end": 3.8
+        },
+        {
+          "text": "five",
+          "start": 4.0,
+          "end": 4.8
+        },
+        {
+          "text": "six",
+          "start": 5.0,
+          "end": 5.8
+        }
+      ],
+      "start_sample": 0,
+      "end_sample": 96000,
+      "expect_accepted": true
+    },
+    {
+      "words": [
+        {
+          "text": "one",
+          "start": 0.0,
+          "end": 0.8
+        },
+        {
+          "text": "two",
+          "start": 1.0,
+          "end": 1.8
+        },
+        {
+          "text": "three",
+          "start": 2.0,
+          "end": 2.8
+        },
+        {
+          "text": "four",
+          "start": 3.0,
+          "end": 3.8
+        },
+        {
+          "text": "five",
+          "start": 4.0,
+          "end": 4.8
+        },
+        {
+          "text": "six",
+          "start": 5.0,
+          "end": 5.8
+        },
+        {
+          "text": "seven",
+          "start": 6.0,
+          "end": 6.8
+        }
+      ],
+      "start_sample": 0,
+      "end_sample": 112000,
+      "expect_accepted": true
+    },
+    {
+      "words": [
+        {
+          "text": "two",
+          "start": 0.0,
+          "end": 0.8
+        },
+        {
+          "text": "three",
+          "start": 1.0,
+          "end": 1.8
+        },
+        {
+          "text": "four",
+          "start": 2.0,
+          "end": 2.8
+        },
+        {
+          "text": "five",
+          "start": 3.0,
+          "end": 3.8
+        },
+        {
+          "text": "six",
+          "start": 4.0,
+          "end": 4.8
+        },
+        {
+          "text": "seven",
+          "start": 5.0,
+          "end": 5.8
+        },
+        {
+          "text": "eight",
+          "start": 6.0,
+          "end": 6.8
+        }
+      ],
+      "start_sample": 16000,
+      "end_sample": 128000,
+      "expect_accepted": true
+    },
+    {
+      "words": [
+        {
+          "text": "three",
+          "start": 0.0,
+          "end": 0.8
+        },
+        {
+          "text": "four",
+          "start": 1.0,
+          "end": 1.8
+        },
+        {
+          "text": "five",
+          "start": 2.0,
+          "end": 2.8
+        },
+        {
+          "text": "six",
+          "start": 3.0,
+          "end": 3.8
+        },
+        {
+          "text": "seven",
+          "start": 4.0,
+          "end": 4.8
+        },
+        {
+          "text": "eight",
+          "start": 5.0,
+          "end": 5.8
+        },
+        {
+          "text": "nine",
+          "start": 6.0,
+          "end": 6.8
+        }
+      ],
+      "start_sample": 32000,
+      "end_sample": 144000,
+      "expect_accepted": true
+    },
+    {
+      "words": [
+        {
+          "text": "four",
+          "start": 0.0,
+          "end": 0.8
+        },
+        {
+          "text": "five",
+          "start": 1.0,
+          "end": 1.8
+        },
+        {
+          "text": "six",
+          "start": 2.0,
+          "end": 2.8
+        },
+        {
+          "text": "seven",
+          "start": 3.0,
+          "end": 3.8
+        },
+        {
+          "text": "eight",
+          "start": 4.0,
+          "end": 4.8
+        },
+        {
+          "text": "nine",
+          "start": 5.0,
+          "end": 5.8
+        },
+        {
+          "text": "ten",
+          "start": 6.0,
+          "end": 6.8
+        }
+      ],
+      "start_sample": 48000,
+      "end_sample": 160000,
+      "expect_accepted": true
+    }
+  ],
+  "expect_text": "one two three four five six seven eight nine ten"
+}

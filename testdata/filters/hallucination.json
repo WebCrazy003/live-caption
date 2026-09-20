@@ -1,0 +1,51 @@
+{
+  "name": "hallucination",
+  "description": "Whisper's silence hallucinations. The blocklist matches on a stem that is lowercased, whitespace-trimmed and then stripped of leading/trailing .!?,- so 'Thank you.' and 'thank you' are the same stem. Repetition is caught separately: 3+ words that are all identical, or whose unique/total ratio falls below 0.34.",
+  "kind": "hallucination",
+  "cases": [
+    {
+      "input": "Thank you.",
+      "expect": true
+    },
+    {
+      "input": "you",
+      "expect": true
+    },
+    {
+      "input": "   ",
+      "expect": true
+    },
+    {
+      "input": "",
+      "expect": true
+    },
+    {
+      "input": "Thanks for watching",
+      "expect": true
+    },
+    {
+      "input": "-okay-",
+      "expect": true
+    },
+    {
+      "input": "come come come come",
+      "expect": true
+    },
+    {
+      "input": "you you you",
+      "expect": true
+    },
+    {
+      "input": "Happy to be here, thanks for having me.",
+      "expect": false
+    },
+    {
+      "input": "Thank you for explaining the architecture.",
+      "expect": false
+    },
+    {
+      "input": "yes no",
+      "expect": false
+    }
+  ]
+}

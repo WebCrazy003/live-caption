@@ -1,0 +1,74 @@
+{
+  "name": "same-origin-shorter-hypothesis-corrects",
+  "description": "A hypothesis from an identical start_sample may shrink the line \u2014 it is the same audio re-decoded. An empty word list is rejected outright and never clears the text.",
+  "steps": [
+    {
+      "words": [
+        {
+          "text": "one",
+          "start": 0.0,
+          "end": 0.8
+        },
+        {
+          "text": "two",
+          "start": 1.0,
+          "end": 1.8
+        },
+        {
+          "text": "three",
+          "start": 2.0,
+          "end": 2.8
+        }
+      ],
+      "start_sample": 0,
+      "end_sample": 48000,
+      "expect_accepted": true
+    },
+    {
+      "words": [
+        {
+          "text": "two",
+          "start": 0.0,
+          "end": 0.8
+        },
+        {
+          "text": "three",
+          "start": 1.0,
+          "end": 1.8
+        },
+        {
+          "text": "four",
+          "start": 2.0,
+          "end": 2.8
+        }
+      ],
+      "start_sample": 16000,
+      "end_sample": 64000,
+      "expect_accepted": true
+    },
+    {
+      "words": [
+        {
+          "text": "two",
+          "start": 0.0,
+          "end": 0.8
+        },
+        {
+          "text": "corrected",
+          "start": 1.0,
+          "end": 1.8
+        }
+      ],
+      "start_sample": 16000,
+      "end_sample": 80000,
+      "expect_accepted": true
+    },
+    {
+      "words": [],
+      "start_sample": 16000,
+      "end_sample": 90000,
+      "expect_accepted": false
+    }
+  ],
+  "expect_text": "one two corrected"
+}

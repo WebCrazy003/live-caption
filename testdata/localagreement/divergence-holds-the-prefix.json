@@ -1,0 +1,41 @@
+{
+  "name": "divergence-holds-the-prefix",
+  "description": "Two hypotheses that diverge mid-way commit only the shared head, and the provisional tail is measured from the committed length \u2014 not from the length of the previous hypothesis.",
+  "steps": [
+    {
+      "op": "update",
+      "hypothesis": [
+        "we",
+        "should",
+        "ship",
+        "it"
+      ],
+      "expect_committed": [],
+      "expect_provisional": [
+        "we",
+        "should",
+        "ship",
+        "it"
+      ]
+    },
+    {
+      "op": "update",
+      "hypothesis": [
+        "we",
+        "should",
+        "skip",
+        "it",
+        "today"
+      ],
+      "expect_committed": [
+        "we",
+        "should"
+      ],
+      "expect_provisional": [
+        "skip",
+        "it",
+        "today"
+      ]
+    }
+  ]
+}

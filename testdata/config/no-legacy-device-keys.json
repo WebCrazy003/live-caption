@@ -1,0 +1,14 @@
+{
+  "name": "no-legacy-device-keys",
+  "description": "Regression guard from the macOS B3 cleanup: the v1 microphone/BlackHole key must not come back. Asserted against the ENCODED default config.",
+  "input": null,
+  "expect_encoded_contains": [
+    "vad_sensitivity",
+    "schema_version"
+  ],
+  "expect_encoded_omits": [
+    "system_device",
+    "blackhole",
+    "input_device"
+  ]
+}

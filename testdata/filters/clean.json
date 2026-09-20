@@ -1,0 +1,31 @@
+{
+  "name": "clean",
+  "description": "Strip Whisper special/timestamp tokens and [BLANK_AUDIO]; collapse runs of whitespace; trim. Applied to every decode before anything else sees it.",
+  "kind": "clean",
+  "cases": [
+    {
+      "input": "<|startoftranscript|>Hello<|endoftext|>",
+      "expect": "Hello"
+    },
+    {
+      "input": "[BLANK_AUDIO]  spaced   out ",
+      "expect": "spaced out"
+    },
+    {
+      "input": "<|0.00|> tokens <|2.40|> between <|4.80|>",
+      "expect": "tokens between"
+    },
+    {
+      "input": "line\nbreaks\tand\ttabs",
+      "expect": "line breaks and tabs"
+    },
+    {
+      "input": "   ",
+      "expect": ""
+    },
+    {
+      "input": "already clean",
+      "expect": "already clean"
+    }
+  ]
+}

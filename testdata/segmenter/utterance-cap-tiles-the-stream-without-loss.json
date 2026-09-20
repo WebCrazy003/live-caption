@@ -1,0 +1,58 @@
+{
+  "name": "utterance-cap-tiles-the-stream-without-loss",
+  "description": "Unbroken speech past the max-utterance cap splits into consecutive utterances that tile exactly: each starts where the last ended, and the sample counts sum to the input. Interim windows stay capped at the 6 s tail (96000 samples). A second finish() is a no-op.",
+  "tuning": {
+    "endpoint_ms": 600,
+    "interval_ms": 500,
+    "max_utterance_s": 20,
+    "threshold": 0.015
+  },
+  "steps": [
+    {
+      "op": "append",
+      "now": 45.0,
+      "runs": [
+        {
+          "amplitude": 0.1,
+          "count": 720731
+        }
+      ],
+      "expect_final_requests": [
+        {
+          "utterance": 0,
+          "start_sample": 0,
+          "sample_count": 320000,
+          "end_sample": 320000,
+          "is_final": true
+        },
+        {
+          "utterance": 1,
+          "start_sample": 320000,
+          "sample_count": 320000,
+          "end_sample": 640000,
+          "is_final": true
+        }
+      ],
+      "expect_interim_max_samples": 96000
+    },
+    {
+      "op": "finish",
+      "now": 45.0,
+      "expect_final_requests": [
+        {
+          "utterance": 2,
+          "start_sample": 640000,
+          "sample_count": 80731,
+          "end_sample": 720731,
+          "is_final": true
+        }
+      ]
+    },
+    {
+      "op": "finish",
+      "now": 46.0,
+      "expect_requests": []
+    }
+  ],
+  "expect_total_final_samples": 720731
+}

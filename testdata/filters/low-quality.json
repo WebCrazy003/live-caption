@@ -1,0 +1,43 @@
+{
+  "name": "low-quality",
+  "description": "The metadata gate. On Windows two of the three inputs are DERIVED rather than reported (SPEC-WINDOWS.md \u00a75.6): avg_logprob is the mean of log(p) over the segment's tokens, and compression_ratio is len(utf8)/len(gzip). The thresholds below are identical on both platforms and must not drift.",
+  "kind": "low_quality",
+  "cases": [
+    {
+      "avg_logprob": -0.3,
+      "no_speech_prob": 0.05,
+      "compression_ratio": 1.4,
+      "expect": false
+    },
+    {
+      "avg_logprob": -0.3,
+      "no_speech_prob": 0.75,
+      "compression_ratio": 1.4,
+      "expect": true
+    },
+    {
+      "avg_logprob": -1.5,
+      "no_speech_prob": 0.05,
+      "compression_ratio": 1.4,
+      "expect": true
+    },
+    {
+      "avg_logprob": -0.3,
+      "no_speech_prob": 0.05,
+      "compression_ratio": 3.0,
+      "expect": true
+    },
+    {
+      "avg_logprob": -1.0,
+      "no_speech_prob": 0.6,
+      "compression_ratio": 2.4,
+      "expect": false
+    },
+    {
+      "avg_logprob": -1.001,
+      "no_speech_prob": 0.6,
+      "compression_ratio": 2.4,
+      "expect": true
+    }
+  ]
+}

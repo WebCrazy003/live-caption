@@ -1,0 +1,18 @@
+{
+  "name": "partial-merges-defaults",
+  "description": "Valid JSON that is missing keys must MERGE defaults, not trip the repair path. A hand-edited config that drops a key keeps working. '$default' asserts the freshly-constructed default value at that key path.",
+  "input": "{ \"schema_version\": 2, \"caption\": { \"font_size\": 30 } }",
+  "expect_repaired": false,
+  "expect_backup_count": 0,
+  "expect": {
+    "caption.font_size": 30,
+    "caption.auto_scroll": "$default",
+    "caption.show_timestamps": "$default",
+    "general.session_name_prefix": "$default",
+    "general.transcript_folder": "$default",
+    "asr.final_model": "$default",
+    "asr.interim_model": "$default",
+    "audio.vad_sensitivity": "$default",
+    "clipboard.recent_sentences": "$default"
+  }
+}

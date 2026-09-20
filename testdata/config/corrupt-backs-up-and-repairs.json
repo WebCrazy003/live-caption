@@ -1,0 +1,12 @@
+{
+  "name": "corrupt-backs-up-and-repairs",
+  "description": "Unparseable JSON is copied to config.json.bak-<ts> and replaced with defaults. Exactly one backup, and the replacement on disk must itself reload cleanly \u2014 re-reading must not repair a second time.",
+  "input": "{ this is not valid json",
+  "expect_repaired": true,
+  "expect_backup_count": 1,
+  "expect_reload_clean": true,
+  "expect": {
+    "schema_version": "$default",
+    "caption.font_size": "$default"
+  }
+}

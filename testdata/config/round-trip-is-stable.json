@@ -1,0 +1,18 @@
+{
+  "name": "round-trip-is-stable",
+  "description": "Write then read must be the identity. The overrides below are applied to a default config, written, and reloaded; every value must survive.",
+  "input": null,
+  "round_trip_overrides": {
+    "caption.font_size": 24,
+    "caption.show_timestamps": true,
+    "general.session_name_prefix": "Call ",
+    "clipboard.auto_update": true,
+    "clipboard.recent_sentences": 4,
+    "asr.endpoint_silence_ms": 900,
+    "asr.max_utterance_s": 30,
+    "window.width": 1024.0,
+    "window.height": 768.0
+  },
+  "expect_repaired": false,
+  "expect_backup_count": 0
+}

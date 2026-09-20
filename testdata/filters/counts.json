@@ -1,0 +1,27 @@
+{
+  "name": "counts",
+  "description": "Word and sentence counting drive the summary cadence and the clipboard. Words split on spaces and newlines only; sentences count terminal marks.",
+  "kind": "counts",
+  "cases": [
+    {
+      "input": "one two three",
+      "expect_words": 3,
+      "expect_sentences": 0
+    },
+    {
+      "input": "Hi. How are you? Good!",
+      "expect_words": 5,
+      "expect_sentences": 3
+    },
+    {
+      "input": "",
+      "expect_words": 0,
+      "expect_sentences": 0
+    },
+    {
+      "input": "line\nbreak",
+      "expect_words": 2,
+      "expect_sentences": 0
+    }
+  ]
+}

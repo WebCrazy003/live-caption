@@ -1,0 +1,37 @@
+{
+  "name": "last-n-appending",
+  "description": "The clipboard exposes an utterance at its speech endpoint, before the final decode lands, by appending the provisional line to the committed text first. Either side may be empty or pure whitespace.",
+  "kind": "last_n_appending",
+  "cases": [
+    {
+      "text": "One. Two.",
+      "provisional": "temporary words",
+      "n": 2,
+      "expect": "Two. temporary words"
+    },
+    {
+      "text": "",
+      "provisional": "  available immediately  ",
+      "n": 10,
+      "expect": "available immediately"
+    },
+    {
+      "text": "One. Two.",
+      "provisional": "   ",
+      "n": 1,
+      "expect": "Two."
+    },
+    {
+      "text": "   ",
+      "provisional": "   ",
+      "n": 3,
+      "expect": ""
+    },
+    {
+      "text": "One.",
+      "provisional": "Two. Three",
+      "n": 2,
+      "expect": "Two. Three"
+    }
+  ]
+}

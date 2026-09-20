@@ -1,0 +1,10 @@
+{
+  "name": "wrong-type-repairs",
+  "description": "A key of the wrong type is a decode failure, not a silent coercion \u2014 it takes the backup-and-repair path so the bad value is preserved for inspection rather than guessed at.",
+  "input": "{ \"schema_version\": 2, \"caption\": { \"font_size\": \"large\" } }",
+  "expect_repaired": true,
+  "expect_backup_count": 1,
+  "expect": {
+    "caption.font_size": "$default"
+  }
+}
