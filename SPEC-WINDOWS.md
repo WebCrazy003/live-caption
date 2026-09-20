@@ -1,6 +1,6 @@
 # Local Caption for Windows — Port Plan & Technical Specification
 
-- **Version:** 1.2 (plan spec — nothing built yet)
+- **Version:** 1.3 (plan spec — nothing built yet)
 - **Status:** Draft for review · **W1 + W5 closed** · remote-over-Jump-Desktop confirmed as
   a supported configuration (§4.7)
 - **Target:** **ASUS ROG Zephyrus G15 (GA503QR)** — Ryzen 9 5900HS · RTX 3070 Laptop 8 GB ·
@@ -95,7 +95,8 @@ Feature-for-feature parity with the shipped macOS app (`specs/STATUS.md` phases 
 | 8 | SQLite session metadata, list / open / rename / delete / search / sort | ✅ | ✅ (§9.3) |
 | 9 | Versioned `config.json`, corrupt→backup+repair, atomic write | ✅ | ✅ (§9.2) |
 | 10 | Live caption view: incremental, selectable, auto-scroll, jump-to-latest | ✅ | ✅ (§7.2) |
-| 11 | Always-on-top, opacity 0.3–1.0, window size/position memory | ✅ | ✅ (§7.3) |
+| 11 | Always-on-top, opacity 0.3–1.0 | ✅ | ⛔ **cut** — pointless over remote desktop (§7.3) |
+| 11b | Window size/position memory | ✅ | ✅ (§7.3) |
 | 12 | Clipboard: manual "Copy last N", auto-update at endpoints, write-only | ✅ | ✅ (§7.4) |
 | 13 | Full Settings, persisted, live where safe | ✅ | ✅ |
 | 14 | **Live AI Summary ("Key points")** | ✅ | ⛔ **out of scope** (§1.3) |
@@ -152,9 +153,10 @@ These are acceptance criteria, verified with a network monitor (§17.13).
   NVIDIA, Vulkan for AMD/Intel iGPU, OpenVINO for Core Ultra NPU, plain AVX2 for CPU,
   ARM64 for a Snapdragon machine — selected at runtime without changing app code.
 - **WPF over WinUI 3:** WPF has a decade of stable behaviour for the two things this app
-  actually needs from the window manager — reliable `Topmost` and layered-window opacity
-  with normal chrome. WinUI 3 needs the same Win32 interop for opacity *and* carries
-  packaging constraints. No upside for this app.
+  actually needs from the window manager — plain, well-behaved top-level windows with
+  reliable multi-monitor frame restoration. WinUI 3 carries packaging constraints for no
+  upside here. (The overlay/opacity interop that argued for WPF in v1.2 is now cut, §7.3 —
+  WPF remains the choice on maturity and on AvalonEdit.)
 - **Self-contained publish** means the user never installs a .NET runtime.
 
 ### 2.3 Alternatives considered and rejected
@@ -185,8 +187,8 @@ These are acceptance criteria, verified with a network monitor (§17.13).
 | GRDB | Microsoft.Data.Sqlite, same DDL (§9.3) | Low |
 | `FileHandle.synchronize()` | `FileStream.Flush(flushToDisk: true)` (§9.4) | Low — easy to get wrong |
 | `NSPasteboard` | `Clipboard.SetText` + retry on `COMException` (§7.4) | **Medium** — remote clipboard sync makes contention routine (§4.7.4) |
-| `NSWindow.level = .floating` | `Window.Topmost` | Low |
-| `NSWindow.alphaValue` | `WS_EX_LAYERED` + `SetLayeredWindowAttributes` (§7.3) | Low |
+| `NSWindow.level = .floating` | — | **cut** (§7.3) |
+| `NSWindow.alphaValue` | — | **cut** (§7.3) |
 | `setFrameAutosaveName` | Manual frame persistence + monitor validation (§7.3) | Low |
 | `NSTextView` suffix-only replace | AvalonEdit document append (§7.2) | Medium — 3 h sessions |
 | codesign + notarize | Authenticode + SmartScreen reputation (§11) | Medium — cost/policy |
@@ -416,7 +418,8 @@ is the worst failure mode this app has; this is three lines of P/Invoke. (Do **n
 NVENC. NVENC is separate silicon from the CUDA cores, so it does not contend with Whisper
 decoding — but caption text is small, and remote video compression is unkind to small text.
 Recommend raising `caption.font_size` for remote use and enabling Jump Desktop's
-highest-quality/lossless-text setting.
+highest-quality/lossless-text setting. This is also why the always-on-top overlay and
+opacity features are cut (§7.3): translucent text over re-encoded video reads badly.
 
 ---
 
@@ -576,9 +579,34 @@ whisper.cpp options, in order of preference:
 2. **Token timestamps** (`token_timestamps = true`) grouped into words on leading-space
    token boundaries. Coarser, workable.
 
-**Validate this in Phase 0**, not in Phase 3 — if neither path yields usable word timings
-for the chosen interim model, `RollingCaption` must fall back to LocalAgreement-2 over
-plain text (the `LocalAgreement` class is already written and tested for that case).
+**Validate this in Phase 0**, not in Phase 3.
+
+### 5.7.1 Fallback if word timings are unusable
+
+`RollingCaption` exists because the interim track decodes a **sliding 6-second tail**
+(`utterance.suffix(96000)`), so every hypothesis starts at a different point in the audio
+and successive hypotheses share no common prefix. Merging them needs absolute word times.
+
+`LocalAgreement` — already written and unit-tested — solves the same problem for
+**fixed-origin** windows: decode from the *start of the utterance* every time, so each
+hypothesis is a longer version of the last, and commit the common prefix of the most recent
+two. Its own doc comment says exactly this: *"Requires a fixed audio origin. Moving windows
+use `RollingCaption` instead."*
+
+So the fallback is not "worse text merging" — it is **a different windowing strategy**,
+already implemented. Its only cost is that the interim window grows to `max_utterance_s`
+(20 s) instead of staying at 6 s.
+
+**And that cost is small here, because of the encoder floor** (`SPEC.md` §1A): Whisper
+always pads the mel to 30 s, so a 20 s window costs *the same encoder pass* as a 6 s one.
+Only the autoregressive decoder grows — roughly 3× the tokens — so expect perhaps 1.5–2×
+total. On a 3070 where `tiny.en` runs ~40–100 ms, that is still ~150 ms against a 500 ms
+budget.
+
+**Therefore:** if W2 fails, switch the interim track to fixed-origin windows +
+`LocalAgreement`, and accept slightly different flicker behaviour. Measure both in Phase 0
+and pick on evidence. This is the kind of trade-off the Mac could not afford and this
+machine can.
 
 ### 5.8 ⚠ ROG-specific: the dGPU can vanish at runtime
 
@@ -703,12 +731,25 @@ implementation should be the better one.
 
 ### 7.3 Window behaviour
 
-- **Always-on-top:** `Window.Topmost = true`. Keep the `SPEC.md` §14 warning that an
-  always-on-top overlay may be captured in a screen share.
-- **Opacity 0.3–1.0:** `Window.Opacity` in WPF requires `AllowsTransparency=true`, which
-  forces `WindowStyle=None` and costs the standard title bar. **Use Win32 instead:** set
-  `WS_EX_LAYERED` on the HWND and call `SetLayeredWindowAttributes(hwnd, 0, alpha,
-  LWA_ALPHA)`. Normal chrome, correct alpha, same clamp (0.3 minimum for legibility).
+**[DECISION] Always-on-top and adjustable opacity are CUT from the Windows build.**
+
+Both features exist on macOS so the caption window can float over the meeting window and
+you can see the call through it. Neither survives the remote workflow: the meeting, the
+captions and the compositing all happen on the G15, but the user is watching a compressed
+video stream of that desktop from somewhere else. Translucent text over video, re-encoded
+by Jump Desktop and shipped over a network, is strictly worse to read than two opaque
+windows side by side — and the whole point of this app is reading text quickly.
+
+Cutting them removes `WS_EX_LAYERED`, `SetLayeredWindowAttributes`, the `Topmost`
+management, the 0.3 legibility clamp, and the screen-share capture warning from `SPEC.md`
+§14 / C11. A plain, ordinary, resizable window.
+
+**Config keys `window.always_on_top` and `window.opacity` stay reserved** in the schema
+(unimplemented, hidden in Settings) so a `config.json` still round-trips with the macOS
+app — the same treatment as the `summary` group (§9.2).
+
+What remains:
+
 - **Size/position memory:** persist `window.{width,height,x,y}` to `config.json` (the keys
   already exist). On restore, validate the frame intersects a connected monitor
   (`System.Windows.Forms.Screen.AllScreens` / `MonitorFromRect`) and re-centre otherwise —
@@ -822,7 +863,8 @@ assert full recovery.
 Same groups and defaults as `SPEC.md` §15, minus Audio→device (not needed) and minus the
 summary group, plus `asr.backend` / `asr.threads`.
 
-Live-applying: font size, opacity, always-on-top, auto-scroll, timestamps, clipboard.
+Live-applying: font size, auto-scroll, timestamps, clipboard. (No opacity or
+always-on-top — cut, §7.3.)
 Next-Start: VAD sensitivity, endpoint silence, max utterance, interim interval, models,
 backend.
 
@@ -939,7 +981,7 @@ Fixed budgets that do not depend on the hardware:
 6. **Soak** — 3 h continuous, memory and handle counts flat, no dropped-sample runaway.
 7. **Real-audio WER pass** — noisy, multi-speaker recordings. This is still outstanding on
    macOS (`specs/STATUS.md`); doing it once on Windows fixtures benefits both.
-8. **Manual** — always-on-top + opacity over a Teams/Zoom call, screen-share capture check,
+8. **Manual** — side-by-side layout over a Teams/Zoom call,
    monitor unplug, headphone/Bluetooth switch mid-session, clipboard contention with a
    clipboard manager running.
 
@@ -983,7 +1025,7 @@ Phase 1  ▶  Core logic port + shared test vectors          (no UI, no audio, n
 Phase 2  ▶  WASAPI loopback + resampler                    ‖ parallel with Phase 1
 Phase 3  ▶  Whisper.net engine + streaming orchestrator    → first live captions
 Phase 4  ▶  Session lifecycle, transcript, journal, recovery
-Phase 5  ▶  Caption UI, overlay window, clipboard
+Phase 5  ▶  Caption UI, clipboard, source picker, level meter
 Phase 6  ▶  Session list + settings
 Phase 7  ▶  Packaging, soak, WER pass
 ```
@@ -1007,7 +1049,7 @@ Rough effort, assuming one experienced .NET developer:
 | 2 | WASAPI **process + endpoint** loopback, resampling, device changes, silence padding, sleep prevention | 5–7 days |
 | 3 | ASR engine, CUDA+CPU backends, word timings, dGPU-loss fallback (§5.8), orchestrator | 5–8 days |
 | 4 | Lifecycle, transcript, journal, recovery | 3–4 days |
-| 5 | Caption view, overlay, clipboard, source picker + level meter (§4.5–4.7) | 5–7 days |
+| 5 | Caption view, clipboard, source picker + level meter (§4.5–4.7) | 4–6 days |
 | 6 | Session list, settings | 3–4 days |
 | 7 | Packaging, soak, WER, polish | 3–5 days |
 |  | **Total** | **~6–8 weeks** |
@@ -1040,8 +1082,8 @@ CUDA/CPU offload decision.
 5. Interim partials meet the p90 budget set by Phase 0; finals ≤ ~2 s p50 on the target
    machine; **committed text is never rewritten**.
 6. Whisper silence-hallucinations suppressed — a 5-minute silent soak produces no captions.
-7. Always-on-top and 0.3–1.0 opacity work with normal window chrome; the window frame is
-   restored and validated against currently connected monitors.
+7. The window frame is restored on launch and validated against currently connected
+   monitors, re-centring when the saved frame is off-screen.
 8. Clipboard automation works as configured, is **off by default**, never reads the
    clipboard, and survives a clipboard-contention retry without crashing.
 9. All settings persist; a corrupt `config.json` repairs to defaults with a timestamped backup.
@@ -1074,7 +1116,7 @@ CUDA/CPU offload decision.
 | ID | Blocker | Blocks | Status |
 |----|---------|--------|--------|
 | **W1** | Target-hardware profile of the ASUS | §5, §13, all phases | ✅ **CLOSED** 2026-09-20 — ROG Zephyrus G15, RTX 3070 8 GB, CUDA 12.5 (§0.5) |
-| W2 | Word-timestamp support in Whisper.net (DTW alignment heads) | §5.7, RollingCaption fidelity | ⚠ Verify in Phase 0 — **now the top technical risk** |
+| W2 | Word-timestamp support in Whisper.net (DTW alignment heads) | §5.7, RollingCaption fidelity | ⚠ Verify in Phase 0 — **has a strong fallback** (§5.7.1): fixed-origin windows + LocalAgreement-2, which the encoder floor makes affordable on this GPU |
 | W3 | Interim budget / streaming-transducer fallback | §5.5 | ✅ **De-risked** by W1 — GPU path has 5–10× headroom; applies only to the CPU fallback |
 | **W7** | **Hybrid vs turbo-only** — can one resident `large-v3-turbo` serve both lanes on this GPU? Re-opens `SPEC.md` §22.2 / B4 on better hardware | §5.4, whole ASR architecture | ▶ **Answered by Phase 0.** Could remove the dual-model split entirely |
 | W4 | Code-signing certificate — needed only if the app goes beyond the owner's machine | §11 | **[NEEDS OWNER]**, non-blocking for v1 |
@@ -1119,6 +1161,8 @@ Things that get **simpler** on Windows:
   Multi-Output Device. The entire audio-setup chapter of `SPEC.md` evaporates.
 - No notarisation gate. Distribution is unblocked on day one for the owner's own machine.
 - Auto-copy-on-selection is trivial (the macOS build still has it unimplemented).
+- **The overlay is cut** (§7.3) — no `Topmost` management, no layered-window alpha, no
+  legibility clamp, and no screen-share capture warning. One fewer subsystem.
 - **Process loopback has no macOS equivalent in the shipped app.** ScreenCaptureKit can
   filter by application, but the current build captures the whole display's audio;
   targeting just the meeting app keeps Spotify and Slack pings out of the transcript.
