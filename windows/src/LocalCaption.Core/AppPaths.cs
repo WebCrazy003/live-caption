@@ -21,8 +21,18 @@ namespace LocalCaption.Core;
 /// </remarks>
 public static class AppPaths
 {
-    public static string Root { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LocalCaption");
+    /// <summary>
+    /// <c>%LOCALAPPDATA%\LocalCaption</c>, unless <c>LOCALCAPTION_HOME</c> names somewhere else.
+    /// </summary>
+    /// <remarks>
+    /// The override is for trying a build without putting real transcripts, settings and a
+    /// multi-gigabyte model folder in its hands — a scratch profile, or a portable copy on a
+    /// stick. Unset, which is always the case for an installed app, nothing changes.
+    /// </remarks>
+    public static string Root { get; } =
+        Environment.GetEnvironmentVariable("LOCALCAPTION_HOME") is { Length: > 0 } home
+            ? Path.GetFullPath(home)
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LocalCaption");
 
     public static string Transcripts => Path.Combine(Root, "transcripts");
     public static string Journal => Path.Combine(Root, "journal");

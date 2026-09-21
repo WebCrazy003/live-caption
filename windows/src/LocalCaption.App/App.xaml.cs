@@ -24,7 +24,30 @@ public partial class App : Application
     /// would have deleted a recording in progress. The failure is silent and the fix is a
     /// mutex, so the mutex wins.
     /// </remarks>
-    private const string InstanceMutexName = @"Local\LocalCaption.SingleInstance";
+    private const string InstanceMutexBase = @"Local\LocalCaption.SingleInstance";
+
+    /// <summary>
+    /// One instance per <i>data folder</i>, which is what the rule was always protecting.
+    /// </summary>
+    /// <remarks>
+    /// Two copies fighting over one journal folder is the hazard. A copy pointed somewhere
+    /// else with <c>LOCALCAPTION_HOME</c> shares nothing with the installed one, and being
+    /// able to run it alongside is the point of that variable — a build can be tried while
+    /// the real app carries on recording.
+    /// </remarks>
+    private static string InstanceMutexName
+    {
+        get
+        {
+            var root = LocalCaption.Core.AppPaths.Root.TrimEnd('\\', '/').ToUpperInvariant();
+            var standard = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LocalCaption").ToUpperInvariant();
+            if (root == standard) return InstanceMutexBase;
+
+            var hash = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(root));
+            return InstanceMutexBase + "." + Convert.ToHexString(hash, 0, 8);
+        }
+    }
 
     private Mutex? _instance;
     private AppEnvironment? _env;
@@ -51,14 +74,23 @@ public partial class App : Application
 
         _env = new AppEnvironment();
 
+        // Before the first window, including the message boxes below: a dialog that opens in
+        // the wrong theme and then corrects itself is the flash this avoids.
+        ThemeManager.Apply(_env.Config.Ui.Theme);
+
         if (_env.ConfigWasRepaired)
             MessageBox.Show("The settings file could not be read, so it has been reset. " +
                             "The previous one was kept alongside it.",
                             "Local Caption", MessageBoxButton.OK, MessageBoxImage.Information);
 
+        // WPF adopts the first window it sees as the main window, and this app shuts down when
+        // its main window closes — so a styled dialog shown before the real window exists
+        // would end the program by being answered. Hold shutdown off until the real one is up.
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
         OfferRecovery(_env);
 
         MainWindow = new MainWindow(_env);
+        ShutdownMode = ShutdownMode.OnMainWindowClose;
         MainWindow.Show();
     }
 
@@ -86,9 +118,9 @@ public partial class App : Application
         summary.AppendLine();
         summary.AppendLine("Save them as transcripts?");
 
-        var answer = MessageBox.Show(summary.ToString(), "Recover unsaved sessions",
-                                     MessageBoxButton.YesNo, MessageBoxImage.Question);
-        if (answer != MessageBoxResult.Yes) return;   // leave them; the offer repeats next launch
+        // leave them; the offer repeats next launch
+        if (!ConfirmDialog.Ask(null, "Recover unsaved sessions", summary.ToString().TrimEnd(),
+                               "Save them", "Not now")) return;
 
         var failed = 0;
         foreach (var pending in env.PendingRecoveries.ToList())

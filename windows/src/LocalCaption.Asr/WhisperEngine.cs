@@ -66,18 +66,30 @@ public sealed class WhisperEngine : IAsyncDisposable
     private WhisperProcessor? _interim;
     private WhisperProcessor? _final;
 
+    /// <summary>The longest prompt worth sending: whisper.cpp keeps about 224 tokens of it.</summary>
+    private const int PromptLimit = 600;
+
     public string InterimName { get; }
     public string FinalName { get; }
+
+    /// <summary>The initial prompt built from <c>asr.vocabulary</c>, or null when there is none.</summary>
+    public string? Prompt { get; }
+
+    /// <summary>Beam width on the final lane; below 2 means greedy.</summary>
+    public int FinalBeamSize { get; }
     public AsrBackend RequestedBackend { get; }
     public int Threads { get; }
     public EngineInfo? Info { get; private set; }
     public bool IsLoaded => _interim is not null && _final is not null;
 
     public WhisperEngine(string interimModel, string finalModel,
-                         AsrBackend backend = AsrBackend.Auto, int threads = 0)
+                         AsrBackend backend = AsrBackend.Auto, int threads = 0, string? vocabulary = null,
+                         int finalBeamSize = 0)
     {
         InterimName = interimModel;
         FinalName = finalModel;
+        Prompt = BuildPrompt(vocabulary);
+        FinalBeamSize = Math.Clamp(finalBeamSize, 0, 8);
         RequestedBackend = backend;
         // 0 means "physical cores" (§9.2). Environment.ProcessorCount counts logical
         // processors, and oversubscribing whisper.cpp with SMT siblings costs throughput.
@@ -137,6 +149,27 @@ public sealed class WhisperEngine : IAsyncDisposable
     }
 
     /// <summary>
+    /// Turn a comma-separated list into the sentence whisper.cpp is primed with.
+    /// </summary>
+    /// <remarks>
+    /// The decoder treats its prompt as "what was said just before", so a name that appears
+    /// there is a name it will prefer to spell that way again. It is a nudge, not a
+    /// dictionary: it fixes "Chukwu Emeka" → "Chukwuemeka", it does not teach a language the
+    /// model was never trained on.
+    /// </remarks>
+    public static string? BuildPrompt(string? vocabulary)
+    {
+        if (string.IsNullOrWhiteSpace(vocabulary)) return null;
+
+        var terms = vocabulary.Split([',', ';', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                              .Where(t => t.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase);
+        var list = string.Join(", ", terms);
+        if (list.Length == 0) return null;
+        if (list.Length > PromptLimit) list = list[..PromptLimit];
+        return $"{PromptLead}: {list}.";
+    }
+
+    /// <summary>
     /// Which native library Whisper.net settled on, read after the first factory is built.
     /// </summary>
     /// <remarks>
@@ -188,20 +221,55 @@ public sealed class WhisperEngine : IAsyncDisposable
     /// Final decoding: accuracy over latency. This output is what gets written to the
     /// transcript and can never be revised, so it keeps temperature fallback enabled.
     /// </summary>
-    private WhisperProcessor BuildFinal(WhisperFactory factory) => factory.CreateBuilder()
-        .WithLanguage("en")
-        .WithThreads(Threads)
-        .WithProbabilities()
-        .WithNoContext()
-        .Build();
+    /// <remarks>
+    /// The vocabulary prompt goes here and only here. The interim lane decodes overlapping
+    /// six-second windows several times a second, where a prompt is both wasted time and one
+    /// more thing for a fragment of silence to be "completed" into.
+    /// </remarks>
+    private WhisperProcessor BuildFinal(WhisperFactory factory)
+    {
+        var builder = factory.CreateBuilder()
+            .WithLanguage("en")
+            .WithThreads(Threads)
+            .WithProbabilities()
+            .WithNoContext();
+        if (Prompt is not null) builder = builder.WithPrompt(Prompt);
+
+        // Final lane only, for the same reason as the prompt: an interim result is thrown
+        // away half a second later, so spending twice the decode on it buys nothing.
+        if (FinalBeamSize > 1) builder = builder.WithBeamSearchSamplingStrategy(beam => beam.WithBeamSize(FinalBeamSize));
+        return builder.Build();
+    }
 
     // ── Decoding ─────────────────────────────────────────────────────────────────────────
 
     public Task<SpeechOutcome> TranscribeInterimAsync(IReadOnlyList<float> audio, CancellationToken cancellationToken = default) =>
         RunAsync(_interim, audio, wantWords: true, cancellationToken);
 
-    public Task<SpeechOutcome> TranscribeFinalAsync(IReadOnlyList<float> audio, CancellationToken cancellationToken = default) =>
-        RunAsync(_final, audio, wantWords: false, cancellationToken);
+    public async Task<SpeechOutcome> TranscribeFinalAsync(IReadOnlyList<float> audio, CancellationToken cancellationToken = default)
+    {
+        var outcome = await RunAsync(_final, audio, wantWords: false, cancellationToken).ConfigureAwait(false);
+
+        // A primed decoder handed near-silence will sometimes recite its prompt. That is a
+        // hallucination with a known text, so it can be caught exactly.
+        return outcome is SpeechOutcome.Success success && EchoesPrompt(success.Text)
+            ? new SpeechOutcome.Filtered()
+            : outcome;
+    }
+
+    private bool EchoesPrompt(string text)
+    {
+        if (Prompt is null) return false;
+        var said = text.Trim().TrimEnd('.', ' ');
+
+        // Narrow on purpose. Someone may genuinely say two listed names in a row, and losing
+        // real speech is the worse error — so only the prompt's own framing, or most of the
+        // prompt recited whole, counts as an echo.
+        return said.StartsWith(PromptLead, StringComparison.OrdinalIgnoreCase) ||
+               (said.Length >= Prompt.Length * 0.6 && Prompt.Contains(said, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private const string PromptLead = "Names and terms";
 
     private static async Task<SpeechOutcome> RunAsync(WhisperProcessor? processor, IReadOnlyList<float> audio,
                                                       bool wantWords, CancellationToken cancellationToken)

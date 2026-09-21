@@ -44,6 +44,7 @@ public sealed class SessionController : IAsyncDisposable
     private CancellationTokenSource? _clock;
     private bool _transitioning;
     private bool _capturePauseRequested;
+    private bool _modelsStale;
     private Guid _sessionId = Guid.NewGuid();
     private DateTimeOffset _startedAt = DateTimeOffset.Now;
     private IDisposable? _awake;
@@ -79,6 +80,12 @@ public sealed class SessionController : IAsyncDisposable
     /// <summary>Set when a caption has been copied, for the brief UI confirmation.</summary>
     public event Action? Copied;
 
+    /// <summary>
+    /// Raised once per turn, when the speaker has been quiet for <c>send.turn_gap_ms</c> —
+    /// with the turn's text. What "send automatically" listens to.
+    /// </summary>
+    public event Action<string>? TurnCompleted;
+
     public string DisplayName => SessionName.Length == 0 ? "New Session" : SessionName;
 
     /// <summary>True once any final has been committed — gates "Copy last N".</summary>
@@ -103,18 +110,22 @@ public sealed class SessionController : IAsyncDisposable
 
     public async Task StartAsync()
     {
-        if (_transitioning || HasUnsavedSession || !Orchestrator.ModelReady) return;
+        if (_transitioning || HasUnsavedSession) return;
+        if (!Orchestrator.ModelReady && !_modelsStale) return;
         if (Phase is not (SessionPhase.Ready or SessionPhase.Saved or SessionPhase.Failed)) return;
 
         _transitioning = true;
         try
         {
+            if (!await EnsureModelsCurrentAsync().ConfigureAwait(false)) return;
+
             _sessionId = Guid.NewGuid();
             _startedAt = DateTimeOffset.Now;
             Orchestrator.ApplyTuning(_env.Config);
 
             SessionName = _env.Config.General.SessionNamePrefix + TimeFormat.FileStamp(_startedAt);
             _transcript = new Transcript();
+            _lastTurnAnnouncedEndMs = -1;
             _paragraphs.Clear();
             Current = "";
             SavedTranscriptPath = null;
@@ -204,6 +215,9 @@ public sealed class SessionController : IAsyncDisposable
                 }
             }
 
+            if (!await EnsureModelsCurrentAsync().ConfigureAwait(false)) return;
+            Orchestrator.ApplyTuning(_env.Config);
+
             try
             {
                 await Orchestrator.ResumeCaptureAsync(_env.Config).ConfigureAwait(false);
@@ -248,6 +262,82 @@ public sealed class SessionController : IAsyncDisposable
         }
     }
 
+    // ── live reconfiguration (the quick toolbar) ─────────────────────────────────────────
+
+    /// <summary>
+    /// Apply a settings change made from the toolbar without ending the session.
+    /// </summary>
+    /// <param name="reloadModels">The change names different models or a different backend.</param>
+    /// <param name="interrupt">
+    /// Whether a recording may be paused and resumed to apply it now. False leaves a
+    /// recording alone and applies the change at its next pause or the next Start.
+    /// </param>
+    /// <remarks>
+    /// <para>Everything the capture layer and the engine read from config is read when a
+    /// stream <i>begins</i> — so applying a change mid-recording means ending the stream and
+    /// beginning another, which is exactly what pause and resume already do, in-flight
+    /// utterance finalised and journal intact. This adds no second mechanism; it presses the
+    /// two buttons in order.</para>
+    /// <para>A model swap costs a few seconds in which nothing is captured. That is the
+    /// user's trade to make, and they made it by picking the model.</para>
+    /// </remarks>
+    public async Task ReconfigureAsync(bool reloadModels, bool interrupt = true)
+    {
+        if (reloadModels)
+        {
+            // Fetch first, while the recording carries on with the models it has. Only a file
+            // that is already here is worth pausing for.
+            if (!await Orchestrator.PredownloadAsync(_env.Config).ConfigureAwait(false)) return;
+            _modelsStale = true;
+        }
+
+        // Mid-transition there is nothing safe to interrupt. The stale flag is honoured by
+        // the next Start or Resume, so the choice is not lost — only deferred.
+        if (_transitioning) return;
+
+        if (Phase == SessionPhase.Recording)
+        {
+            if (!interrupt) return;      // deferred to the next pause, by the same flag
+
+            await PauseAsync().ConfigureAwait(false);
+            if (Phase == SessionPhase.Paused) await ResumeAsync().ConfigureAwait(false);
+            return;
+        }
+
+        if (!reloadModels || Phase is not (SessionPhase.Ready or SessionPhase.Saved or
+                                           SessionPhase.Failed or SessionPhase.Paused)) return;
+
+        _transitioning = true;
+        var before = Phase;
+        try
+        {
+            if (!await EnsureModelsCurrentAsync().ConfigureAwait(false)) return;
+
+            // Back to where it was. Saved must stay Saved — HasUnsavedSession reads the phase,
+            // and a saved transcript relabelled Ready would block the next Start.
+            Phase = before == SessionPhase.Failed && !HasUnsavedSession ? SessionPhase.Ready : before;
+        }
+        finally
+        {
+            FinishTransition();
+        }
+    }
+
+    /// <summary>Reload the engine if the toolbar changed it. False means it could not load.</summary>
+    private async Task<bool> EnsureModelsCurrentAsync()
+    {
+        if (!_modelsStale && Orchestrator.ModelReady) return true;
+
+        var before = Phase;
+        Phase = SessionPhase.Preparing;
+        Notify();
+
+        _modelsStale = false;
+        var loaded = await Orchestrator.ReloadModelAsync(_env.Config).ConfigureAwait(false);
+        Phase = loaded ? before : SessionPhase.Failed;
+        return loaded;
+    }
+
     /// <summary>
     /// Leave the transition, then honour a pause the capture layer asked for while we were
     /// busy — an overload during Stop must not restart the machine.
@@ -288,6 +378,7 @@ public sealed class SessionController : IAsyncDisposable
 
         _transcript.Append(segment);
         AddToParagraphs(text);
+        WatchForTurnEnd();
         Notify();
     }
 
@@ -300,12 +391,106 @@ public sealed class SessionController : IAsyncDisposable
         Current = "";
     }
 
-    private string CommittedText => string.Join(" ", _transcript.Segments.Select(s => s.Text));
+    // Bookmarks are segments so that they are journalled and saved like everything else, but
+    // they are the user's marks, not the interviewer's words — nothing copied or sent has them.
+    private string CommittedText => string.Join(" ", _transcript.Segments.Where(s => !Turns.IsBookmark(s)).Select(s => s.Text));
+
+    /// <summary>The last unbroken stretch of speech — "what they just asked". See <see cref="Turns"/>.</summary>
+    public string LastTurn() => Turns.LastText(_transcript.Segments, _env.Config.Send.TurnGapMs,
+                                               Orchestrator.Hypothesis, Orchestrator.RecordedMs);
+
+    /// <summary>Copy the last turn. False when there is nothing to copy yet.</summary>
+    public bool CopyLastQuestion()
+    {
+        var text = LastTurn();
+        if (text.Length == 0) return false;
+        if (_env.Clipboard?.Invoke(text) == true) Copied?.Invoke();
+        return true;
+    }
+
+    /// <summary>
+    /// Mark this moment in the transcript, to find again afterwards.
+    /// </summary>
+    /// <remarks>
+    /// Goes through the same journal-then-memory path as a caption, so a bookmark survives a
+    /// crash exactly as well as the words around it, and lands in the saved file in order.
+    /// </remarks>
+    public async Task<bool> BookmarkAsync()
+    {
+        if (Phase is not (SessionPhase.Recording or SessionPhase.Paused)) return false;
+
+        var now = Orchestrator.RecordedMs;
+        var segment = new TranscriptSegment
+        {
+            Text = $"{Turns.BookmarkLead} bookmark {TimeFormat.Clock(now / 1000)}]",
+            TStartMs = now,
+            TEndMs = now,
+            CreatedAt = TimeFormat.Iso(DateTimeOffset.Now),
+        };
+
+        try
+        {
+            if (_journal is { } journal) await journal.AppendAsync(segment).ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            SaveError = $"Recovery journal write failed: {e.Message}. Stop to save the transcript.";
+        }
+
+        _transcript.Append(segment);
+
+        // On a line of its own: a mark buried mid-paragraph is a mark nobody finds.
+        if (Current.Length > 0) _paragraphs.Add(Current);
+        _paragraphs.Add(segment.Text);
+        Current = "";
+        Notify();
+        return true;
+    }
+
+    // ── turn completion ──────────────────────────────────────────────────────────────────
+
+    private CancellationTokenSource? _turnTimer;
+    private int _lastTurnAnnouncedEndMs = -1;
+
+    /// <summary>
+    /// Restart the quiet-timer. Called whenever speech is heard; when it finally runs out,
+    /// the turn is over.
+    /// </summary>
+    private void WatchForTurnEnd()
+    {
+        _turnTimer?.Cancel();
+        _turnTimer?.Dispose();
+        var timer = new CancellationTokenSource();
+        _turnTimer = timer;
+
+        // A final arrives the endpoint silence (~600 ms) plus a decode after the words stop,
+        // so that much of the gap has already passed by the time this starts counting.
+        var wait = Math.Max(400, _env.Config.Send.TurnGapMs - _env.Config.Asr.EndpointSilenceMs);
+        _ = Task.Delay(wait, timer.Token).ContinueWith(_ =>
+        {
+            if (Orchestrator.Hypothesis.Length > 0) { WatchForTurnEnd(); return; }     // still talking
+
+            var turn = Turns.Last(_transcript.Segments, _env.Config.Send.TurnGapMs);
+            if (turn.Count == 0 || turn[^1].TEndMs == _lastTurnAnnouncedEndMs) return;
+
+            _lastTurnAnnouncedEndMs = turn[^1].TEndMs;
+            TurnCompleted?.Invoke(string.Join(" ", turn.Select(s => s.Text.Trim())));
+        }, timer.Token, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
+    }
 
     // ── clipboard (write-only — §7.4, §12.1) ─────────────────────────────────────────────
 
     /// <summary>Copy the last N completed sentences, N from Settings.</summary>
     public void CopyLastN() => CopyLastN("");
+
+    /// <summary>Copy every committed caption so far — the transcript as it stands.</summary>
+    public void CopyAll()
+    {
+        var paragraphs = Current.Length == 0 ? _paragraphs : [.. _paragraphs, Current];
+        var text = string.Join(Environment.NewLine + Environment.NewLine, paragraphs);
+        if (text.Length == 0) return;
+        if (_env.Clipboard?.Invoke(text) == true) Copied?.Invoke();
+    }
 
     /// <summary>
     /// At an endpoint, copy the latest interim rather than waiting for the final model; the
@@ -415,6 +600,7 @@ public sealed class SessionController : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         StopClock();
+        _turnTimer?.Cancel();
         _awake?.Dispose();
         _awake = null;
         await Orchestrator.DisposeAsync().ConfigureAwait(false);

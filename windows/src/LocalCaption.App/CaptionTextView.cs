@@ -41,6 +41,29 @@ public sealed class CaptionTextView : TextEditor
             if (!_updating && SelectionLength > 0) Following = false;
         };
         TextArea.TextView.ScrollOffsetChanged += (_, _) => OnScrolled();
+
+        // Selection as a tint over the text rather than AvalonEdit's default solid block
+        // with inverted text, which reads as a different control in either theme.
+        TextArea.SelectionForeground = null;
+        TextArea.SelectionBorder = null;
+        TextArea.SelectionCornerRadius = 2;
+        ApplyTheme();
+    }
+
+    /// <summary>
+    /// Take the text, provisional and selection colours from the current theme.
+    /// </summary>
+    /// <remarks>
+    /// The foreground can follow the palette by itself. The other two cannot: a line
+    /// transformer paints with whatever brush it holds, and the selection brush is a plain
+    /// property on the text area — so both are re-read here whenever the theme changes.
+    /// </remarks>
+    public void ApplyTheme()
+    {
+        SetResourceReference(ForegroundProperty, "Text");
+        if (TryFindResource("Text.Provisional") is Brush provisional) _provisional.Dim = provisional;
+        if (TryFindResource("Selection") is Brush selection) TextArea.SelectionBrush = selection;
+        TextArea.TextView.Redraw();
     }
 
     /// <summary>Whether the view is tracking the end of the transcript.</summary>
@@ -147,18 +170,17 @@ public sealed class CaptionTextView : TextEditor
     /// </remarks>
     private sealed class ProvisionalColorizer : DocumentColorizingTransformer
     {
-        private readonly Brush _dim = new SolidColorBrush(Color.FromRgb(0x8A, 0x8A, 0x8E));
+        /// <summary>The provisional colour. Replaced, never mutated, when the theme changes.</summary>
+        public Brush Dim { get; set; } = new SolidColorBrush(Color.FromRgb(0x8A, 0x8A, 0x8E));
 
         public int ProvisionalStart { get; set; }
-
-        public ProvisionalColorizer() => _dim.Freeze();
 
         protected override void ColorizeLine(DocumentLine line)
         {
             if (line.Offset + line.Length <= ProvisionalStart) return;
             var from = Math.Max(line.Offset, ProvisionalStart);
             if (from >= line.Offset + line.Length) return;
-            ChangeLinePart(from, line.Offset + line.Length, element => element.TextRunProperties.SetForegroundBrush(_dim));
+            ChangeLinePart(from, line.Offset + line.Length, element => element.TextRunProperties.SetForegroundBrush(Dim));
         }
     }
 }

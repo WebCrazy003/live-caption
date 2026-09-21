@@ -1,113 +1,323 @@
-﻿<Window x:Class="LocalCaption.App.SettingsWindow"
+<local:ChromeWindow x:Class="LocalCaption.App.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Settings" Height="620" Width="560"
-        WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
-        UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
+        xmlns:local="clr-namespace:LocalCaption.App"
+        Title="Settings" Height="640" Width="780" MinHeight="420" MinWidth="560"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResize" ShowInTaskbar="False">
 
     <Window.Resources>
-        <Style TargetType="TextBlock" x:Key="Heading">
-            <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Margin" Value="0,16,0,6" />
+        <Style x:Key="Field" TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,14,0,5" />
+            <Setter Property="Foreground" Value="{DynamicResource Text.Secondary}" />
+            <Setter Property="FontSize" Value="12.5" />
         </Style>
-        <Style TargetType="TextBlock" x:Key="Note">
-            <Setter Property="Foreground" Value="#6B6B70" />
-            <Setter Property="TextWrapping" Value="Wrap" />
-            <Setter Property="FontSize" Value="11" />
-            <Setter Property="Margin" Value="0,2,0,0" />
+        <Style x:Key="Group" TargetType="TextBlock" BasedOn="{StaticResource Type.Caps}">
+            <Setter Property="Margin" Value="0,26,0,2" />
         </Style>
-        <Style TargetType="ComboBox">
-            <Setter Property="Margin" Value="0,2,0,0" />
-            <Setter Property="Padding" Value="6,4" />
+        <Style x:Key="Page" TargetType="StackPanel">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Setter Property="MaxWidth" Value="560" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
         </Style>
     </Window.Resources>
 
-    <DockPanel Margin="18">
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right"
-                    Margin="0,16,0,0">
-            <Button Content="Cancel" Padding="14,6" MinWidth="88" Margin="0,0,8,0" IsCancel="True" />
-            <Button Content="Save" Padding="14,6" MinWidth="88" IsDefault="True" Click="OnSave" />
-        </StackPanel>
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="176" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
 
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <StackPanel>
-
-                <TextBlock Style="{StaticResource Heading}" Text="Audio source" Margin="0,0,0,6" />
-                <RadioButton x:Name="ModeProcess" GroupName="Mode" Content="Capture one application" />
-                <TextBlock Style="{StaticResource Note}"
-                           Text="Recommended. Captures what the meeting app plays, whatever output device it ends up on — so it survives a Jump Desktop session connecting or disconnecting mid-call." />
-                <ComboBox x:Name="ProcessPicker" Margin="20,6,0,0" DisplayMemberPath="Label" />
-
-                <RadioButton x:Name="ModeEndpoint" GroupName="Mode" Content="Capture an output device"
-                             Margin="0,12,0,0" />
-                <TextBlock Style="{StaticResource Note}"
-                           Text="Captures everything played to one device, including notifications and music." />
-                <ComboBox x:Name="EndpointPicker" Margin="20,6,0,0" DisplayMemberPath="Label" />
-
-                <TextBlock Style="{StaticResource Heading}" Text="Speech recognition" />
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="12" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0">
-                        <TextBlock Text="Live captions model" />
-                        <ComboBox x:Name="InterimModel" />
-                    </StackPanel>
-                    <StackPanel Grid.Column="2">
-                        <TextBlock Text="Final transcript model" />
-                        <ComboBox x:Name="FinalModel" />
-                    </StackPanel>
-                </Grid>
-                <TextBlock Text="Compute backend" Margin="0,10,0,0" />
-                <ComboBox x:Name="Backend" />
-                <TextBlock x:Name="BackendNote" Style="{StaticResource Note}" />
-
-                <TextBlock Style="{StaticResource Heading}" Text="Captions" />
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="Font size" VerticalAlignment="Center" Width="90" />
-                    <Slider x:Name="FontSizeSlider" Minimum="12" Maximum="32" Width="220"
-                            TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
-                    <TextBlock Text="{Binding ElementName=FontSizeSlider, Path=Value, StringFormat={}{0:0}}"
-                               VerticalAlignment="Center" Margin="8,0,0,0" />
-                </StackPanel>
-                <TextBlock Style="{StaticResource Note}"
-                           Text="Worth raising for remote use — video compression is unkind to small text." />
-                <CheckBox x:Name="AutoScroll" Content="Follow the latest caption" Margin="0,8,0,0" />
-                <CheckBox x:Name="ShowTimestamps" Content="Timestamps in saved transcripts" Margin="0,6,0,0" />
-
-                <TextBlock Style="{StaticResource Heading}" Text="Clipboard" />
-                <CheckBox x:Name="AutoUpdate" Content="Copy the latest captions automatically" />
-                <TextBlock Style="{StaticResource Note}"
-                           Text="Off by default. It writes every few seconds, so over a synced clipboard it will overwrite whatever you copied on your own machine — turn Jump Desktop's clipboard sync off while recording, then this is safe. The transcript file, not the clipboard, is the durable copy." />
-                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                    <TextBlock Text="Sentences to copy" VerticalAlignment="Center" Width="120" />
-                    <TextBox x:Name="RecentSentences" Width="60" Padding="6,4" />
-                </StackPanel>
-
-                <TextBlock Style="{StaticResource Heading}" Text="Detection (applies at next Start)" />
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="Sensitivity" VerticalAlignment="Center" Width="120" />
-                    <Slider x:Name="VadSensitivity" Minimum="0" Maximum="3" Width="200"
-                            TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                    <TextBlock Text="End of speech (ms)" VerticalAlignment="Center" Width="120" />
-                    <TextBox x:Name="EndpointSilence" Width="80" Padding="6,4" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                    <TextBlock Text="Longest phrase (s)" VerticalAlignment="Center" Width="120" />
-                    <TextBox x:Name="MaxUtterance" Width="80" Padding="6,4" />
-                </StackPanel>
-
-                <TextBlock Style="{StaticResource Heading}" Text="Transcripts" />
-                <StackPanel Orientation="Horizontal">
-                    <TextBox x:Name="TranscriptFolder" Width="380" Padding="6,4" />
-                    <Button Content="Open" Padding="14,6" Margin="8,0,0,0" Click="OnOpenFolder" />
-                </StackPanel>
-
+        <!-- Pages -->
+        <Border Grid.RowSpan="2" Background="{DynamicResource Bg.Panel}"
+                BorderBrush="{DynamicResource Line}" BorderThickness="0,0,1,0">
+            <DockPanel>
+            <StackPanel DockPanel.Dock="Bottom" Margin="16,0,12,12">
+                <TextBlock x:Name="VersionText" FontSize="10" Foreground="{DynamicResource Text.Faint}"
+                           FontFamily="{StaticResource Font.Mono}" />
+                <TextBlock FontSize="10" Margin="0,3,0,0" TextWrapping="Wrap"
+                           Foreground="{DynamicResource Text.Faint}" Text="Designed by Richard &amp; Stevitech" />
             </StackPanel>
+            <ListBox x:Name="Pages" Margin="8,12,8,8" SelectionChanged="OnPageChanged">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding Glyph}" FontFamily="{StaticResource Font.Icon}" FontSize="14"
+                                       Width="18" Margin="2,0,10,0" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Text.Muted}" />
+                            <TextBlock Text="{Binding Label}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            </DockPanel>
+        </Border>
+
+        <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Focusable="False">
+            <Grid Margin="26,22,22,22">
+
+                <!-- ── Audio ── -->
+                <StackPanel x:Name="PageAudio" Style="{StaticResource Page}">
+                    <TextBlock Style="{StaticResource Type.Heading}" Text="Audio source" />
+
+                    <RadioButton x:Name="ModeProcess" GroupName="Mode" Content="Capture one application" />
+                    <TextBlock Style="{StaticResource Type.Note}" Margin="25,3,0,0"
+                               Text="Recommended. Captures what the meeting app plays, whatever output device it ends up on — so it survives a Jump Desktop session connecting or disconnecting mid-call." />
+                    <ComboBox x:Name="ProcessPicker" Margin="25,8,0,0" DisplayMemberPath="Label" />
+
+                    <RadioButton x:Name="ModeEndpoint" GroupName="Mode" Content="Capture an output device"
+                                 Margin="0,18,0,0" />
+                    <TextBlock Style="{StaticResource Type.Note}" Margin="25,3,0,0"
+                               Text="Captures everything played to one device, including notifications and music." />
+                    <ComboBox x:Name="EndpointPicker" Margin="25,8,0,0" DisplayMemberPath="Label" />
+
+                    <TextBlock Style="{StaticResource Type.Note}" Margin="0,22,0,0"
+                               Text="The source can also be switched from the toolbar above the captions, including while recording." />
+
+                    <TextBlock Style="{StaticResource Group}" Text="LEVEL" />
+                    <CheckBox x:Name="AutoGainBox" Content="Bring quiet audio up to speaking level" Margin="0,12,0,0" />
+                    <TextBlock Style="{StaticResource Type.Note}" Margin="25,3,0,0"
+                               Text="Recommended. On most PCs the app hears the call only as loudly as your speakers are set, so turning the volume down used to make captions skip whole sentences. This keeps detection the same at any volume. Audio that is already loud enough is left exactly as it is. When it is working, the status bar shows BOOST." />
+                </StackPanel>
+
+                <!-- ── Speech ── -->
+                <StackPanel x:Name="PageSpeech" Style="{StaticResource Page}">
+                    <TextBlock Style="{StaticResource Type.Heading}" Text="Speech recognition" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="14" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Style="{StaticResource Field}" Margin="0,0,0,5" Text="Live captions model" />
+                            <ComboBox x:Name="InterimModel" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Style="{StaticResource Field}" Margin="0,0,0,5" Text="Final transcript model" />
+                            <ComboBox x:Name="FinalModel" />
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock Style="{StaticResource Field}" Text="Final transcript care" />
+                    <ComboBox x:Name="FinalCare" DisplayMemberPath="Label" />
+                    <TextBlock Style="{StaticResource Type.Note}"
+                               Text="Careful weighs several whole-phrase candidates before committing, instead of taking the likeliest next word each time. It is meant for noisy or heavily accented audio. On clean speech it changed almost nothing in testing, for about a tenth more time on the GPU — watch FINAL in the status bar. Leave it on Standard when running on the CPU." />
+
+                    <TextBlock Style="{StaticResource Field}" Text="Compute backend" />
+                    <ComboBox x:Name="Backend" />
+                    <TextBlock x:Name="BackendNote" Style="{StaticResource Type.Note}" />
+                    <TextBlock Style="{StaticResource Type.Note}"
+                               Text="A model change loads as soon as it is safe: at once when idle or paused, at the next pause when recording." />
+
+                    <TextBlock Style="{StaticResource Group}" Text="NAMES AND TERMS TO LISTEN FOR" />
+                    <TextBox x:Name="Vocabulary" Margin="0,10,0,0" Height="66" AcceptsReturn="True"
+                             TextWrapping="Wrap" VerticalContentAlignment="Top" Padding="8,6"
+                             VerticalScrollBarVisibility="Auto"
+                             Tag="Chukwuemeka, Ngozi, Adaeze, Kubernetes, PostgreSQL…" />
+                    <TextBlock Style="{StaticResource Type.Note}"
+                               Text="Comma-separated: people, companies, products, jargon. The final model is shown these before each phrase, which nudges it towards your spelling. It is a nudge, not a guarantee — in testing it fixed some names and not others — so still check any name that matters. It does not teach the model a new language; Whisper has no Igbo." />
+
+                    <TextBlock Style="{StaticResource Group}" Text="DETECTION — APPLIES AT NEXT START OR RESUME" />
+                    <TextBlock Style="{StaticResource Field}" Text="Sensitivity" />
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Right" Style="{StaticResource Type.Measure}" Margin="12,0,0,0"
+                                   Text="{Binding ElementName=VadSensitivity, Path=Value, StringFormat={}{0:0} / 3}" />
+                        <Slider x:Name="VadSensitivity" Minimum="0" Maximum="3"
+                                TickFrequency="1" IsSnapToTickEnabled="True" />
+                    </DockPanel>
+                    <Grid Margin="0,2,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="14" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Style="{StaticResource Field}" Text="End of speech (ms)" />
+                            <TextBox x:Name="EndpointSilence" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Style="{StaticResource Field}" Text="Longest phrase (s)" />
+                            <TextBox x:Name="MaxUtterance" />
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+
+                <!-- ── Captions ── -->
+                <StackPanel x:Name="PageCaptions" Style="{StaticResource Page}">
+                    <TextBlock Style="{StaticResource Type.Heading}" Text="Captions" />
+                    <TextBlock Style="{StaticResource Field}" Margin="0,0,0,5" Text="Font size" />
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Right" Style="{StaticResource Type.Measure}" Margin="12,0,0,0"
+                                   Text="{Binding ElementName=FontSizeSlider, Path=Value, StringFormat={}{0:0} pt}" />
+                        <Slider x:Name="FontSizeSlider" Minimum="12" Maximum="32"
+                                TickFrequency="1" IsSnapToTickEnabled="True" />
+                    </DockPanel>
+                    <TextBlock Style="{StaticResource Type.Note}"
+                               Text="Worth raising for remote use — video compression is unkind to small text." />
+                    <CheckBox x:Name="AutoScroll" Content="Follow the latest caption" Margin="0,16,0,0" />
+                    <CheckBox x:Name="ShowTimestamps" Content="Timestamps in saved transcripts" Margin="0,10,0,0" />
+
+                    <TextBlock Style="{StaticResource Group}" Text="CLIPBOARD" />
+                    <CheckBox x:Name="AutoUpdate" Content="Copy the latest captions automatically" Margin="0,12,0,0" />
+                    <TextBlock Style="{StaticResource Type.Note}" Margin="25,3,0,0"
+                               Text="Off by default. It writes every few seconds, so over a synced clipboard it will overwrite whatever you copied on your own machine — turn Jump Desktop's clipboard sync off while recording, then this is safe. The transcript file, not the clipboard, is the durable copy." />
+                    <TextBlock Style="{StaticResource Field}" Text="Sentences to copy" />
+                    <TextBox x:Name="RecentSentences" Width="80" HorizontalAlignment="Left" />
+
+                    <TextBlock Style="{StaticResource Group}" Text="TRANSCRIPTS" />
+                    <TextBlock Style="{StaticResource Field}" Text="Folder" />
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="Open" Tag="&#xE8B7;" Margin="8,0,0,0" Click="OnOpenFolder" />
+                        <TextBox x:Name="TranscriptFolder" />
+                    </DockPanel>
+                </StackPanel>
+
+                <!-- ── Send ── -->
+                <StackPanel x:Name="PageSend" Style="{StaticResource Page}" MaxWidth="600">
+                    <TextBlock Style="{StaticResource Type.Heading}" Text="Send to your answer tool" Margin="0,0,0,6" />
+                    <TextBlock Style="{StaticResource Type.Note}" Margin="0,0,0,14"
+                               Text="Puts the last question — everything since the speaker last paused — straight into the tool that answers it, on one key. Off, the same key just copies it. Everything here stays on this PC." />
+
+                    <RadioButton x:Name="SendOff" GroupName="Send" Content="Off — copy to the clipboard only" Checked="OnSendTargetPicked" />
+
+                    <RadioButton x:Name="SendWindow" GroupName="Send" Content="Paste into a window" Margin="0,14,0,0" Checked="OnSendTargetPicked" />
+                    <TextBlock Style="{StaticResource Type.Note}" Margin="25,3,0,0"
+                               Text="For a ChatGPT or DeepSeek chat already open in your browser, or any app with a message box. Local Caption switches to that window, pastes, optionally presses Enter, and switches straight back — the same thing you do by hand, in about half a second. The chat has to be the tab showing in that window. It only ever happens when you press the key." />
+                    <StackPanel x:Name="SendWindowOptions" Margin="25,8,0,0">
+                        <ComboBox x:Name="WindowPicker" DisplayMemberPath="Label" DropDownOpened="OnWindowsOpening"
+                                  SelectionChanged="OnWindowPicked" Tag="PICK" />
+                        <TextBlock Style="{StaticResource Field}" Margin="0,10,0,5" Text="…or any window whose title contains" />
+                        <TextBox x:Name="WindowTitle" Tag="ChatGPT" />
+                        <TextBlock Style="{StaticResource Type.Note}"
+                                   Text="A picked window is used for as long as it stays open, whatever its title becomes. The text is for next time: a new ChatGPT chat is titled “ChatGPT”, but a named conversation is titled with its name." />
+                    </StackPanel>
+
+                    <RadioButton x:Name="SendAddress" GroupName="Send" Content="Browser extension, or your own tool" Margin="0,14,0,0" Checked="OnSendTargetPicked" />
+                    <TextBlock Style="{StaticResource Type.Note}" Margin="25,3,0,0"
+                               Text="Nothing takes the foreground: the companion extension types into the chat tab in the background, even while you are looking at the call. A program of your own can ask the same address." />
+                    <StackPanel x:Name="SendAddressOptions" Margin="25,8,0,0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Port" VerticalAlignment="Center" Margin="0,0,10,0" Foreground="{DynamicResource Text.Secondary}" />
+                            <TextBox x:Name="SendPort" Width="80" />
+                            <Button Content="Extension folder" Tag="&#xE8B7;" Margin="12,0,0,0" Click="OnOpenExtension" />
+                        </StackPanel>
+                        <TextBlock x:Name="AddressNote" Style="{StaticResource Type.Note}" Margin="0,6,0,0" />
+                    </StackPanel>
+
+                    <RadioButton x:Name="SendFile" GroupName="Send" Content="Append to a file" Margin="0,14,0,0" Checked="OnSendTargetPicked" />
+                    <StackPanel x:Name="SendFileOptions" Margin="25,8,0,0">
+                        <TextBox x:Name="SendFilePath" />
+                        <TextBlock Style="{StaticResource Type.Note}" Text="Each question is added as a paragraph. Point a tool at it and watch for changes." />
+                    </StackPanel>
+
+                    <TextBlock Style="{StaticResource Group}" Text="HOW" />
+                    <CheckBox x:Name="SendSubmit" Content="Press Enter after the text goes in, so the answer starts by itself" Margin="0,12,0,0" />
+                    <CheckBox x:Name="SendAuto" Content="Also send every question by itself, as soon as the speaker stops" Margin="0,10,0,0" />
+                    <TextBlock x:Name="SendAutoNote" Style="{StaticResource Type.Note}" Margin="25,3,0,0"
+                               Text="Not available for “Paste into a window”: taking the foreground unasked, while you are mid-click or mid-sentence, would do more harm than good." />
+                    <Grid Margin="0,4,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170" />
+                            <ColumnDefinition Width="14" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Style="{StaticResource Field}" Text="A question ends after (ms)" />
+                            <TextBox x:Name="TurnGap" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Style="{StaticResource Field}" Text="Wrap it in" />
+                            <TextBox x:Name="SendTemplate" Tag="{}{text}" />
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock Style="{StaticResource Type.Note}"
+                               Text="“Wrap it in” is sent around the question; {text} is where the question goes — for example: The interviewer asked: {text} — answer briefly." />
+
+                    <StackPanel Orientation="Horizontal" Margin="0,18,0,0">
+                        <Button x:Name="SendTestButton" Content="Send a test line" Tag="&#xE724;" Click="OnSendTest" />
+                        <TextBlock x:Name="SendTestState" Style="{StaticResource Type.Note}" Margin="12,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- ── Appearance ── -->
+                <StackPanel x:Name="PageAppearance" Style="{StaticResource Page}">
+                    <TextBlock Style="{StaticResource Type.Heading}" Text="Appearance" />
+                    <TextBlock Style="{StaticResource Field}" Margin="0,0,0,8" Text="Theme" />
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton x:Name="ThemeSystem" GroupName="Theme" Content="Match Windows" Checked="OnThemePicked" />
+                        <RadioButton x:Name="ThemeDark" GroupName="Theme" Content="Dark" Margin="22,0,0,0" Checked="OnThemePicked" />
+                        <RadioButton x:Name="ThemeLight" GroupName="Theme" Content="Light" Margin="22,0,0,0" Checked="OnThemePicked" />
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource Type.Note}" Margin="0,8,0,0"
+                               Text="Shown straight away so you can judge it; Cancel puts it back." />
+
+                    <TextBlock Style="{StaticResource Group}" Text="WINDOW" />
+                    <CheckBox x:Name="PinOnTop" Content="Keep the window on top of other apps" Margin="0,12,0,0" />
+                    <TextBlock Style="{StaticResource Type.Note}" Margin="25,3,0,0"
+                               Text="Useful beside a video call. The pin in the title bar does the same thing." />
+                    <CheckBox x:Name="SidebarShown" Content="Show the session list" Margin="0,14,0,0" />
+                    <TextBlock Style="{StaticResource Type.Note}" Margin="25,3,0,0"
+                               Text="It steps aside by itself whenever the window is too narrow for it." />
+                    <TextBlock Style="{StaticResource Type.Note}" Margin="0,14,0,0"
+                               Text="Text size and see-through are under the Aa button in the main window's title bar." />
+
+                    <TextBlock Style="{StaticResource Group}" Text="DESKTOP" />
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <Button x:Name="ShortcutButton" Content="Create desktop shortcut" Tag="&#xE71B;"
+                                Click="OnCreateShortcut" />
+                        <TextBlock x:Name="ShortcutState" Style="{StaticResource Type.Note}" Margin="12,0,0,0"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- ── Shortcuts ── -->
+                <StackPanel x:Name="PageShortcuts" Style="{StaticResource Page}" MaxWidth="640">
+                    <TextBlock Style="{StaticResource Type.Heading}" Text="Shortcuts" Margin="0,0,0,6" />
+                    <TextBlock Style="{StaticResource Type.Note}" Margin="0,0,0,4"
+                               Text="Click a key to change it, then press the new combination. Esc cancels, Backspace clears." />
+                    <TextBlock Style="{StaticResource Type.Note}" Margin="0,0,0,12">
+                        <Run FontWeight="SemiBold" Foreground="{DynamicResource Text.Secondary}" Text="Global" />
+                        <Run Text="makes a shortcut work while another app — Zoom, Teams, a browser — has focus. It needs Ctrl, Alt or Win in the combination, and it takes that combination away from every other app while Local Caption is running." />
+                    </TextBlock>
+                    <Grid x:Name="ShortcutGrid">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="150" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                    </Grid>
+                    <TextBlock x:Name="ShortcutNote" Style="{StaticResource Type.Note}" Margin="0,10,0,0"
+                               Foreground="{DynamicResource Caution}" Visibility="Collapsed" />
+                    <Button Content="Restore default keys" HorizontalAlignment="Left" Margin="0,16,0,0"
+                            Click="OnResetShortcuts" />
+                </StackPanel>
+
+                <!-- ── System ── -->
+                <StackPanel x:Name="PageSystem" Style="{StaticResource Page}" MaxWidth="640">
+                    <DockPanel Margin="0,0,0,2">
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                            <Button Content="Refresh" Tag="&#xE72C;" Click="OnRefreshSystem" />
+                            <Button x:Name="CopySystemButton" Content="Copy" Tag="&#xE8C8;" Margin="8,0,0,0"
+                                    Click="OnCopySystem" />
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource Type.Heading}" Text="System" Margin="0" />
+                    </DockPanel>
+                    <StackPanel x:Name="SystemRows" />
+                </StackPanel>
+            </Grid>
         </ScrollViewer>
-    </DockPanel>
-</Window>
+
+        <Border Grid.Row="1" Grid.Column="1" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0"
+                Padding="22,12">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Cancel" MinWidth="88" Margin="0,0,8,0" IsCancel="True" />
+                <Button Content="Save" Style="{StaticResource Button.Accent}" MinWidth="88" IsDefault="True"
+                        Click="OnSave" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</local:ChromeWindow>

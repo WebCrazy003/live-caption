@@ -28,4 +28,6 @@ windows/**/obj/
 
 # §11 publish output
 windows/publish/
+windows/publish-*/
+windows/.cuda-stash-*/
 windows/artifacts/

@@ -42,11 +42,42 @@ if (-not $dotnet -or -not (& $dotnet --list-sdks 2>$null)) {
 if (-not $dotnet) { throw "No .NET SDK found. Install the .NET 10 SDK — see windows/README.md." }
 
 Write-Host "Publishing to $Output"
-if (Test-Path $Output) { Remove-Item $Output -Recurse -Force }
+
+# Publishing clears the output folder first. If Local Caption is running FROM that folder,
+# that means deleting an open app out from under a session that may be recording: some files
+# go, the locked ones stay, and what is left neither runs nor records. Refuse, and say why.
+$full = [System.IO.Path]::GetFullPath($Output).TrimEnd('\')
+$inUse = Get-Process LocalCaption -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path -and [System.IO.Path]::GetFullPath($_.Path).StartsWith($full + '\', [System.StringComparison]::OrdinalIgnoreCase) }
+if ($inUse) {
+    throw "Local Caption is running from $full (PID $($inUse.Id -join ', ')). Close it first - if it is recording, Stop and save - or publish somewhere else with -Output."
+}
+
+# The CUDA redistributables are in no NuGet package — someone downloaded them from NVIDIA and
+# put them beside the executable by hand (README, "Packaging"). Clearing the output used to
+# take them with it, and the next run fell back to the CPU without a word. Carry them over.
+$cudaPattern = '^(cublas64_|cublasLt64_|cudart64_|nvcudart)'
+$stash = $null
+if (Test-Path $Output) {
+    $cuda = Get-ChildItem $Output -Filter '*.dll' -File | Where-Object { $_.Name -match $cudaPattern }
+    if ($cuda) {
+        $stash = Join-Path ([System.IO.Path]::GetDirectoryName($Output)) ('.cuda-stash-' + [Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Force $stash | Out-Null
+        $cuda | Move-Item -Destination $stash
+        Write-Host ("  kept {0} CUDA runtime DLL(s) aside" -f $cuda.Count)
+    }
+    Remove-Item $Output -Recurse -Force
+}
 
 & $dotnet publish (Join-Path $windows 'src/LocalCaption.App') `
     -c Release -r win-x64 --self-contained -p:PublishReadyToRun=true -o $Output
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with $LASTEXITCODE" }
+
+if ($stash) {
+    Get-ChildItem $stash -File | Move-Item -Destination $Output -Force
+    Remove-Item $stash -Recurse -Force
+    Write-Host '  restored the CUDA runtime DLLs'
+}
 
 $before = (Get-ChildItem $Output -Recurse -File | Measure-Object Length -Sum).Sum
 

@@ -16,8 +16,11 @@ namespace LocalCaption.App;
 /// </remarks>
 public static class WindowPlacement
 {
-    private const double MinimumWidth = 720;
-    private const double MinimumHeight = 480;
+    // Small enough to sit beside a video call. The layout is built to survive it: the
+    // sidebar steps aside, the toolbar scrolls, the controls wrap, and Settings lives in the
+    // title bar — which is the point of allowing it, where 720 px used to be the floor.
+    private const double MinimumWidth = 400;
+    private const double MinimumHeight = 320;
 
     public static void Restore(Window window, Config config)
     {

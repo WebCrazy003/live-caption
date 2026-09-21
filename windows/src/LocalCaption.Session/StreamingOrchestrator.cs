@@ -8,6 +8,17 @@ using LocalCaption.Core.Data;
 namespace LocalCaption.Session;
 
 /// <summary>
+/// How fast the two decode lanes are running, for the status bar.
+/// </summary>
+/// <param name="InterimMs">Smoothed decode time of the live (interim) model.</param>
+/// <param name="FinalMs">Smoothed decode time of the final model.</param>
+/// <param name="LagMs">How far the last decoded window trailed live audio.</param>
+/// <param name="RealtimeFactor">Seconds of audio the final model clears per second of work.</param>
+/// <param name="Decodes">How many decodes have been measured this session.</param>
+public sealed record SpeedReading(int InterimMs = 0, int FinalMs = 0, int LagMs = 0,
+                                  double RealtimeFactor = 0, int Decodes = 0);
+
+/// <summary>
 /// Streaming ASR: capture → VAD endpointing → interim/final decode.
 /// </summary>
 /// <remarks>
@@ -37,6 +48,8 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
     private Guid _activeCapture;
     private int _consecutiveFailures;
     private SpeechSegmenter.Tuning _tuning = new();
+    private readonly AutoGain _gain = new();
+    private bool _gainOn = true;
     private string? _gpuBanner;
 
     public string Hypothesis { get; private set; } = "";
@@ -54,11 +67,30 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
     /// <summary>What the capture layer is tapping, for the session header (§4.7.5).</summary>
     public string SourceName => _capture?.Source ?? "";
 
-    /// <summary>Live peak level, 0–1, for the meter §4.7.5 makes a requirement.</summary>
-    public float Level => _capture?.Level ?? 0;
+    /// <summary>
+    /// Live peak level, 0–1, for the meter §4.7.5 makes a requirement — of the audio the
+    /// speech gate is actually given, so the meter shows what the app hears rather than how
+    /// loud the speakers happen to be.
+    /// </summary>
+    public float Level => _capture is null ? 0 : _gainOn ? Math.Max(_gain.Level, _capture.Level) : _capture.Level;
+
+    /// <summary>How much the quiet-audio gain is adding right now, in dB. 0 when it is idle or off.</summary>
+    public double GainDb => _capture is not null && _gainOn ? _gain.GainDb : 0;
 
     /// <summary>Elapsed recorded audio. Sample-based, so it freezes while paused.</summary>
     public int RecordedMs => _totalSamples / 16;
+
+    /// <summary>
+    /// Decode speed, smoothed. Replaced whole on every metric so a reader on another thread
+    /// sees one consistent reading rather than a half-updated one.
+    /// </summary>
+    public SpeedReading Speed { get; private set; } = new();
+
+    /// <summary>What the loaded engine ended up using — backend, library, threads (§5.2).</summary>
+    public EngineInfo? EngineInfo => _engine?.Info;
+
+    /// <summary>True while audio is being captured; the engine must not be swapped under it.</summary>
+    public bool IsCapturing => _capture is not null;
 
     /// <summary>
     /// How far the capture clock has drifted from elapsed time, and what it took to hold it.
@@ -103,7 +135,8 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
         FinalName = final;
         _gpuBanner = banner;
 
-        var engine = new WhisperEngine(InterimName, FinalName, backend, config.Asr.Threads);
+        var engine = new WhisperEngine(InterimName, FinalName, backend, config.Asr.Threads, config.Asr.Vocabulary,
+                                       config.Asr.FinalBeamSize);
         _engine = engine;
 
         try
@@ -140,6 +173,32 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
         Changed();
     }
 
+    /// <summary>
+    /// Throw the loaded models away and load whatever <paramref name="config"/> now names.
+    /// </summary>
+    /// <remarks>
+    /// Only while capture is stopped — the same rule <see cref="FallBackToCpuAsync"/> lives by.
+    /// A pipeline holds the engine for as long as it exists, and pausing is what disposes the
+    /// pipeline, so "paused" is the one moment a session can change models and carry on.
+    /// </remarks>
+    public async Task<bool> ReloadModelAsync(Config config, CancellationToken cancellationToken = default)
+    {
+        if (_endingTask is { } ending) await ending.ConfigureAwait(false);
+        if (_capture is not null) return false;
+
+        if (_engine is { } old) { try { await old.DisposeAsync().ConfigureAwait(false); } catch (Exception) { } }
+        _engine = null;
+        ModelReady = false;
+        GpuLost = false;
+        _consecutiveFailures = 0;
+        Speed = new SpeedReading();      // the old models' numbers say nothing about the new ones
+        Status = "Switching speech models…";
+        Changed();
+
+        await PrepareModelAsync(config, cancellationToken).ConfigureAwait(false);
+        return ModelReady;
+    }
+
     /// <summary>The GPU vanished mid-session and the engine has not yet been rebuilt (§5.8).</summary>
     public bool GpuLost { get; private set; }
 
@@ -163,7 +222,9 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
         InterimName = interim;
         FinalName = final;
         ModelReady = false;
-        _engine = new WhisperEngine(interim, final, AsrBackend.Cpu, config.Asr.Threads);
+        // Greedy on the CPU regardless of the setting: beam search roughly doubles decode
+        // time, and a machine that has just lost its GPU has none to spare.
+        _engine = new WhisperEngine(interim, final, AsrBackend.Cpu, config.Asr.Threads, config.Asr.Vocabulary);
 
         try
         {
@@ -199,6 +260,12 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
     {
         if (_endingTask is { } ending) await ending.ConfigureAwait(false);
         _totalSamples = 0;
+        Speed = new SpeedReading();
+
+        // The gain is deliberately NOT reset between sessions. The volume someone had five
+        // minutes ago is the best guess there is at the volume they have now; if it has gone
+        // up the gain falls within milliseconds, and if it has not, the first word of the
+        // new session is caught instead of being spent re-learning the level.
         await BeginCaptureAsync(config).ConfigureAwait(false);
     }
 
@@ -250,10 +317,16 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
             Detail = behind ? "Live captions are catching up…" : "";
             Changed();
         };
+        pipeline.OnMetric = Measure;
 
         var capture = Create(config);
         _capture = capture;
-        capture.Samples += samples => buffer.Append(samples);
+        // Level first, then everything else. The gate downstream is an absolute loudness, and
+        // a loopback capture is as quiet as the speakers are set — see AutoGain for the
+        // session that taught this. In place and length-preserving, so the sample clock,
+        // which is a count of these samples, cannot tell it happened.
+        _gainOn = config.Audio.AutoGain;
+        capture.Samples += samples => buffer.Append(_gainOn ? _gain.Process(samples) : samples);
         capture.Fault += fault =>
         {
             if (_activeCapture != session) return;
@@ -291,11 +364,68 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
     /// The capture source §4.1 asks for: process loopback by default, endpoint loopback as
     /// the fallback and whenever no process has been chosen.
     /// </summary>
-    private static IAudioCapture Create(Config config) =>
-        config.Audio.CaptureMode.Equals("process", StringComparison.OrdinalIgnoreCase) &&
-        config.Audio.TargetProcess is { Length: > 0 } target
-            ? new ProcessLoopbackCapture(target)
-            : new EndpointLoopbackCapture(config.Audio.OutputDevice);
+    private static IAudioCapture Create(Config config)
+    {
+        var mode = config.Audio.CaptureMode;
+
+        if (mode.Equals("process", StringComparison.OrdinalIgnoreCase) && config.Audio.TargetProcess is { Length: > 0 } target)
+            return new ProcessLoopbackCapture(target);
+
+        // auto: only when it is unambiguous (see MeetingApps.TheOnePlaying). Otherwise the
+        // whole device — noisier, never wrong.
+        if (mode.Equals("auto", StringComparison.OrdinalIgnoreCase) &&
+            MeetingApps.TheOnePlaying(AudioSessions.List()) is { } call)
+            return new ProcessLoopbackCapture(call.Executable);
+
+        return new EndpointLoopbackCapture(config.Audio.OutputDevice);
+    }
+
+    /// <summary>
+    /// The models <paramref name="config"/> would load that are not on disk yet.
+    /// </summary>
+    /// <remarks>After the §5.8 substitution, because that is what would actually be fetched.</remarks>
+    public static IReadOnlyList<ModelSpec> MissingModels(Config config)
+    {
+        var backend = Enum.TryParse<AsrBackend>(config.Asr.Backend, ignoreCase: true, out var parsed) ? parsed : AsrBackend.Auto;
+        var onGpu = BackendProbe.UsesGpu(BackendProbe.Resolve(backend));
+        var (interim, final, _) = AsrFallback.Choose(onGpu, config.Asr.InterimModel, config.Asr.FinalModel);
+
+        return [.. new[] { interim, final }.Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(ModelCatalog.Resolve)
+            .Where(spec => !File.Exists(ModelCatalog.PathFor(spec, AppPaths.Models)))];
+    }
+
+    /// <summary>
+    /// Fetch whatever <paramref name="config"/> needs, without touching the loaded engine.
+    /// </summary>
+    /// <remarks>
+    /// A model swap mid-recording pauses capture for as long as the swap takes. Loading is
+    /// seconds; a 3 GB download is not. So the download happens first, with the recording
+    /// still running on the old models, and the pause only begins once the file is here.
+    /// </remarks>
+    public async Task<bool> PredownloadAsync(Config config, CancellationToken cancellationToken = default)
+    {
+        var missing = MissingModels(config);
+        if (missing.Count == 0) return true;
+
+        try
+        {
+            using var downloader = new ModelDownloader();
+            foreach (var spec in missing)
+                await downloader.EnsureAsync(spec, AppPaths.Models, UpdateDownload, cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            ErrorText = $"Could not download the model: {e.Message}";
+            return false;
+        }
+        finally
+        {
+            IsDownloading = false;
+            Changed();
+        }
+    }
 
     private async Task PollAsync(CaptureProcessor processor, CancellationToken cancellationToken)
     {
@@ -348,6 +478,45 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
         if (pause is not null) _ = Task.Run(pause);
 
         return outcome;
+    }
+
+    /// <summary>
+    /// Fold one decode into the speed reading.
+    /// </summary>
+    /// <remarks>
+    /// <para>Only decodes that actually ran the model count. A cancelled one was stopped by
+    /// Pause or Stop, and an "empty" one is usually a window too short to decode at all —
+    /// either would make a struggling machine look fast.</para>
+    /// <para>A timeout <i>does</i> count. It ran for the whole interim budget and was then
+    /// thrown away, so its time is a floor on how slow the model really is — and leaving it
+    /// out is how this readout once sat on a flattering 408 ms while every live decode was
+    /// being abandoned at two seconds.</para>
+    /// </remarks>
+    private void Measure(CaptionMetric metric)
+    {
+        if (metric.Outcome is not ("success" or "filtered" or "timeout")) return;
+
+        static int Smooth(int previous, int sample) =>
+            previous == 0 ? sample : (int)Math.Round(previous * 0.7 + sample * 0.3);
+
+        var speed = Speed;
+        if (metric.IsFinal)
+        {
+            var audioMs = Math.Max(1, metric.WindowEndMs - metric.WindowStartMs);
+            var factor = (double)audioMs / Math.Max(1, metric.DecodeMs);
+            speed = speed with
+            {
+                FinalMs = Smooth(speed.FinalMs, metric.DecodeMs),
+                RealtimeFactor = speed.RealtimeFactor == 0 ? factor : speed.RealtimeFactor * 0.7 + factor * 0.3,
+            };
+        }
+        else
+        {
+            speed = speed with { InterimMs = Smooth(speed.InterimMs, metric.DecodeMs), LagMs = metric.AudioLagMs };
+        }
+
+        Speed = speed with { Decodes = speed.Decodes + 1 };
+        Changed();
     }
 
     private void Receive(CaptureProcessor.Output output)

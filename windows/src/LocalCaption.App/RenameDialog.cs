@@ -16,16 +16,15 @@ public static class RenameDialog
         var input = new TextBox
         {
             Text = current,
-            Padding = new Thickness(6, 4, 6, 4),
-            Margin = new Thickness(0, 0, 0, 12),
+            Margin = new Thickness(0, 0, 0, 14),
         };
 
-        var ok = new Button { Content = "Rename", IsDefault = true, Padding = new Thickness(14, 6, 14, 6), MinWidth = 88 };
+        var ok = new Button { Content = "Rename", IsDefault = true, MinWidth = 88 };
+        ok.SetResourceReference(FrameworkElement.StyleProperty, "Button.Accent");
         var cancel = new Button
         {
             Content = "Cancel",
             IsCancel = true,
-            Padding = new Thickness(14, 6, 14, 6),
             MinWidth = 88,
             Margin = new Thickness(8, 0, 0, 0),
         };
@@ -35,11 +34,13 @@ public static class RenameDialog
         buttons.Children.Add(cancel);
 
         var panel = new StackPanel { Margin = new Thickness(18) };
-        panel.Children.Add(new TextBlock { Text = "Session name", Margin = new Thickness(0, 0, 0, 6) });
+        var label = new TextBlock { Text = "SESSION NAME", Margin = new Thickness(0, 0, 0, 6) };
+        label.SetResourceReference(FrameworkElement.StyleProperty, "Type.Caps");
+        panel.Children.Add(label);
         panel.Children.Add(input);
         panel.Children.Add(buttons);
 
-        var dialog = new Window
+        var dialog = new ChromeWindow
         {
             Title = "Rename session",
             Content = panel,

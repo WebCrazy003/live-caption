@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\LocalCaption.Audio\LocalCaption.Audio.csproj" />
@@ -26,6 +26,26 @@
     <Nullable>enable</Nullable>
     <ApplicationTitle>Local Caption</ApplicationTitle>
     <AssemblyName>LocalCaption</AssemblyName>
+    <Version>1.2.2</Version>
+    <Product>Local Caption</Product>
+    <Company>Richard &amp; Stevitech</Company>
+    <Description>Live captions for whatever this PC is playing</Description>
+    <!-- Drawn by build/make-icon.ps1. The .ico is the executable's and the taskbar's; the
+         .png is the same mark for the title bar, which WPF scales better from one large
+         frame than from an icon's fixed sizes. -->
+    <ApplicationIcon>Assets/app.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The "send to chat" browser extension travels beside the executable, so Settings ▸ Send
+         can open its folder on any install — published, portable or Velopack. -->
+    <Content Include="../../extension/**/*" Link="extension/%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets/app.png" />
+    <Resource Include="Assets/app.ico" />
+  </ItemGroup>
 
 </Project>
