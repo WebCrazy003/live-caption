@@ -29,6 +29,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'cuda.ps1')
+
 $windows = Split-Path -Parent $PSScriptRoot
 if (-not $Output) { $Output = Join-Path $windows 'publish' }
 
@@ -56,10 +58,9 @@ if ($inUse) {
 # The CUDA redistributables are in no NuGet package — someone downloaded them from NVIDIA and
 # put them beside the executable by hand (README, "Packaging"). Clearing the output used to
 # take them with it, and the next run fell back to the CPU without a word. Carry them over.
-$cudaPattern = '^(cublas64_|cublasLt64_|cudart64_|nvcudart)'
 $stash = $null
 if (Test-Path $Output) {
-    $cuda = Get-ChildItem $Output -Filter '*.dll' -File | Where-Object { $_.Name -match $cudaPattern }
+    $cuda = Get-CudaRuntimeDll $Output
     if ($cuda) {
         $stash = Join-Path ([System.IO.Path]::GetDirectoryName($Output)) ('.cuda-stash-' + [Guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Force $stash | Out-Null

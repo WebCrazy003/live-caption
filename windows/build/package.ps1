@@ -35,6 +35,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'cuda.ps1')
+
 $windows = Split-Path -Parent $PSScriptRoot
 $staging = Join-Path $windows 'publish'
 if (-not $Output) { $Output = Join-Path $windows 'artifacts' }
@@ -48,41 +50,17 @@ else {
 }
 
 if ($CudaDirectory) {
-    if (-not (Test-Path $CudaDirectory)) { throw "CUDA directory not found: $CudaDirectory" }
-    $dlls = Get-ChildItem $CudaDirectory -Filter '*.dll' -File |
-        Where-Object { $_.Name -match '^(cublas64_|cublasLt64_|cudart64_|nvcudart)' }
-    if (-not $dlls) { throw "No CUDA runtime DLLs in $CudaDirectory" }
-
-    # nvcudart_hybrid64.dll ships with the display driver, not in any CUDA redistributable
-    # archive, and it lives in the DriverStore where the loader will not find it. Confirmed
-    # against driver 616.92 — see BENCH-RESULTS.md §1.
-    if (-not ($dlls.Name -contains 'nvcudart_hybrid64.dll')) {
-        $hybrid = Get-ChildItem "$env:SystemRoot\System32\DriverStore\FileRepository" `
-                    -Filter 'nvcudart_hybrid64.dll' -Recurse -ErrorAction SilentlyContinue |
-                  Select-Object -First 1
-        if ($hybrid) {
-            Copy-Item $hybrid.FullName -Destination $staging -Force
-            Write-Host '  took nvcudart_hybrid64.dll from the driver store'
-        }
-        else { Write-Warning 'nvcudart_hybrid64.dll not found; the CUDA backend will not load.' }
-    }
-
     # Beside the executable, which is where BackendProbe looks first and where the loader
     # will find them without reaching into a system-wide CUDA install. §11 is explicit that
     # nothing should load from outside the install directory.
-    $dlls | Copy-Item -Destination $staging -Force
-    Write-Host ("  bundled {0} CUDA runtime DLL(s)" -f $dlls.Count)
+    Copy-CudaRuntime -From $CudaDirectory -To $staging
 }
-elseif (Get-ChildItem $staging -Filter '*.dll' -File | Where-Object { $_.Name -match '^(cublas64_|cublasLt64_|cudart64_)' }) {
+elseif (Get-CudaRuntimeDll $staging) {
     # publish.ps1 carries CUDA DLLs it finds in the output across the rebuild, so a machine
     # that has packaged once does not need to be told where they are again.
     Write-Host '  using the CUDA runtime DLLs already in publish/'
 }
-else {
-    Write-Warning ("No -CudaDirectory given. This installer will run on the CPU only, " +
-                   "which BENCH-RESULTS.md measures at 17 s per window for large-v3-turbo — " +
-                   "so §5.8 will fall back to small.en and captions will lag.")
-}
+else { Write-NoCudaWarning }
 
 # vpk refuses to overwrite a release of the same version, which turns an ordinary rebuild
 # into an error. Clearing the output is what "build the installer" means here — the releases

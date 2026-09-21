@@ -47,6 +47,35 @@ The macOS suite must stay green too — it runs the same vectors:
 cd ../app && swift test
 ```
 
+## Running the build you are working on
+
+```powershell
+build\release.ps1                                   # rebuild, install, shortcut
+build\release.ps1 -CudaDirectory C:\cuda-redist\bin # first time on a new machine
+build\release.ps1 -SkipPublish                      # install what publish/ already holds
+```
+
+Publishes, bundles the CUDA payload, mirrors the result into `%LOCALAPPDATA%\LocalCaptionBuild`
+and points **Local Caption** on the desktop at it — no installer, no admin rights, and no
+uninstall to undo. `-Run` starts it, `-NoShortcut` leaves the desktop alone, `-Destination`
+puts it elsewhere.
+
+It copies the build out of `publish/` rather than shortcutting to it because a shortcut into
+the repository breaks: `publish.ps1` clears its output at the start of every build, so between
+two rebuilds the icon points at nothing, and while the app is running from there the rebuild
+has to refuse outright — which means closing the app, mid-call if that is when you noticed.
+The third folder name is deliberate. `%LOCALAPPDATA%\LocalCaption` is the *data* (§9) and
+`%LOCALAPPDATA%\LocalCaptionApp` belongs to the installer, which deletes it on install and on
+uninstall; a build in either one would be a program in the transcript folder, or a build Setup
+silently removes. All three read the same data, so an installed copy and a local build share
+the models — downloaded once, not twice.
+
+The install is mirrored, not merged: a DLL dropped from the build is dropped from the install,
+because a stale native library that loads in preference to the right one is the failure this
+project can least afford to debug. Two things are refused rather than half-done — installing
+over a folder that holds files but no `LocalCaption.exe` (a mistyped `-Destination` should
+cost an error, not a directory), and installing over a running copy.
+
 ## Packaging
 
 **What to hand someone else:** `artifacts\LocalCaption-Setup-<version>.exe`, and nothing else. It is
@@ -65,7 +94,10 @@ build\package.ps1 -Version 1.0.0 -CudaDirectory <folder with cublas64_*, cudart6
 ```
 
 `build\publish.ps1` alone refreshes `publish/`; it now carries any CUDA DLLs already sitting
-there across the rebuild rather than deleting them with the folder.
+there across the rebuild rather than deleting them with the folder. What counts as the CUDA
+payload, and how it gets beside the executable, lives once in `build\cuda.ps1` — all three
+scripts dot-source it, because the three ways of getting it wrong all fail the same silent
+way (CPU fallback, no message).
 
 Publishes self-contained `win-x64` (§11), prunes the Linux, macOS and ARM native libraries
 Whisper.net copies in regardless of RID, and packs a Velopack installer into `artifacts/` —
