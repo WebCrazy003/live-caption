@@ -13,9 +13,7 @@ func ms(since t0: DispatchTime) -> Double {
 
 func ensureModel(_ variant: String, repo: String) async throws -> URL {
     let folder = AppPaths.models.appendingPathComponent("models/\(repo)/\(variant)", isDirectory: true)
-    if FileManager.default.fileExists(atPath: folder.appendingPathComponent("config.json").path) {
-        return folder
-    }
+    if ModelFiles.isComplete(folder) { return folder }
     FileHandle.standardError.write(Data("  downloading \(variant)…\n".utf8))
     return try await WhisperKit.download(variant: variant, downloadBase: AppPaths.models, from: repo) { _ in }
 }

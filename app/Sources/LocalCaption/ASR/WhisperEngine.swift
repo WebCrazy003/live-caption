@@ -58,18 +58,6 @@ final class WhisperEngine {
         AppPaths.models.appendingPathComponent("models/\(repo)/\(variant)", isDirectory: true)
     }
 
-    private func isDownloaded(_ variant: String) -> Bool {
-        let fm = FileManager.default
-        let f = localFolder(variant)
-        guard fm.fileExists(atPath: f.appendingPathComponent("config.json").path) else { return false }
-        for part in ["AudioEncoder.mlmodelc", "MelSpectrogram.mlmodelc", "TextDecoder.mlmodelc"] {
-            var isDir: ObjCBool = false
-            let ok = fm.fileExists(atPath: f.appendingPathComponent(part).path, isDirectory: &isDir)
-            if !ok || !isDir.boolValue { return false }
-        }
-        return true
-    }
-
     /// Ensure both models are on disk (download only what's missing) and load them resident.
     func prepare(onStatus: @escaping (String) -> Void,
                  onDownload: @escaping (String, Double) -> Void) async throws {
@@ -104,7 +92,9 @@ final class WhisperEngine {
     private func ensure(_ variant: String, name: String,
                         onStatus: @escaping (String) -> Void,
                         onDownload: @escaping (String, Double) -> Void) async throws -> URL {
-        if isDownloaded(variant) { return localFolder(variant) }
+        if ModelFiles.isComplete(localFolder(variant)) { return localFolder(variant) }
+        // Also the repair path for an interrupted download: the Hub client keeps
+        // the files already fetched and resumes the rest.
         onStatus("Downloading \(name)…")
         return try await WhisperKit.download(variant: variant, downloadBase: AppPaths.models, from: repo) { p in
             onDownload(name, p.fractionCompleted)
