@@ -152,44 +152,72 @@ struct ActiveSessionView: View {
 
     // MARK: Transport controls
 
+    /// How much of the transport bar's text survives at the current window width.
+    /// Each step gives up a little more, in order of how much the text is missed.
+    private enum BarDensity: Int, CaseIterable {
+        case full, autoCopyUnlabelled, iconActions, iconTransport
+    }
+
+    /// Picks the roomiest bar that fits. Controls that lose their text keep their
+    /// tooltip and accessibility label.
     private var transportBar: some View {
+        ViewThatFits(in: .horizontal) {
+            ForEach(BarDensity.allCases, id: \.self) { transportRow($0) }
+        }
+    }
+
+    private func transportRow(_ density: BarDensity) -> some View {
         HStack(spacing: 12) {
-            switch controller.phase {
-            case .failed where controller.hasUnsavedSession:
-                Button { Task { await controller.resume() } } label: {
-                    Label("Retry capture", systemImage: "play.fill")
-                }
-                Button { Task { await controller.stop() } } label: {
-                    Label("Retry save", systemImage: "square.and.arrow.down")
-                }
-            case .ready, .saved, .failed:
-                Button { Task { await controller.start() } } label: {
-                    Label("Start", systemImage: "record.circle")
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(!controller.orchestrator.modelReady)
-            case .recording:
-                Button { Task { await controller.pause() } } label: { Label("Pause", systemImage: "pause.fill") }
-                Button(role: .destructive) { Task { await controller.stop() } } label: { Label("Stop", systemImage: "stop.fill") }
-                    .keyboardShortcut(".", modifiers: .command)
-            case .paused:
-                Button { Task { await controller.resume() } } label: { Label("Resume", systemImage: "play.fill") }
+            Group {
+                switch controller.phase {
+                case .failed where controller.hasUnsavedSession:
+                    Button { Task { await controller.resume() } } label: {
+                        Label("Retry capture", systemImage: "play.fill")
+                    }
+                    .help("Retry capture")
+                    Button { Task { await controller.stop() } } label: {
+                        Label("Retry save", systemImage: "square.and.arrow.down")
+                    }
+                    .help("Retry save")
+                case .ready, .saved, .failed:
+                    Button { Task { await controller.start() } } label: {
+                        Label("Start", systemImage: "record.circle")
+                    }
                     .buttonStyle(.borderedProminent)
-                Button(role: .destructive) { Task { await controller.stop() } } label: { Label("Stop", systemImage: "stop.fill") }
-            case .preparing, .pausing, .saving:
-                EmptyView()
+                    .disabled(!controller.orchestrator.modelReady)
+                    .help("Start")
+                case .recording:
+                    Button { Task { await controller.pause() } } label: { Label("Pause", systemImage: "pause.fill") }
+                        .help("Pause")
+                    Button(role: .destructive) { Task { await controller.stop() } } label: { Label("Stop", systemImage: "stop.fill") }
+                        .keyboardShortcut(".", modifiers: .command)
+                        .help("Stop")
+                case .paused:
+                    Button { Task { await controller.resume() } } label: { Label("Resume", systemImage: "play.fill") }
+                        .buttonStyle(.borderedProminent)
+                        .help("Resume")
+                    Button(role: .destructive) { Task { await controller.stop() } } label: { Label("Stop", systemImage: "stop.fill") }
+                        .help("Stop")
+                case .preparing, .pausing, .saving:
+                    EmptyView()
+                }
             }
+            .iconOnly(density.rawValue >= BarDensity.iconTransport.rawValue)
 
             Spacer()
 
-            Toggle("Auto-copy", isOn: $env.config.clipboard.autoUpdate)
+            let iconActions = density.rawValue >= BarDensity.iconActions.rawValue
+            let autoCopy = Toggle("Auto-copy", isOn: $env.config.clipboard.autoUpdate)
                 .toggleStyle(.switch).controlSize(.small)
                 .help("Automatically copy recent captions at speech endpoints and final updates")
+            if density == .full { autoCopy } else { autoCopy.labelsHidden() }
             Button { controller.copyLastN() } label: {
                 Label(controller.justCopied ? "Copied" : "Copy last \(env.config.clipboard.recentSentences)",
                       systemImage: controller.justCopied ? "checkmark" : "doc.on.doc")
             }
             .disabled(!controller.hasTranscript)
+            .help("Copy the last \(env.config.clipboard.recentSentences) sentences")
+            .iconOnly(iconActions)
 
             Divider().frame(height: 16)
 
@@ -199,6 +227,7 @@ struct ActiveSessionView: View {
                     .foregroundStyle(env.config.summary.enabled ? Color.accentColor : Color.secondary)
             }
             .help("Show the live AI summary of what the other person wants")
+            .iconOnly(iconActions)
 
             Divider().frame(height: 16)
 
@@ -213,5 +242,12 @@ struct ActiveSessionView: View {
 
     private func adjustFont(_ delta: Int) {
         env.config.caption.fontSize = min(48, max(10, env.config.caption.fontSize + delta))
+    }
+}
+
+private extension View {
+    /// Drop the title of any `Label` inside, keeping the icon.
+    @ViewBuilder func iconOnly(_ on: Bool) -> some View {
+        if on { labelStyle(.iconOnly) } else { self }
     }
 }
