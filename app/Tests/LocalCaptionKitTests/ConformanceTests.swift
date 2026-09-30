@@ -265,6 +265,9 @@ final class ConformanceTests: XCTestCase {
                                                         noSpeechProb: c.noSpeechProb ?? 0,
                                                         compressionRatio: c.compressionRatio ?? 0),
                                    c.expect, "\(where_): isLowQuality")
+                case "non_english":
+                    XCTAssertEqual(Filters.isNonEnglish(c.input ?? ""), c.expect,
+                                   "\(where_): isNonEnglish(\(c.input ?? ""))")
                 case "counts":
                     XCTAssertEqual(Filters.wordCount(c.input ?? ""), c.expectWords, "\(where_): wordCount")
                     XCTAssertEqual(Filters.sentenceCount(c.input ?? ""), c.expectSentences, "\(where_): sentenceCount")

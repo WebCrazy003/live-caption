@@ -27,6 +27,29 @@ final class FiltersTests: XCTestCase {
         XCTAssertEqual(Filters.sentenceCount("Hi. How are you? Good!"), 3)
     }
 
+    func testOtherScriptsAreNotEnglish() {
+        XCTAssertTrue(Filters.isNonEnglish("안녕하세요, 반갑습니다."))
+        XCTAssertTrue(Filters.isNonEnglish("我们明天再讨论这个问题"))
+        // One stray symbol does not condemn an English sentence.
+        XCTAssertFalse(Filters.isNonEnglish("The value of π is about 3.14."))
+    }
+
+    func testLatinScriptLanguagesAreNotEnglish() {
+        XCTAssertTrue(Filters.isNonEnglish("Ich habe das schon gesehen."))
+        XCTAssertTrue(Filters.isNonEnglish("¿Dónde está la estación?"))
+        XCTAssertTrue(Filters.isNonEnglish("Então..."))
+        XCTAssertTrue(Filters.isNonEnglish("Gracias."))
+    }
+
+    func testEnglishWithForeignLookingWordsPasses() {
+        XCTAssertFalse(Filters.isNonEnglish("Happy to be here, thanks for having me."))
+        XCTAssertFalse(Filters.isNonEnglish("We moved it to Las Vegas."))
+        XCTAssertFalse(Filters.isNonEnglish("Oscar de la Hoya."))
+        XCTAssertFalse(Filters.isNonEnglish("I went to MIT and used DAS storage."))
+        XCTAssertFalse(Filters.isNonEnglish("I met José yesterday."))
+        XCTAssertFalse(Filters.isNonEnglish(""))
+    }
+
     func testMetadataQualityGate() {
         // Healthy segment passes.
         XCTAssertFalse(Filters.isLowQuality(avgLogprob: -0.3, noSpeechProb: 0.05, compressionRatio: 1.4))

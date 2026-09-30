@@ -161,7 +161,7 @@ final class WhisperEngine {
             }
             let text = Filters.clean(kept.joined(separator: " "))
             if text.isEmpty { return rejected ? .filtered : .empty }
-            if Filters.isHallucination(text) { return .filtered }
+            if Filters.isHallucination(text) || Filters.isNonEnglish(text) { return .filtered }
             return .success(text: text, words: words, fallbacks: fallbacks)
         } catch is CancellationError { return .cancelled }
         catch { return .failure(error.localizedDescription) }

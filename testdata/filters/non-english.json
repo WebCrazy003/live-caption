@@ -1,0 +1,179 @@
+{
+  "name": "non-english",
+  "description": "The English-only gate. Decoding is forced to English, but a multilingual final model still answers foreign speech (and sometimes noise) in another language. Script check first: two or more letters (Lu/Ll/Lt/Lo) outside Basic Latin, Latin-1, Latin Extended-A/B and Latin Extended Additional, or a caption whose only letter is one. Then, on NFC text with U+2019 folded to an apostrophe, tokens are runs of letters and apostrophes with edge apostrophes trimmed; tokens of two or more A-Z capitals are acronyms and are ignored. Any English marker word (or the token 'I') keeps the caption. Otherwise it is rejected when it has a token with a non-ASCII letter or an inverted \u00bf \u00a1, two foreign function words, or nothing but foreign function words. The word lists are part of the contract and must be identical on both platforms. Known and accepted: a foreign phrase with no function words and no accents passes, and so does one inside a caption that also has an English marker.",
+  "kind": "non_english",
+  "cases": [
+    {
+      "input": "\uc548\ub155\ud558\uc138\uc694, \ubc18\uac11\uc2b5\ub2c8\ub2e4.",
+      "expect": true
+    },
+    {
+      "input": "\u6211\u4eec\u660e\u5929\u518d\u8ba8\u8bba\u8fd9\u4e2a\u95ee\u9898",
+      "expect": true
+    },
+    {
+      "input": "\u041f\u0440\u0438\u0432\u0435\u0442, \u043a\u0430\u043a \u0434\u0435\u043b\u0430?",
+      "expect": true
+    },
+    {
+      "input": "\u597d",
+      "expect": true
+    },
+    {
+      "input": "He said \uc548\ub155 to everyone.",
+      "expect": true
+    },
+    {
+      "input": "Ich habe das schon gesehen.",
+      "expect": true
+    },
+    {
+      "input": "S\u00ed.",
+      "expect": true
+    },
+    {
+      "input": "Ent\u00e3o...",
+      "expect": true
+    },
+    {
+      "input": "Gracias.",
+      "expect": true
+    },
+    {
+      "input": "Und",
+      "expect": true
+    },
+    {
+      "input": "C'est une bonne question.",
+      "expect": true
+    },
+    {
+      "input": "C\u2019est une bonne question.",
+      "expect": true
+    },
+    {
+      "input": "\u00bfD\u00f3nde est\u00e1 la estaci\u00f3n?",
+      "expect": true
+    },
+    {
+      "input": "T\u00e1 bom, t\u00e1 bom.",
+      "expect": true
+    },
+    {
+      "input": "Ciao a tutti.",
+      "expect": true
+    },
+    {
+      "input": "Pues para luego.",
+      "expect": true
+    },
+    {
+      "input": "N\u00e3o tem problema.",
+      "expect": true
+    },
+    {
+      "input": "Bueno, vamos.",
+      "expect": true
+    },
+    {
+      "input": "Si\u0301.",
+      "expect": true
+    },
+    {
+      "input": "Hva\u00f0 er \u00fea\u00f0?",
+      "expect": true
+    },
+    {
+      "input": "Happy to be here, thanks for having me.",
+      "expect": false
+    },
+    {
+      "input": "Agreed.",
+      "expect": false
+    },
+    {
+      "input": "C++ is the main core language.",
+      "expect": false
+    },
+    {
+      "input": "The value of \u03c0 is about 3.14.",
+      "expect": false
+    },
+    {
+      "input": "It draws 5 \u03a9.",
+      "expect": false
+    },
+    {
+      "input": "We moved it to Las Vegas.",
+      "expect": false
+    },
+    {
+      "input": "Las Vegas.",
+      "expect": false
+    },
+    {
+      "input": "Oscar de la Hoya.",
+      "expect": false
+    },
+    {
+      "input": "Ctrl Alt Del.",
+      "expect": false
+    },
+    {
+      "input": "I went to MIT and used DAS storage.",
+      "expect": false
+    },
+    {
+      "input": "MIT",
+      "expect": false
+    },
+    {
+      "input": "DAS ES UND",
+      "expect": false
+    },
+    {
+      "input": "I met Jos\u00e9 yesterday.",
+      "expect": false
+    },
+    {
+      "input": "She ordered a caf\u00e9 au lait.",
+      "expect": false
+    },
+    {
+      "input": "Caf\u00e9.",
+      "expect": false
+    },
+    {
+      "input": "example.com",
+      "expect": false
+    },
+    {
+      "input": "Non-blocking sockets.",
+      "expect": false
+    },
+    {
+      "input": "et cetera",
+      "expect": false
+    },
+    {
+      "input": "Okay, gracias.",
+      "expect": false
+    },
+    {
+      "input": "Maus...",
+      "expect": false
+    },
+    {
+      "input": "",
+      "expect": false
+    },
+    {
+      "input": "   ",
+      "expect": false
+    },
+    {
+      "input": "12:30, 45%.",
+      "expect": false
+    }
+  ]
+}

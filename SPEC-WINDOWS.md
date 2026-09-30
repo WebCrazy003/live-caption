@@ -1356,7 +1356,9 @@ not overlooked** — recording them here stops them being rediscovered as bugs.
   Tracked as a fix to the **shared** logic; §6.1's vectors are where the regression test
   belongs, and fixing it on macOS fixes it here.
 - **No speaker diarization.** A single mixed stream with no per-speaker labels.
-- **English only.**
+- **English only.** Captions that are not English are dropped, not shown, by the shared
+  `Filters.IsNonEnglish` word-list rule (SPEC.md §8.3). It misses foreign phrases that have
+  neither accents nor function words, and any inside an otherwise English caption.
 - **No microphone capture** — the transcript is of the other participant(s).
 - **Raw audio is never kept**, so a session cannot be re-transcribed with a better model.
 - **No live AI summary** in v1 (§1.3); the path to adding it is §16.7.

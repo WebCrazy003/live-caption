@@ -215,6 +215,15 @@ Drop or blank a segment when any of: `noSpeechProb > 0.6` on a low-energy region
 known Whisper silence-hallucinations ("Thank you.", "Thanks for watching.", trailing
 subtitle credits). Apply consecutive-repetition suppression on committed tokens.
 
+**English only.** Forcing the language (§8.1) does not stop a multilingual final model
+from answering foreign speech, or noise, in another language, so a caption that is not
+English is dropped like any other junk (`Filters.isNonEnglish`): text in a non-Latin
+script, or Latin-script text with no common English word that carries accents, inverted
+punctuation, or Spanish/Portuguese/French/German/Italian function words. The rule is word
+lists, not language identification, and is biased towards keeping text — a foreign phrase
+inside an otherwise English caption, or one with neither accents nor function words, still
+shows. Vectors: `testdata/filters/non-english.json`.
+
 ### 8.4 Model acquisition & offline (C6)
 - Models downloaded on first run to Application Support; progress UI; network **only** here.
 - On failure: retry / choose smaller final model / quit.

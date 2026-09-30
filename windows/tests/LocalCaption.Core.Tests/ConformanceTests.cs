@@ -155,6 +155,10 @@ public class ConformanceTests
                         Assert.True(c.Expect.GetBoolean() == Filters.IsHallucination(input),
                             $"{where}: isHallucination → {Filters.IsHallucination(input)}");
                         break;
+                    case "non_english":
+                        Assert.True(c.Expect.GetBoolean() == Filters.IsNonEnglish(input),
+                            $"{where}: isNonEnglish → {Filters.IsNonEnglish(input)}");
+                        break;
                     case "low_quality":
                         var verdict = Filters.IsLowQuality(
                             c.AvgLogprob ?? 0, c.NoSpeechProb ?? 0, c.CompressionRatio ?? 0);

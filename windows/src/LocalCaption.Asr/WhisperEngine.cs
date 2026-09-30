@@ -203,7 +203,7 @@ public sealed class WhisperEngine : IAsyncDisposable
 
         var text = Filters.Clean(string.Join(" ", kept));
         if (text.Length == 0) return rejected ? new SpeechOutcome.Filtered() : new SpeechOutcome.Empty();
-        if (Filters.IsHallucination(text)) return new SpeechOutcome.Filtered();
+        if (Filters.IsHallucination(text) || Filters.IsNonEnglish(text)) return new SpeechOutcome.Filtered();
 
         // whisper.cpp has no temperature-fallback counter to report, unlike WhisperKit.
         return new SpeechOutcome.Success(text, words, Fallbacks: 0);
