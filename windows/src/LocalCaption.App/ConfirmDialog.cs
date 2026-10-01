@@ -156,6 +156,85 @@ public static class ConfirmDialog
         return alsoFiles.IsChecked == true ? Removal.ListAndFiles : Removal.ListOnly;
     }
 
+    /// <summary>The same question as <see cref="AskToRemove"/>, for a selection.</summary>
+    /// <remarks>
+    /// It names them. "Remove 14 sessions?" asks for trust; a list of what the fourteen are
+    /// lets someone notice the one they did not mean to include.
+    /// </remarks>
+    public static Removal AskToRemoveMany(Window owner, IReadOnlyList<string> names, int fileCount)
+    {
+        var title = new TextBlock { Text = $"{names.Count} sessions", FontSize = 16, FontWeight = FontWeights.SemiBold };
+        title.SetResourceReference(TextBlock.FontFamilyProperty, "Font.Display");
+
+        var list = new StackPanel { Margin = new Thickness(0, 10, 0, 14) };
+        foreach (var name in names.Take(7))
+        {
+            var line = new TextBlock { Text = name, FontSize = 12, Margin = new Thickness(0, 1, 0, 1), TextTrimming = TextTrimming.CharacterEllipsis };
+            line.SetResourceReference(TextBlock.FontFamilyProperty, "Font.Mono");
+            line.SetResourceReference(TextBlock.ForegroundProperty, "Text.Secondary");
+            list.Children.Add(line);
+        }
+        if (names.Count > 7)
+        {
+            var more = new TextBlock { Text = $"…and {names.Count - 7} more", FontSize = 12, Margin = new Thickness(0, 3, 0, 0) };
+            more.SetResourceReference(TextBlock.ForegroundProperty, "Text.Muted");
+            list.Children.Add(more);
+        }
+
+        var explain = new TextBlock { Text = "This takes them out of the session list.", FontSize = 13, TextWrapping = TextWrapping.Wrap };
+
+        var alsoFiles = new CheckBox
+        {
+            Content = fileCount > 0 ? $"Also delete their transcript files ({fileCount} files)" : "Also delete their transcript files",
+            Margin = new Thickness(0, 16, 0, 0),
+            IsEnabled = fileCount > 0,
+        };
+        var note = new TextBlock
+        {
+            Text = fileCount > 0
+                ? "They go to the Recycle Bin, so a mistake can still be undone from there."
+                : "None of their transcript files are on disk any more, so there is nothing else to delete.",
+            Margin = new Thickness(25, 3, 0, 0),
+        };
+        note.SetResourceReference(FrameworkElement.StyleProperty, "Type.Note");
+
+        var remove = new Button { Content = $"Remove {names.Count} from list", IsDefault = true, MinWidth = 160 };
+        remove.SetResourceReference(FrameworkElement.StyleProperty, "Button.Accent");
+        var cancel = new Button { Content = "Cancel", IsCancel = true, MinWidth = 88, Margin = new Thickness(8, 0, 0, 0) };
+
+        void Restyle()
+        {
+            var files = alsoFiles.IsChecked == true;
+            remove.Content = files ? $"Delete files and remove {names.Count}" : $"Remove {names.Count} from list";
+            remove.SetResourceReference(FrameworkElement.StyleProperty, files ? "Button.Destructive" : "Button.Accent");
+        }
+        alsoFiles.Checked += (_, _) => Restyle();
+        alsoFiles.Unchecked += (_, _) => Restyle();
+
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 22, 0, 0) };
+        buttons.Children.Add(remove);
+        buttons.Children.Add(cancel);
+
+        var panel = new StackPanel { Margin = new Thickness(22, 20, 22, 18) };
+        foreach (var child in new UIElement[] { title, list, explain, alsoFiles, note, buttons }) panel.Children.Add(child);
+
+        var dialog = new ChromeWindow
+        {
+            Title = "Remove sessions",
+            Content = panel,
+            Owner = owner,
+            Width = 480,
+            SizeToContent = SizeToContent.Height,
+            ResizeMode = ResizeMode.NoResize,
+            ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+        };
+
+        remove.Click += (_, _) => dialog.DialogResult = true;
+        if (dialog.ShowDialog() != true) return Removal.Cancelled;
+        return alsoFiles.IsChecked == true ? Removal.ListAndFiles : Removal.ListOnly;
+    }
+
     public static bool Ask(Window? owner, string title, string message, string yes, string no = "Cancel")
     {
         var text = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, FontSize = 13, Margin = new Thickness(0, 0, 0, 18) };

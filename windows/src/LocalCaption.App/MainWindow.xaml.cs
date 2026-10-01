@@ -871,7 +871,81 @@ public partial class MainWindow : ChromeWindow
     /// </remarks>
     private void OnItemRightClicked(object sender, MouseButtonEventArgs e)
     {
-        if (sender is ListBoxItem item) item.IsSelected = true;
+        if (sender is not ListBoxItem item || item.IsSelected) return;
+
+        // Right-clicking inside a selection keeps it — that is how "remove these twelve" is
+        // reached. Right-clicking outside one starts a new selection, as Explorer does.
+        SessionList.SelectedItems.Clear();
+        item.IsSelected = true;
+    }
+
+    private List<SessionRow> SelectedRows() => [.. SessionList.SelectedItems.OfType<SessionRow>()];
+
+    private void OnSelectAllSessions(object sender, RoutedEventArgs e) => SessionList.SelectAll();
+
+    /// <summary>The count turns into "3 of 17" while several are picked, so a selection is never a surprise.</summary>
+    private void OnSessionSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        var picked = SessionList.SelectedItems.Count;
+        var total = SessionList.Items.Count;
+        SessionCount.Text = picked > 1 ? $"{picked} OF {total}" : total.ToString();
+        SessionCount.SetResourceReference(TextBlock.ForegroundProperty, picked > 1 ? "Accent" : "Text.Faint");
+    }
+
+    /// <summary>Some commands only make sense for one session; the menu says so by greying them.</summary>
+    private void OnSessionMenuOpened(object sender, RoutedEventArgs e)
+    {
+        var picked = SessionList.SelectedItems.Count;
+        MenuOpen.IsEnabled = picked >= 1;
+        MenuOpen.Header = picked > 1 ? $"Open {picked} transcripts" : "Open transcript";
+        MenuShow.IsEnabled = MenuRename.IsEnabled = picked == 1;
+        MenuRemove.IsEnabled = picked >= 1;
+        MenuRemove.Header = picked > 1 ? $"Remove {picked} sessions…" : "Remove…";
+    }
+
+    // ── refresh ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Re-read the list, then look for rows whose transcript is no longer on disk.
+    /// </summary>
+    /// <remarks>
+    /// The list is an index; the files are the truth (§7.4). Someone who clears out the
+    /// transcripts folder in Explorer is left with a list of sessions that open nothing, and
+    /// until now found out one "file not found" at a time. This finds them all at once and
+    /// offers to clear them — offers, because a folder on an unplugged drive looks exactly
+    /// the same as a folder that was emptied, and those rows are worth keeping.
+    /// </remarks>
+    private void OnRefreshSessions(object sender, RoutedEventArgs e)
+    {
+        RefreshSessions();
+
+        var all = _env.Store.All(SessionSort.CreatedDesc, null);
+        var orphans = all.Where(r => string.IsNullOrEmpty(r.TranscriptFile) || !File.Exists(r.TranscriptFile)).ToList();
+        if (orphans.Count == 0)
+        {
+            Flash(all.Count == 0 ? "✓ NO SESSIONS" : $"✓ ALL {all.Count} TRANSCRIPTS FOUND");
+            return;
+        }
+
+        var names = string.Join("\n", orphans.Take(6).Select(r => "  ·  " + r.SessionName));
+        if (orphans.Count > 6) names += $"\n  ·  …and {orphans.Count - 6} more";
+        var every = orphans.Count == all.Count && all.Count > 1;
+
+        var clear = ConfirmDialog.Ask(this, "Transcripts not found",
+            (orphans.Count == 1
+                ? "The transcript for 1 session is no longer on disk:"
+                : $"The transcripts for {orphans.Count} of {all.Count} sessions are no longer on disk:") +
+            $"\n\n{names}\n\n" +
+            (every ? "That is every session — if the folder is on a drive that is not connected right now, keep them.\n\n" : "") +
+            "Clear them from the list? Nothing on disk is touched.",
+            orphans.Count == 1 ? "Clear it" : $"Clear {orphans.Count}", "Keep");
+        if (!clear) return;
+
+        foreach (var orphan in orphans)
+            if (orphan.Id is { } id) _env.Store.Delete(id);
+
+        RefreshSessions();
+        Flash($"✓ CLEARED {orphans.Count} FROM THE LIST");
     }
 
     private void OnShowInFolder(object sender, RoutedEventArgs e)
@@ -950,50 +1024,84 @@ public partial class MainWindow : ChromeWindow
 
     private void OnDelete(object sender, RoutedEventArgs e)
     {
-        if (Selected() is not { } row || row.Record.Id is not { } id) return;
+        var rows = SelectedRows().Where(r => r.Record.Id is not null).ToList();
+        if (rows.Count == 0) return;
 
-        var text = row.Record.TranscriptFile;
-        var sidecar = string.IsNullOrEmpty(text) ? "" : Path.ChangeExtension(text, ".json");
-        var files = new[] { text, sidecar }.Where(f => !string.IsNullOrEmpty(f) && File.Exists(f)).ToList();
+        // Every file behind the selection: each transcript and its .json sidecar, if there.
+        var files = rows
+            .Select(r => r.Record.TranscriptFile)
+            .Where(f => !string.IsNullOrEmpty(f))
+            .SelectMany(f => new[] { f!, Path.ChangeExtension(f!, ".json") })
+            .Where(File.Exists)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
-        var choice = ConfirmDialog.AskToRemove(this, row.SessionName, row.When, text ?? "", files.Count > 0);
+        var choice = rows.Count == 1
+            ? ConfirmDialog.AskToRemove(this, rows[0].SessionName, rows[0].When, rows[0].Record.TranscriptFile ?? "", files.Count > 0)
+            : ConfirmDialog.AskToRemoveMany(this, [.. rows.Select(r => r.SessionName)], files.Count);
         if (choice == ConfirmDialog.Removal.Cancelled) return;
 
         // The list row is only a pointer; the transcript is the interview (§7.4). So the
         // default leaves the files alone, deleting them is a box that has to be ticked, and
         // even then they go to the Recycle Bin — one wrong click must not be able to cost
         // someone a transcript for good.
+        var stuck = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (choice == ConfirmDialog.Removal.ListAndFiles)
         {
-            var failed = new List<string>();
             foreach (var file in files)
             {
                 try
                 {
-                    Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(file!,
+                    Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(file,
                         Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
                         Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
                 }
-                catch (Exception) { failed.Add(Path.GetFileName(file!)); }
+                catch (Exception) { stuck.Add(Path.ChangeExtension(file, ".txt")); }
             }
-
-            if (failed.Count > 0)
-            {
-                // Keep the row: it is the only thing still pointing at files that are still there.
-                Flash($"Could not delete {string.Join(", ", failed)} — is it open somewhere?", ok: false);
-                return;
-            }
-            Flash("✓ MOVED TO THE RECYCLE BIN");
         }
 
-        _env.Store.Delete(id);
+        // A row whose file could not be deleted stays: it is the only thing still pointing at
+        // a file that is still there. The rest of the selection goes regardless.
+        var removed = 0;
+        foreach (var row in rows)
+        {
+            if (row.Record.TranscriptFile is { } text && stuck.Contains(text)) continue;
+            _env.Store.Delete(row.Record.Id!.Value);
+            removed++;
+        }
+
         RefreshSessions();
+        if (stuck.Count > 0)
+            Flash($"Removed {removed}; {stuck.Count} could not be deleted — open somewhere?", ok: false);
+        else if (choice == ConfirmDialog.Removal.ListAndFiles)
+            Flash(removed == 1 ? "✓ MOVED TO THE RECYCLE BIN" : $"✓ {removed} SESSIONS MOVED TO THE RECYCLE BIN");
+        else
+            Flash(removed == 1 ? "✓ REMOVED FROM THE LIST" : $"✓ {removed} REMOVED FROM THE LIST");
     }
 
     private SessionRow? Selected() => SessionList.SelectedItem as SessionRow;
 
     private void OpenSelected()
     {
+        var rows = SelectedRows();
+        if (rows.Count > 1)
+        {
+            // Each opens in the default editor. Twelve Notepads is a decision; forty is an accident.
+            if (rows.Count > 12 && !ConfirmDialog.Ask(this, "Open transcripts",
+                    $"Open all {rows.Count} transcripts, each in its own window?", $"Open {rows.Count}")) return;
+
+            var missing = 0;
+            foreach (var each in rows)
+            {
+                var file = each.Record.TranscriptFile;
+                if (string.IsNullOrEmpty(file) || !File.Exists(file)) { missing++; continue; }
+                try { Process.Start(new ProcessStartInfo(file) { UseShellExecute = true }); }
+                catch (Exception) { missing++; }
+            }
+            if (missing > 0) Flash($"{missing} of {rows.Count} are no longer on disk — try Refresh", ok: false);
+            return;
+        }
+
         if (Selected() is not { } row) return;
         var path = row.Record.TranscriptFile;
 

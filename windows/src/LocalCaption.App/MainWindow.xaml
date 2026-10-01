@@ -88,8 +88,13 @@
                              way back, but nobody looks there for how to make a list go away. -->
                         <Button x:Name="SidebarCloseButton" DockPanel.Dock="Right" Style="{StaticResource Button.Ghost}"
                                 Tag="&#xE76B;" Width="26" Height="24" Click="OnToggleSidebar" Focusable="False" />
+                        <!-- Re-reads the list and checks every row's file is still there. Files get
+                             tidied away in Explorer; the list has no way to know until asked. -->
+                        <Button x:Name="SessionRefreshButton" DockPanel.Dock="Right" Style="{StaticResource Button.Ghost}"
+                                Tag="&#xE72C;" Width="24" Height="24" FontSize="11" Click="OnRefreshSessions"
+                                Focusable="False" ToolTip="Refresh — and find sessions whose transcript has gone" />
                         <TextBlock x:Name="SessionCount" DockPanel.Dock="Right" Style="{StaticResource Type.Caps}"
-                                   Foreground="{DynamicResource Text.Faint}" Margin="0,0,6,0" />
+                                   Foreground="{DynamicResource Text.Faint}" Margin="0,0,4,0" />
                         <TextBlock Style="{StaticResource Type.Caps}" Text="SESSIONS" />
                     </DockPanel>
                     <TextBox x:Name="SearchBox" DockPanel.Dock="Top" Margin="12,0,12,6" Tag="Search"
@@ -98,8 +103,11 @@
                               SelectionChanged="OnSortChanged" DisplayMemberPath="Label" />
                     <TextBlock x:Name="EmptyList" DockPanel.Dock="Top" Style="{StaticResource Type.Note}"
                                Margin="14,8" Text="No saved sessions yet. Press Start to record one." />
+                    <!-- Extended: click, Ctrl+click, Shift+click, Ctrl+A — the Explorer rules everyone
+                         already knows, so clearing out twenty test sessions is one gesture. -->
                     <ListBox x:Name="SessionList" Margin="6,0,4,6" MouseDoubleClick="OnOpenTranscript"
-                             KeyDown="OnSessionKey">
+                             KeyDown="OnSessionKey" SelectionMode="Extended"
+                             SelectionChanged="OnSessionSelectionChanged">
                         <!-- Right-clicking a ListBox item does not select it in WPF, so the context
                              menu would act on whatever was selected before — or on nothing. -->
                         <ListBox.ItemContainerStyle>
@@ -108,12 +116,14 @@
                             </Style>
                         </ListBox.ItemContainerStyle>
                         <ListBox.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="Open transcript" Click="OnOpenSelected" />
-                                <MenuItem Header="Show in folder" Click="OnShowInFolder" />
+                            <ContextMenu Opened="OnSessionMenuOpened">
+                                <MenuItem x:Name="MenuOpen" Header="Open transcript" Click="OnOpenSelected" />
+                                <MenuItem x:Name="MenuShow" Header="Show in folder" Click="OnShowInFolder" />
                                 <Separator />
-                                <MenuItem Header="Rename…" Click="OnRename" />
-                                <MenuItem Header="Remove…" Click="OnDelete" />
+                                <MenuItem x:Name="MenuRename" Header="Rename…" Click="OnRename" />
+                                <MenuItem x:Name="MenuRemove" Header="Remove…" Click="OnDelete" />
+                                <Separator />
+                                <MenuItem Header="Select all" Click="OnSelectAllSessions" />
                             </ContextMenu>
                         </ListBox.ContextMenu>
                         <ListBox.ItemTemplate>

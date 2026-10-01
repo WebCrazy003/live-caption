@@ -354,9 +354,23 @@ public partial class SettingsWindow : ChromeWindow
     /// </summary>
     private void OnCreateShortcut(object sender, RoutedEventArgs e)
     {
+        if (DesktopShortcut.IsBroken)
+        {
+            // There, but leading to a copy of the app that no longer exists — the blank-icon
+            // case. "It only adds one when missing" would leave someone deleting it by hand.
+            var trouble = DesktopShortcut.Repair();
+            ShowShortcutState(trouble is null ? "Repaired — it was pointing at a copy that is no longer there."
+                                              : $"Could not repair it: {trouble}", trouble is not null);
+            return;
+        }
+
         if (DesktopShortcut.Exists)
         {
-            ShowShortcutState("Already on your desktop — nothing to do.");
+            var elsewhere = DesktopShortcut.Target() is { Length: > 0 } target &&
+                            !string.Equals(target, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase);
+            ShowShortcutState(elsewhere
+                ? "Already on your desktop — it opens a different copy of the app than this one."
+                : "Already on your desktop — nothing to do.");
             return;
         }
 

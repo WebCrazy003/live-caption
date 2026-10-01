@@ -26,7 +26,7 @@
     <Nullable>enable</Nullable>
     <ApplicationTitle>Local Caption</ApplicationTitle>
     <AssemblyName>LocalCaption</AssemblyName>
-    <Version>1.2.2</Version>
+    <Version>1.2.3</Version>
     <Product>Local Caption</Product>
     <Company>Richard &amp; Stevitech</Company>
     <Description>Live captions for whatever this PC is playing</Description>

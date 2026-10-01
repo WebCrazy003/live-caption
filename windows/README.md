@@ -371,6 +371,16 @@ whole pixels — into `src/LocalCaption.App/Assets/`. Re-run it to change the ma
 - **Blue (`Live`, #64B9D3) means live, brass means actionable.** Blue is for things happening
   now — the provisional caption tail, the speed readouts, loading and downloading. Keep it off
   buttons and selections, or it stops meaning anything.
+- **The session list is multi-select, and can check itself.** Extended selection (Ctrl/Shift
+  click, Ctrl+A) with the count reading "3 OF 17"; Remove takes the whole selection through one
+  dialog that names what it is about to remove. The refresh button in the sidebar header
+  re-reads the list and finds rows whose transcript has gone from disk, then *offers* to clear
+  them — offers, because an unplugged drive looks the same as an emptied folder. Right-click
+  inside a selection keeps it; outside, it starts a new one.
+- **The desktop-shortcut button repairs as well as creates.** A shortcut whose target no longer
+  exists (the app was rebuilt or moved — Windows shows it with a blank icon) is rewritten to
+  point at the running copy. One that points at a *different, existing* copy is left alone
+  and the button says so.
 - **Removing a session never deletes files by default.** The dialog's tick-box is what deletes,
   and it deletes to the Recycle Bin (`Microsoft.VisualBasic.FileIO`), txt and json sidecar
   together. If a file cannot be deleted the list row is kept, since it is then the only thing

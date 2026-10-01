@@ -24,6 +24,45 @@ public static class DesktopShortcut
     public static bool Exists => File.Exists(Location);
 
     /// <summary>
+    /// Where the existing shortcut points, or null if there is none or it cannot be read.
+    /// </summary>
+    public static string? Target()
+    {
+        if (!Exists) return null;
+        object? shell = null, link = null;
+        try
+        {
+            var type = Type.GetTypeFromProgID("WScript.Shell");
+            if (type is null) return null;
+            shell = Activator.CreateInstance(type);
+            dynamic wsh = shell!;
+            link = wsh.CreateShortcut(Location);
+            dynamic shortcut = link!;
+            return shortcut.TargetPath as string;
+        }
+        catch (Exception) { return null; }
+        finally
+        {
+            if (link is not null) Marshal.FinalReleaseComObject(link);
+            if (shell is not null) Marshal.FinalReleaseComObject(shell);
+        }
+    }
+
+    /// <summary>
+    /// A shortcut that is there but leads nowhere — its app was moved, rebuilt elsewhere or
+    /// deleted. Windows shows these with a blank icon, which is how they get noticed.
+    /// </summary>
+    public static bool IsBroken => Target() is { Length: > 0 } target && !File.Exists(target);
+
+    /// <summary>Point a broken shortcut at this copy of the app. Null on success.</summary>
+    public static string? Repair()
+    {
+        try { File.Delete(Location); }
+        catch (Exception e) { return e.Message; }
+        return EnsureExists();
+    }
+
+    /// <summary>
     /// Create the shortcut if there is none. Returns null on success or when one was already
     /// there, and the reason otherwise.
     /// </summary>
