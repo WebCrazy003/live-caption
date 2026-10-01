@@ -24,8 +24,16 @@ testdata/
 ├── localagreement/  hypothesis sequences → expected committed/provisional (LocalAgreement)
 ├── filters/         text + metadata → expected verdict                (Filters)
 ├── sentences/       transcript + N → expected clipboard string        (Sentences)
-└── config/          malformed configs → expected repaired config      (Config)
+├── config/          malformed configs → expected repaired config      (Config)
+├── hotkey/          hotkey strings → canonical form or error kind      (Hotkey — SPEC-11)
+├── ask/             finals + interim + mark → text sent on an Ask      (AskSelection — SPEC-14)
+└── interview-prompt/ setup / question / transcript → exact prompt text  (InterviewPrompt — SPEC-13–15)
 ```
+
+The `hotkey/`, `ask/` and `interview-prompt/` suites belong to Interview Assist
+([`specs/SPEC-11`](../specs/SPEC-11-interview-assist.md)). The Windows build asserts them when
+it ports that feature; until then it only has to keep the `interview` config group, which the
+`config/` vectors already check.
 
 `audio/*.wav` (16 kHz mono fixtures + expected transcripts) is deferred to stage B0 —
 it needs a working ASR engine on both sides to be meaningful.

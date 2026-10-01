@@ -1,0 +1,32 @@
+{
+  "name": "first-ask-takes-everything",
+  "description": "No previous ask: every committed final is sent.",
+  "input": {
+    "segments": [
+      {
+        "text": "Hello there.",
+        "t_start_ms": 0,
+        "t_end_ms": 1500
+      },
+      {
+        "text": "So tell me about yourself.",
+        "t_start_ms": 2000,
+        "t_end_ms": 4000
+      }
+    ],
+    "interim": "",
+    "mode": "since_last_ask",
+    "mark": null,
+    "press_ms": 4500,
+    "max_words": 400
+  },
+  "expect": {
+    "text": "Hello there. So tell me about yourself.",
+    "mark": {
+      "audio_ms": 4500,
+      "interim_was_sent": false
+    },
+    "from_ms": 0,
+    "to_ms": 4500
+  }
+}

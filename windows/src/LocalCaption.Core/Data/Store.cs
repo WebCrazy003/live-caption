@@ -16,6 +16,9 @@ public sealed record SessionRecord
     public string? EndedAt { get; set; }
     public int DurationSeconds { get; set; }
     public string? TranscriptFile { get; set; }
+    /// <summary><c>caption</c> | <c>interview</c> (specs/SPEC-11 §SQLite).</summary>
+    public string Mode { get; set; } = "caption";
+    public string? InterviewDir { get; set; }
 }
 
 /// <summary>Sort options for the session list (SPEC.md §10 / SPEC-06).</summary>
@@ -39,7 +42,7 @@ public enum SessionSort
 /// </remarks>
 public sealed class Store : IDisposable
 {
-    private const int SchemaVersion = 1;
+    private const int SchemaVersion = 2;
 
     private readonly SqliteConnection _connection;
 
@@ -81,6 +84,13 @@ public sealed class Store : IDisposable
             Execute("CREATE INDEX IF NOT EXISTS idx_sessions_created ON sessions(created_at)");
         }
 
+        if (current < 2)
+        {
+            // macOS migration `v2_interview` (specs/SPEC-11 §SQLite): same columns, same default.
+            Execute("ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'caption'");
+            Execute("ALTER TABLE sessions ADD COLUMN interview_dir TEXT");
+        }
+
         Execute($"PRAGMA user_version = {SchemaVersion}");
     }
 
@@ -91,8 +101,9 @@ public sealed class Store : IDisposable
     {
         using var command = _connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO sessions (session_name, created_at, ended_at, duration_seconds, transcript_file)
-            VALUES ($name, $created, $ended, $duration, $file)
+            INSERT INTO sessions (session_name, created_at, ended_at, duration_seconds, transcript_file,
+                                  mode, interview_dir)
+            VALUES ($name, $created, $ended, $duration, $file, $mode, $interviewDir)
             RETURNING id
             """;
         command.Parameters.AddWithValue("$name", record.SessionName);
@@ -100,6 +111,8 @@ public sealed class Store : IDisposable
         command.Parameters.AddWithValue("$ended", (object?)record.EndedAt ?? DBNull.Value);
         command.Parameters.AddWithValue("$duration", record.DurationSeconds);
         command.Parameters.AddWithValue("$file", (object?)record.TranscriptFile ?? DBNull.Value);
+        command.Parameters.AddWithValue("$mode", record.Mode);
+        command.Parameters.AddWithValue("$interviewDir", (object?)record.InterviewDir ?? DBNull.Value);
 
         return record with { Id = Convert.ToInt64(command.ExecuteScalar()) };
     }
@@ -139,13 +152,18 @@ public sealed class Store : IDisposable
     }
 
     /// <summary>List sessions with an optional name search and sort (backs SPEC-06).</summary>
-    public IReadOnlyList<SessionRecord> All(SessionSort sort = SessionSort.CreatedDesc, string? search = null)
+    public IReadOnlyList<SessionRecord> All(SessionSort sort = SessionSort.CreatedDesc, string? search = null,
+                                            string? mode = null)
     {
         using var command = _connection.CreateCommand();
         var query = search?.Trim();
-        var where = string.IsNullOrEmpty(query) ? "" : "WHERE session_name LIKE $q ";
+        var filters = new List<string>();
+        if (!string.IsNullOrEmpty(query)) filters.Add("session_name LIKE $q");
+        if (mode is not null) filters.Add("mode = $mode");
+        var where = filters.Count == 0 ? "" : "WHERE " + string.Join(" AND ", filters) + " ";
         command.CommandText = $"SELECT {Columns} FROM sessions {where}ORDER BY {OrderBy(sort)}";
         if (!string.IsNullOrEmpty(query)) command.Parameters.AddWithValue("$q", $"%{query}%");
+        if (mode is not null) command.Parameters.AddWithValue("$mode", mode);
 
         using var reader = command.ExecuteReader();
         var rows = new List<SessionRecord>();
@@ -153,11 +171,22 @@ public sealed class Store : IDisposable
         return rows;
     }
 
+    /// <summary>Mark a saved session as an interview and point it at its interview folder.</summary>
+    public void SetInterview(long id, string dir)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "UPDATE sessions SET mode = 'interview', interview_dir = $dir WHERE id = $id";
+        command.Parameters.AddWithValue("$dir", dir);
+        command.Parameters.AddWithValue("$id", id);
+        command.ExecuteNonQuery();
+    }
+
     public int Count() => Convert.ToInt32(Scalar("SELECT COUNT(*) FROM sessions") ?? 0);
 
     // ── Plumbing ─────────────────────────────────────────────────────────────────────────
 
-    private const string Columns = "id, session_name, created_at, ended_at, duration_seconds, transcript_file";
+    private const string Columns =
+        "id, session_name, created_at, ended_at, duration_seconds, transcript_file, mode, interview_dir";
 
     private static string OrderBy(SessionSort sort) => sort switch
     {
@@ -178,6 +207,8 @@ public sealed class Store : IDisposable
         EndedAt = reader.IsDBNull(3) ? null : reader.GetString(3),
         DurationSeconds = reader.GetInt32(4),
         TranscriptFile = reader.IsDBNull(5) ? null : reader.GetString(5),
+        Mode = reader.GetString(6),
+        InterviewDir = reader.IsDBNull(7) ? null : reader.GetString(7),
     };
 
     private void Execute(string sql)

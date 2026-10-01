@@ -106,6 +106,37 @@ public sealed class PersistenceTests : IDisposable
         Assert.Equal("Persisted", reopened.All().First().SessionName);
     }
 
+    [Fact]
+    public void V2InterviewMigrationDefaultsExistingRowsToCaption()
+    {
+        // A v1 database written before Interview Assist (specs/SPEC-11 §SQLite).
+        using (var legacy = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={DbPath}"))
+        {
+            legacy.Open();
+            using var command = legacy.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, session_name TEXT NOT NULL,
+                  created_at TEXT NOT NULL, ended_at TEXT, duration_seconds INTEGER NOT NULL DEFAULT 0,
+                  transcript_file TEXT);
+                INSERT INTO sessions (session_name, created_at) VALUES ('Old call', '2026-01-01T00:00:00Z');
+                PRAGMA user_version = 1;
+                """;
+            command.ExecuteNonQuery();
+        }
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+
+        using var store = new Store(DbPath);
+        var old = Assert.Single(store.All());
+        Assert.Equal("caption", old.Mode);
+        Assert.Null(old.InterviewDir);
+
+        var added = store.Insert(Record("Acme", "2026-10-01T00:00:00Z"));
+        store.SetInterview(added.Id!.Value, "/tmp/acme");
+        Assert.Equal(["Acme"], store.All(mode: "interview").Select(r => r.SessionName));
+        Assert.Equal(["Old call"], store.All(mode: "caption").Select(r => r.SessionName));
+        Assert.Equal("/tmp/acme", store.Fetch(added.Id.Value)?.InterviewDir);
+    }
+
     // ── Journal ──────────────────────────────────────────────────────────────────────────
 
     [Fact]

@@ -34,6 +34,7 @@ public sealed record Config
     [JsonPropertyName("caption")] public CaptionGroup Caption { get; set; } = new();
     [JsonPropertyName("clipboard")] public ClipboardGroup Clipboard { get; set; } = new();
     [JsonPropertyName("general")] public GeneralGroup General { get; set; } = new();
+    [JsonPropertyName("interview")] public InterviewGroup Interview { get; set; } = new();
 
     [JsonPropertyName("schema_version")]
     public int SchemaVersion { get; set; } = CurrentSchemaVersion;
@@ -95,6 +96,79 @@ public sealed record Config
     {
         [JsonPropertyName("session_name_prefix")] public string SessionNamePrefix { get; set; } = "Interview ";
         [JsonPropertyName("transcript_folder")] public string TranscriptFolder { get; set; } = AppPaths.Transcripts;
+    }
+
+    /// <summary>
+    /// Interview Assist (specs/SPEC-11). Not built on Windows yet (§16.8) — the group is kept,
+    /// with the macOS defaults, so <c>config.json</c> round-trips between machines.
+    /// </summary>
+    /// <remarks>
+    /// Enum-valued keys are strings. One holding a value this build does not know (a newer
+    /// build's) is reset to its default after deserialisation instead of failing the file —
+    /// matching the macOS decoder. A wrong JSON <i>type</i> still throws and repairs.
+    /// </remarks>
+    public sealed record InterviewGroup : IJsonOnDeserialized
+    {
+        [JsonPropertyName("answer_length")] public string AnswerLength { get; set; } = "medium";
+        [JsonPropertyName("busy_policy")] public string BusyPolicy { get; set; } = "interrupt";
+        [JsonPropertyName("clear_clipboard_images_after_send")] public bool ClearClipboardImagesAfterSend { get; set; } = true;
+        [JsonPropertyName("codex_path")] public string CodexPath { get; set; } = "";
+        [JsonPropertyName("custom_instructions")] public string CustomInstructions { get; set; } = "";
+        [JsonPropertyName("engine")] public string Engine { get; set; } = "codex";
+        [JsonPropertyName("hotkey")] public string Hotkey { get; set; } = "F8";
+        [JsonPropertyName("include_clipboard_images")] public bool IncludeClipboardImages { get; set; }
+        [JsonPropertyName("max_words")] public int MaxWords { get; set; } = 400;
+        [JsonPropertyName("mode")] public string Mode { get; set; } = "caption";
+        [JsonPropertyName("model")] public string Model { get; set; } = "";
+        [JsonPropertyName("prep_reasoning_effort")] public string PrepReasoningEffort { get; set; } = "medium";
+        [JsonPropertyName("privacy_acknowledged")] public bool PrivacyAcknowledged { get; set; }
+
+        [JsonPropertyName("quick_prompts")]
+        public EquatableList<QuickPrompt> QuickPrompts { get; set; } =
+        [
+            new() { Label = "Shorter", Text = "Make that answer shorter — two sentences I can say." },
+            new() { Label = "Example", Text = "Give me one concrete example from my CV that supports that answer." },
+            new() { Label = "Simpler", Text = "Say that again in simpler, more natural spoken English." },
+        ];
+
+        [JsonPropertyName("reasoning_effort")] public string ReasoningEffort { get; set; } = "low";
+        [JsonPropertyName("send_mode")] public string SendMode { get; set; } = "since_last_ask";
+        [JsonPropertyName("send_sentences")] public int SendSentences { get; set; } = 3;
+        [JsonPropertyName("show_key_points")] public bool ShowKeyPoints { get; set; }
+        [JsonPropertyName("summarize_on_end")] public bool SummarizeOnEnd { get; set; } = true;
+
+        public void OnDeserialized()
+        {
+            Mode = Known(Mode, "caption", "caption", "interview");
+            AnswerLength = Known(AnswerLength, "medium", "short", "medium", "long");
+            SendMode = Known(SendMode, "since_last_ask", "since_last_ask", "last_sentences");
+            BusyPolicy = Known(BusyPolicy, "interrupt", "interrupt", "queue");
+        }
+
+        private static string Known(string? value, string fallback, params string[] allowed) =>
+            value is not null && Array.IndexOf(allowed, value) >= 0 ? value : fallback;
+    }
+
+    /// <summary>
+    /// A list with value equality, so a record holding one still compares by contents (a
+    /// plain <see cref="List{T}"/> compares by reference and breaks write→read identity).
+    /// </summary>
+    public sealed class EquatableList<T> : List<T>, IEquatable<EquatableList<T>>
+    {
+        public bool Equals(EquatableList<T>? other) => other is not null && this.SequenceEqual(other);
+        public override bool Equals(object? obj) => Equals(obj as EquatableList<T>);
+        public override int GetHashCode()
+        {
+            var hash = new HashCode();
+            foreach (var item in this) hash.Add(item);
+            return hash.ToHashCode();
+        }
+    }
+
+    public sealed record QuickPrompt
+    {
+        [JsonPropertyName("label")] public string Label { get; set; } = "";
+        [JsonPropertyName("text")] public string Text { get; set; } = "";
     }
 
     /// <summary>

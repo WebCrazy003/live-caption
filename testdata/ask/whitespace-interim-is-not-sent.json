@@ -1,0 +1,27 @@
+{
+  "name": "whitespace-interim-is-not-sent",
+  "description": "An all-whitespace interim adds nothing and does not count as sent.",
+  "input": {
+    "segments": [
+      {
+        "text": "Any questions for us?",
+        "t_start_ms": 0,
+        "t_end_ms": 2000
+      }
+    ],
+    "interim": "   ",
+    "mode": "since_last_ask",
+    "mark": null,
+    "press_ms": 2500,
+    "max_words": 400
+  },
+  "expect": {
+    "text": "Any questions for us?",
+    "mark": {
+      "audio_ms": 2500,
+      "interim_was_sent": false
+    },
+    "from_ms": 0,
+    "to_ms": 2500
+  }
+}

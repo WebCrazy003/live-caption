@@ -1,0 +1,28 @@
+{
+  "name": "interview-group-defaults",
+  "description": "A config written before Interview Assist (no `interview` key) loads with every interview default \u2014 merge-default like `summary`, no schema bump, no repair (SPEC-11 \u00a7Config). Also asserts the literal defaults both platforms must share.",
+  "input": "{ \"schema_version\": 2, \"caption\": { \"font_size\": 20 } }",
+  "expect_repaired": false,
+  "expect_backup_count": 0,
+  "expect": {
+    "caption.font_size": 20,
+    "interview.mode": "caption",
+    "interview.privacy_acknowledged": false,
+    "interview.engine": "codex",
+    "interview.codex_path": "$default",
+    "interview.model": "",
+    "interview.reasoning_effort": "low",
+    "interview.prep_reasoning_effort": "medium",
+    "interview.answer_length": "medium",
+    "interview.custom_instructions": "$default",
+    "interview.hotkey": "F8",
+    "interview.send_mode": "since_last_ask",
+    "interview.send_sentences": 3,
+    "interview.max_words": 400,
+    "interview.include_clipboard_images": false,
+    "interview.clear_clipboard_images_after_send": true,
+    "interview.busy_policy": "interrupt",
+    "interview.summarize_on_end": true,
+    "interview.show_key_points": false
+  }
+}

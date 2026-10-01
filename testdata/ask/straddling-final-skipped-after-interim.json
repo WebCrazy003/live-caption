@@ -1,0 +1,40 @@
+{
+  "name": "straddling-final-skipped-after-interim",
+  "description": "The previous ask sent the in-flight utterance as interim text, so its final (which straddles the mark) counts as already asked.",
+  "input": {
+    "segments": [
+      {
+        "text": "Thanks for joining.",
+        "t_start_ms": 0,
+        "t_end_ms": 1500
+      },
+      {
+        "text": "What drew you to this role?",
+        "t_start_ms": 2000,
+        "t_end_ms": 6800
+      },
+      {
+        "text": "And how soon could you start?",
+        "t_start_ms": 9000,
+        "t_end_ms": 11000
+      }
+    ],
+    "interim": "",
+    "mode": "since_last_ask",
+    "mark": {
+      "audio_ms": 6000,
+      "interim_was_sent": true
+    },
+    "press_ms": 12000,
+    "max_words": 400
+  },
+  "expect": {
+    "text": "And how soon could you start?",
+    "mark": {
+      "audio_ms": 12000,
+      "interim_was_sent": false
+    },
+    "from_ms": 6000,
+    "to_ms": 12000
+  }
+}

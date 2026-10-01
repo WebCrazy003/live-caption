@@ -1,0 +1,27 @@
+{
+  "name": "interim-is-included",
+  "description": "The live provisional line is appended — the final lags ~2 s behind speech.",
+  "input": {
+    "segments": [
+      {
+        "text": "Thanks for joining.",
+        "t_start_ms": 0,
+        "t_end_ms": 1500
+      }
+    ],
+    "interim": "what drew you to this role",
+    "mode": "since_last_ask",
+    "mark": null,
+    "press_ms": 6000,
+    "max_words": 400
+  },
+  "expect": {
+    "text": "Thanks for joining. what drew you to this role",
+    "mark": {
+      "audio_ms": 6000,
+      "interim_was_sent": true
+    },
+    "from_ms": 0,
+    "to_ms": 6000
+  }
+}

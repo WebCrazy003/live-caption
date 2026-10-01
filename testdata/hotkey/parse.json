@@ -1,0 +1,100 @@
+{
+  "name": "parse",
+  "description": "interview.hotkey strings (SPEC-11 §Hotkey string grammar). Valid input → canonical string (modifiers ordered Ctrl, Alt, Shift, Cmd). Invalid → error kind; resolve() then falls back to F8. A non-F key needs a modifier other than Shift so a global binding never swallows ordinary typing.",
+  "cases": [
+    {
+      "input": "F8",
+      "expect": "F8"
+    },
+    {
+      "input": "f8",
+      "expect": "F8"
+    },
+    {
+      "input": "ctrl+shift+f8",
+      "expect": "Ctrl+Shift+F8"
+    },
+    {
+      "input": "Shift + Ctrl + K",
+      "expect": "Ctrl+Shift+K"
+    },
+    {
+      "input": "cmd+option+space",
+      "expect": "Alt+Cmd+Space"
+    },
+    {
+      "input": "Control+Return",
+      "expect": "Ctrl+Enter"
+    },
+    {
+      "input": "Ctrl+Ctrl+F2",
+      "expect": "Ctrl+F2"
+    },
+    {
+      "input": "F24",
+      "expect": "F24"
+    },
+    {
+      "input": "Shift+F1",
+      "expect": "Shift+F1"
+    },
+    {
+      "input": "Alt+PageDown",
+      "expect": "Alt+PageDown"
+    },
+    {
+      "input": "win+1",
+      "expect": "Cmd+1"
+    },
+    {
+      "input": "F25",
+      "expect": null,
+      "error": "unknown_key"
+    },
+    {
+      "input": "K",
+      "expect": null,
+      "error": "needs_modifier"
+    },
+    {
+      "input": "Shift+K",
+      "expect": null,
+      "error": "needs_modifier"
+    },
+    {
+      "input": "Space",
+      "expect": null,
+      "error": "needs_modifier"
+    },
+    {
+      "input": "",
+      "expect": null,
+      "error": "empty"
+    },
+    {
+      "input": "   ",
+      "expect": null,
+      "error": "empty"
+    },
+    {
+      "input": "Ctrl+",
+      "expect": null,
+      "error": "missing_key"
+    },
+    {
+      "input": "Ctrl",
+      "expect": null,
+      "error": "missing_key"
+    },
+    {
+      "input": "Ctrl+Shift",
+      "expect": null,
+      "error": "missing_key"
+    },
+    {
+      "input": "Hyper+X",
+      "expect": null,
+      "error": "unknown_modifier"
+    }
+  ]
+}

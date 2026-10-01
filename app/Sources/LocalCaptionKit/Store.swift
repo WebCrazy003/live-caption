@@ -31,6 +31,14 @@ public final class Store {
                           on: SessionRecord.databaseTableName,
                           columns: ["created_at"])
         }
+        // Interview Assist (SPEC-11 §SQLite). Existing rows become `caption`. The Windows Store
+        // registers the same migration with the same names.
+        m.registerMigration("v2_interview") { db in
+            try db.alter(table: SessionRecord.databaseTableName) { t in
+                t.add(column: "mode", .text).notNull().defaults(to: SessionRecord.captionMode)
+                t.add(column: "interview_dir", .text)
+            }
+        }
         return m
     }
 
@@ -63,14 +71,26 @@ public final class Store {
         }
     }
 
+    /// Mark a saved session as an interview and point it at its interview folder.
+    public func setInterview(id: Int64, dir: String) throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE \(SessionRecord.databaseTableName) SET mode = ?, interview_dir = ? WHERE id = ?",
+                arguments: [SessionRecord.interviewMode, dir, id]
+            )
+        }
+    }
+
     public func fetch(id: Int64) throws -> SessionRecord? {
         try dbQueue.read { db in try SessionRecord.fetchOne(db, key: id) }
     }
 
     /// List sessions with optional name search and sort (backs SPEC-06).
-    public func all(sort: SessionSort = .createdDesc, search: String? = nil) throws -> [SessionRecord] {
+    public func all(sort: SessionSort = .createdDesc, search: String? = nil,
+                    mode: String? = nil) throws -> [SessionRecord] {
         try dbQueue.read { db in
             var request = SessionRecord.all()
+            if let mode { request = request.filter(SessionRecord.Columns.mode == mode) }
             if let q = search?.trimmingCharacters(in: .whitespacesAndNewlines), !q.isEmpty {
                 request = request.filter(SessionRecord.Columns.sessionName.like("%\(q)%"))
             }

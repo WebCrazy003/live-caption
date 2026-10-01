@@ -21,6 +21,7 @@ public struct Config: Codable, Equatable {
     public var window: Window
     public var clipboard: Clipboard
     public var summary: Summary
+    public var interview: Interview
 
     public init(
         schemaVersion: Int = Config.currentSchemaVersion,
@@ -30,7 +31,8 @@ public struct Config: Codable, Equatable {
         caption: Caption = Caption(),
         window: Window = Window(),
         clipboard: Clipboard = Clipboard(),
-        summary: Summary = Summary()
+        summary: Summary = Summary(),
+        interview: Interview = Interview()
     ) {
         self.schemaVersion = schemaVersion
         self.general = general
@@ -40,11 +42,12 @@ public struct Config: Codable, Equatable {
         self.window = window
         self.clipboard = clipboard
         self.summary = summary
+        self.interview = interview
     }
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
-        case general, audio, asr, caption, window, clipboard, summary
+        case general, audio, asr, caption, window, clipboard, summary, interview
     }
 
     public init(from decoder: Decoder) throws {
@@ -59,6 +62,8 @@ public struct Config: Codable, Equatable {
         clipboard = try c.decodeIfPresent(Clipboard.self, forKey: .clipboard) ?? d.clipboard
         // Merge-default (SPEC-10): a config file without `summary` gets defaults — no schema bump.
         summary = try c.decodeIfPresent(Summary.self, forKey: .summary) ?? d.summary
+        // Merge-default (SPEC-11), same treatment as `summary`: no schema bump.
+        interview = try c.decodeIfPresent(Interview.self, forKey: .interview) ?? d.interview
     }
 
     // MARK: Groups
@@ -229,6 +234,139 @@ public struct Config: Codable, Equatable {
             maxBullets = try c.decodeIfPresent(Int.self, forKey: .maxBullets) ?? x.maxBullets
             model = try c.decodeIfPresent(String.self, forKey: .model) ?? x.model
             serverURL = try c.decodeIfPresent(String.self, forKey: .serverURL) ?? x.serverURL
+        }
+    }
+
+    /// Interview Assist (SPEC-11). Answers come from a locked-down `codex app-server` thread; these
+    /// keys are shared verbatim with the Windows build so `config.json` stays interchangeable.
+    public struct Interview: Codable, Equatable {
+        public enum Mode: String, Codable, CaseIterable, Sendable { case caption, interview }
+        public enum AnswerLength: String, Codable, CaseIterable, Sendable { case short, medium, long }
+        public enum SendMode: String, Codable, CaseIterable, Sendable {
+            case sinceLastAsk = "since_last_ask"
+            case lastSentences = "last_sentences"
+        }
+        public enum BusyPolicy: String, Codable, CaseIterable, Sendable { case interrupt, queue }
+
+        public struct QuickPrompt: Codable, Equatable, Hashable, Sendable {
+            public var label: String
+            public var text: String
+            public init(label: String, text: String) { self.label = label; self.text = text }
+        }
+
+        /// The S0-recommended model, used when `model` is empty (SPEC-12 §S0).
+        public static let recommendedModel = "gpt-6-luna"
+
+        public static let defaultQuickPrompts: [QuickPrompt] = [
+            QuickPrompt(label: "Shorter", text: "Make that answer shorter — two sentences I can say."),
+            QuickPrompt(label: "Example", text: "Give me one concrete example from my CV that supports that answer."),
+            QuickPrompt(label: "Simpler", text: "Say that again in simpler, more natural spoken English."),
+        ]
+
+        public var mode: Mode
+        public var privacyAcknowledged: Bool
+        public var engine: String
+        public var codexPath: String
+        public var model: String
+        public var reasoningEffort: String
+        public var prepReasoningEffort: String
+        public var answerLength: AnswerLength
+        public var customInstructions: String
+        public var quickPrompts: [QuickPrompt]
+        public var hotkey: String
+        public var sendMode: SendMode
+        public var sendSentences: Int
+        public var maxWords: Int
+        public var includeClipboardImages: Bool
+        public var clearClipboardImagesAfterSend: Bool
+        public var busyPolicy: BusyPolicy
+        public var summarizeOnEnd: Bool
+        public var showKeyPoints: Bool
+
+        public init(mode: Mode = .caption,
+                    privacyAcknowledged: Bool = false,
+                    engine: String = "codex",
+                    codexPath: String = "",
+                    model: String = "",
+                    reasoningEffort: String = "low",
+                    prepReasoningEffort: String = "medium",
+                    answerLength: AnswerLength = .medium,
+                    customInstructions: String = "",
+                    quickPrompts: [QuickPrompt] = Interview.defaultQuickPrompts,
+                    hotkey: String = Hotkey.defaultString,
+                    sendMode: SendMode = .sinceLastAsk,
+                    sendSentences: Int = 3,
+                    maxWords: Int = 400,
+                    includeClipboardImages: Bool = false,
+                    clearClipboardImagesAfterSend: Bool = true,
+                    busyPolicy: BusyPolicy = .interrupt,
+                    summarizeOnEnd: Bool = true,
+                    showKeyPoints: Bool = false) {
+            self.mode = mode; self.privacyAcknowledged = privacyAcknowledged
+            self.engine = engine; self.codexPath = codexPath; self.model = model
+            self.reasoningEffort = reasoningEffort; self.prepReasoningEffort = prepReasoningEffort
+            self.answerLength = answerLength; self.customInstructions = customInstructions
+            self.quickPrompts = quickPrompts; self.hotkey = hotkey
+            self.sendMode = sendMode; self.sendSentences = sendSentences; self.maxWords = maxWords
+            self.includeClipboardImages = includeClipboardImages
+            self.clearClipboardImagesAfterSend = clearClipboardImagesAfterSend
+            self.busyPolicy = busyPolicy; self.summarizeOnEnd = summarizeOnEnd
+            self.showKeyPoints = showKeyPoints
+        }
+
+        /// The model to request: the configured one, or the S0 default.
+        public var effectiveModel: String { model.isEmpty ? Interview.recommendedModel : model }
+
+        enum CodingKeys: String, CodingKey {
+            case mode
+            case privacyAcknowledged = "privacy_acknowledged"
+            case engine
+            case codexPath = "codex_path"
+            case model
+            case reasoningEffort = "reasoning_effort"
+            case prepReasoningEffort = "prep_reasoning_effort"
+            case answerLength = "answer_length"
+            case customInstructions = "custom_instructions"
+            case quickPrompts = "quick_prompts"
+            case hotkey
+            case sendMode = "send_mode"
+            case sendSentences = "send_sentences"
+            case maxWords = "max_words"
+            case includeClipboardImages = "include_clipboard_images"
+            case clearClipboardImagesAfterSend = "clear_clipboard_images_after_send"
+            case busyPolicy = "busy_policy"
+            case summarizeOnEnd = "summarize_on_end"
+            case showKeyPoints = "show_key_points"
+        }
+
+        public init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self); let x = Interview()
+            // An enum key holding a string this build doesn't know (a newer build's value) falls
+            // back to the default instead of tripping the corrupt→repair path. A wrong JSON
+            // *type* still throws and repairs, like every other key.
+            func value<T: RawRepresentable>(_ key: CodingKeys, _ fallback: T) throws -> T where T.RawValue == String {
+                guard let raw = try c.decodeIfPresent(String.self, forKey: key) else { return fallback }
+                return T(rawValue: raw) ?? fallback
+            }
+            mode = try value(.mode, x.mode)
+            privacyAcknowledged = try c.decodeIfPresent(Bool.self, forKey: .privacyAcknowledged) ?? x.privacyAcknowledged
+            engine = try c.decodeIfPresent(String.self, forKey: .engine) ?? x.engine
+            codexPath = try c.decodeIfPresent(String.self, forKey: .codexPath) ?? x.codexPath
+            model = try c.decodeIfPresent(String.self, forKey: .model) ?? x.model
+            reasoningEffort = try c.decodeIfPresent(String.self, forKey: .reasoningEffort) ?? x.reasoningEffort
+            prepReasoningEffort = try c.decodeIfPresent(String.self, forKey: .prepReasoningEffort) ?? x.prepReasoningEffort
+            answerLength = try value(.answerLength, x.answerLength)
+            customInstructions = try c.decodeIfPresent(String.self, forKey: .customInstructions) ?? x.customInstructions
+            quickPrompts = try c.decodeIfPresent([QuickPrompt].self, forKey: .quickPrompts) ?? x.quickPrompts
+            hotkey = try c.decodeIfPresent(String.self, forKey: .hotkey) ?? x.hotkey
+            sendMode = try value(.sendMode, x.sendMode)
+            sendSentences = try c.decodeIfPresent(Int.self, forKey: .sendSentences) ?? x.sendSentences
+            maxWords = try c.decodeIfPresent(Int.self, forKey: .maxWords) ?? x.maxWords
+            includeClipboardImages = try c.decodeIfPresent(Bool.self, forKey: .includeClipboardImages) ?? x.includeClipboardImages
+            clearClipboardImagesAfterSend = try c.decodeIfPresent(Bool.self, forKey: .clearClipboardImagesAfterSend) ?? x.clearClipboardImagesAfterSend
+            busyPolicy = try value(.busyPolicy, x.busyPolicy)
+            summarizeOnEnd = try c.decodeIfPresent(Bool.self, forKey: .summarizeOnEnd) ?? x.summarizeOnEnd
+            showKeyPoints = try c.decodeIfPresent(Bool.self, forKey: .showKeyPoints) ?? x.showKeyPoints
         }
     }
 }

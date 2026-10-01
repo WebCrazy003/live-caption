@@ -1,0 +1,11 @@
+{
+  "name": "summary",
+  "description": "End-of-interview turn (SPEC-15 §Summary message). The transcript is normalised to single spaces (last 15 000 words kept).",
+  "cases": [
+    {
+      "kind": "summary",
+      "transcript": "Thanks for joining.  Tell me about Kafka.\nAnd any questions for us?",
+      "expect": "INTERVIEW FINISHED\nThe interview is over. This is the full transcript of what the interviewer said:\n\"\"\"\nThanks for joining. Tell me about Kafka. And any questions for us?\n\"\"\"\nWrite my interview summary in Markdown with exactly these sections:\n## Overview\nThree or four sentences: what they focused on and the overall tone.\n## Questions asked\nEvery real question, in order, each with a one-line note on the strongest answer angle.\n## Follow-ups\nAnything I promised, anything they asked me to send, and open questions.\n## Prepare next time\nUp to five bullets.\n## Thank-you note\nA short, friendly email draft of four to six sentences.\nI captured only the interviewer's audio, not mine, so do not judge how I answered."
+    }
+  ]
+}

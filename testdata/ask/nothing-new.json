@@ -1,0 +1,40 @@
+{
+  "name": "nothing-new",
+  "description": "Nothing spoken since the last ask → empty text; the app sends nothing.",
+  "input": {
+    "segments": [
+      {
+        "text": "Thanks for joining.",
+        "t_start_ms": 0,
+        "t_end_ms": 1500
+      },
+      {
+        "text": "What drew you to this role?",
+        "t_start_ms": 2000,
+        "t_end_ms": 6800
+      },
+      {
+        "text": "And how soon could you start?",
+        "t_start_ms": 9000,
+        "t_end_ms": 11000
+      }
+    ],
+    "interim": "",
+    "mode": "since_last_ask",
+    "mark": {
+      "audio_ms": 12000,
+      "interim_was_sent": false
+    },
+    "press_ms": 13000,
+    "max_words": 400
+  },
+  "expect": {
+    "text": "",
+    "mark": {
+      "audio_ms": 13000,
+      "interim_was_sent": false
+    },
+    "from_ms": 12000,
+    "to_ms": 13000
+  }
+}

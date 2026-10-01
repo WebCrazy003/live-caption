@@ -9,7 +9,8 @@ import Foundation
 /// ├── journal/          crash-recovery .jsonl        — Phase 2
 /// ├── models/           WhisperKit CoreML weights
 /// ├── config.json       versioned app config
-/// └── localcaption.db   sqlite session metadata
+/// ├── localcaption.db   sqlite session metadata
+/// └── interview/        Interview Assist library, records, Codex home (SPEC-11)
 /// ```
 public enum AppPaths {
     /// `~/Library/Application Support/LocalCaption`
@@ -24,6 +25,18 @@ public enum AppPaths {
     public static var models: URL { root.appendingPathComponent("models", isDirectory: true) }
     public static var configFile: URL { root.appendingPathComponent("config.json") }
     public static var databaseFile: URL { root.appendingPathComponent("localcaption.db") }
+
+    // Interview Assist (SPEC-11 §On-disk layout). Kept out of the transcript folder: it holds the CV.
+    public static var interview: URL { root.appendingPathComponent("interview", isDirectory: true) }
+    public static var interviewLibrary: URL { interview.appendingPathComponent("library", isDirectory: true) }
+    public static var interviewLibraryIndex: URL { interviewLibrary.appendingPathComponent("index.json") }
+    public static var interviewSkills: URL { interviewLibrary.appendingPathComponent("skills", isDirectory: true) }
+    public static var interviewDocuments: URL { interviewLibrary.appendingPathComponent("documents", isDirectory: true) }
+    public static var interviews: URL { interview.appendingPathComponent("interviews", isDirectory: true) }
+    /// Codex's working directory. Must stay empty (SPEC-12 §Lockdown).
+    public static var interviewWorkspace: URL { interview.appendingPathComponent("workspace", isDirectory: true) }
+    /// Dedicated CODEX_HOME so the user's own Codex config never loads (SPEC-12 §Lockdown).
+    public static var codexHome: URL { interview.appendingPathComponent("codex-home", isDirectory: true) }
 
     /// Create the directory tree on first launch. Idempotent.
     @discardableResult

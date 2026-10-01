@@ -31,7 +31,7 @@ Legend: ✅ done · 🟢 mostly · 🟡 partial · 🔴 barely · ⬜ not starte
 | 08 | [Window & Clipboard](SPEC-08-window-clipboard.md) | ✅ done | auto-copy-on-selection (needs AppKit text view) |
 | 09 | [Packaging & Distribution](SPEC-09-packaging.md) | 🟡 partial | Developer ID, notarize, DMG — blocked on **B2** |
 | 10 | [Live AI Summary (on-device)](SPEC-10-live-summary.md) | ✅ done | on-device 1B LLM (local mlx-lm server), "Key points" card every ~50 words; native MLX-Swift deferred |
-| 11 | [Interview Assist — overview & shared contract](SPEC-11-interview-assist.md) | ⬜ not started | config group, hotkey/selection/prompt/record contracts, Windows vectors |
+| 11 | [Interview Assist — overview & shared contract](SPEC-11-interview-assist.md) | 🟡 step 1 done | config group, hotkey/selection/prompt/record contracts, Windows vectors |
 | 12 | [Codex answer engine](SPEC-12-codex-engine.md) | 🟡 S0 passed | S0 ✅ (Luna low: 1.3 s to first word, lockdown holds); `codex app-server` client, lockdown, usage |
 | 13 | [Interview library & preparation](SPEC-13-interview-prep.md) | ⬜ not started | skills/CV/JD library, mode picker, Prepare on one thread |
 | 14 | [Live ask: hotkey, selection, screenshots](SPEC-14-live-ask.md) | ⬜ not started | F8 → answer streaming; clipboard images; Answers panel |

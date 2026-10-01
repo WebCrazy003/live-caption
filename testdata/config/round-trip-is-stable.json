@@ -11,7 +11,14 @@
     "asr.endpoint_silence_ms": 900,
     "asr.max_utterance_s": 30,
     "window.width": 1024.0,
-    "window.height": 768.0
+    "window.height": 768.0,
+    "interview.mode": "interview",
+    "interview.hotkey": "Ctrl+F8",
+    "interview.model": "gpt-6.1-sol",
+    "interview.send_mode": "last_sentences",
+    "interview.send_sentences": 5,
+    "interview.include_clipboard_images": true,
+    "interview.custom_instructions": "Keep it short."
   },
   "expect_repaired": false,
   "expect_backup_count": 0

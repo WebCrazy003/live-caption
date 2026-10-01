@@ -1,0 +1,36 @@
+{
+  "name": "last-sentences-ignores-the-mark",
+  "description": "last_sentences takes the last N sentences of the whole transcript plus the interim (Sentences.lastN appending), regardless of the mark; the mark still advances.",
+  "input": {
+    "segments": [
+      {
+        "text": "Hi. Thanks for coming.",
+        "t_start_ms": 0,
+        "t_end_ms": 2000
+      },
+      {
+        "text": "Tell me about Kafka.",
+        "t_start_ms": 2500,
+        "t_end_ms": 4000
+      }
+    ],
+    "interim": "and how you handle retries",
+    "mode": "last_sentences",
+    "sentences": 2,
+    "mark": {
+      "audio_ms": 3000,
+      "interim_was_sent": false
+    },
+    "press_ms": 5000,
+    "max_words": 400
+  },
+  "expect": {
+    "text": "Tell me about Kafka. and how you handle retries",
+    "mark": {
+      "audio_ms": 5000,
+      "interim_was_sent": true
+    },
+    "from_ms": 3000,
+    "to_ms": 5000
+  }
+}

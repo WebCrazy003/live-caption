@@ -1,0 +1,28 @@
+{
+  "name": "live-turns",
+  "description": "Per-ask turn text (SPEC-14 §Message templates).",
+  "cases": [
+    {
+      "kind": "ask",
+      "text": "  tell me about yourself ",
+      "image_count": 0,
+      "expect": "INTERVIEWER SAID:\n\"\"\"\ntell me about yourself\n\"\"\""
+    },
+    {
+      "kind": "ask",
+      "text": "walk me through this one",
+      "image_count": 2,
+      "expect": "INTERVIEWER SAID:\n\"\"\"\nwalk me through this one\n\"\"\"\n(2 screenshot(s) attached.)"
+    },
+    {
+      "kind": "ask",
+      "text": "",
+      "image_count": 1,
+      "expect": "INTERVIEWER SAID:\n(no new speech — see the attached screenshot(s).)"
+    },
+    {
+      "kind": "regenerate",
+      "expect": "Give me a different answer to that last question."
+    }
+  ]
+}

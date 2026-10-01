@@ -1,0 +1,27 @@
+{
+  "name": "max-words-keeps-the-end",
+  "description": "Over max_words, the last words are kept — the question is at the end.",
+  "input": {
+    "segments": [
+      {
+        "text": "one two three four five six",
+        "t_start_ms": 0,
+        "t_end_ms": 3000
+      }
+    ],
+    "interim": "seven eight",
+    "mode": "since_last_ask",
+    "mark": null,
+    "press_ms": 3500,
+    "max_words": 3
+  },
+  "expect": {
+    "text": "six seven eight",
+    "mark": {
+      "audio_ms": 3500,
+      "interim_was_sent": true
+    },
+    "from_ms": 0,
+    "to_ms": 3500
+  }
+}

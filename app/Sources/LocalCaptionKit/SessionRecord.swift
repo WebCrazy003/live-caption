@@ -12,19 +12,31 @@ public struct SessionRecord: Codable, Equatable, Identifiable,
     public var endedAt: String?
     public var durationSeconds: Int
     public var transcriptFile: String?
+    /// `caption` | `interview` (SPEC-11 §SQLite, migration `v2_interview`).
+    public var mode: String
+    /// The interview folder (absolute path) when `mode == "interview"`.
+    public var interviewDir: String?
+
+    public static let captionMode = "caption"
+    public static let interviewMode = "interview"
+    public var isInterview: Bool { mode == SessionRecord.interviewMode }
 
     public init(id: Int64? = nil,
                 sessionName: String,
                 createdAt: String,
                 endedAt: String? = nil,
                 durationSeconds: Int = 0,
-                transcriptFile: String? = nil) {
+                transcriptFile: String? = nil,
+                mode: String = SessionRecord.captionMode,
+                interviewDir: String? = nil) {
         self.id = id
         self.sessionName = sessionName
         self.createdAt = createdAt
         self.endedAt = endedAt
         self.durationSeconds = durationSeconds
         self.transcriptFile = transcriptFile
+        self.mode = mode
+        self.interviewDir = interviewDir
     }
 
     public static let databaseTableName = "sessions"
@@ -36,6 +48,8 @@ public struct SessionRecord: Codable, Equatable, Identifiable,
         case endedAt = "ended_at"
         case durationSeconds = "duration_seconds"
         case transcriptFile = "transcript_file"
+        case mode
+        case interviewDir = "interview_dir"
     }
 
     /// GRDB column references for typed queries.
@@ -44,6 +58,7 @@ public struct SessionRecord: Codable, Equatable, Identifiable,
         static let sessionName = Column(CodingKeys.sessionName)
         static let createdAt = Column(CodingKeys.createdAt)
         static let durationSeconds = Column(CodingKeys.durationSeconds)
+        static let mode = Column(CodingKeys.mode)
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) {
