@@ -48,7 +48,16 @@ Phase 4  ✅  02-finish  ‖  03-finish          capture hardening ‖ ASR hybri
 Phase 5  ✅  08                               window + clipboard
 Phase 7  ▶  10                               live AI summary (on-device MLX LLM)   ← next
 Phase 6  ▶  09                               sign + notarize + ship                 (blocked on B2)
+Phase 8  ⬜  12-S0 → 11 → 12 → 13 → 14 → 15  interview assist (Codex)               ← gated on S0
 ```
+
+> **Phase 8 — Interview Assist ([11](SPEC-11-interview-assist.md)–[15](SPEC-15-interview-ui-results.md)):**
+> press F8 during an interview → the interviewer's latest words (+ optional clipboard
+> screenshots) go to ChatGPT through a locked-down `codex app-server` thread prepared with the
+> CV, JD and an interview skill; the answer streams beside the captions; the interview is
+> summarized at the end. Order: **S0 spike** (SPEC-12) → 11 Kit contract (can start in parallel
+> with S0) → 12 engine → 13 library & prep → 14 live ask → 15 window, results, Settings.
+> macOS first; the shared contract in SPEC-11 keeps the Windows port cheap.
 
 > **Phase 7 — Live AI Summary ([10](SPEC-10-live-summary.md)):** right-side "Key points" panel that
 > adds a short easy-English card every ~50 words of speech, produced by an on-device MLX LLM,

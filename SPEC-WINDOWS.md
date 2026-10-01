@@ -1175,6 +1175,20 @@ OpenAI-compatible `/v1/chat/completions`, so `SummaryPrompt`, `SummaryCard.parse
 its ToDo gating) and the panel UI port over unchanged. Budget ~1 week including the
 CUDA/CPU offload decision.
 
+### 16.8 Deferred: Interview Assist on Windows
+
+The macOS Interview Assist feature ([specs/SPEC-11](specs/SPEC-11-interview-assist.md)–15)
+is built Mac-first against a shared contract — its §"Windows compatibility contract" lists
+what must match (config keys, hotkey grammar, `AskSelection`, prompt text, Codex JSON-RPC
+messages, `interview.json` / `index.json`, all via `testdata/` vectors) and what is
+platform-specific (`RegisterHotKey`, clipboard images, spawning `codex.cmd`, PDF text).
+
+**Required now, before the feature is ported:** add the `interview` group to the Windows
+`Config` with its defaults (feature hidden), exactly as the `summary` group is kept (§9.2),
+so a `config.json` keeps round-tripping between machines. Risks to verify on the G15:
+W-I1 (Codex sandbox differs on Windows), W-I2 (Fn-lock on F-keys), W-I3 (hotkey capture
+over Jump Desktop) — see SPEC-11.
+
 ---
 
 ## 17. Acceptance criteria

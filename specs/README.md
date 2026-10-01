@@ -31,6 +31,11 @@ Legend: ✅ done · 🟢 mostly · 🟡 partial · 🔴 barely · ⬜ not starte
 | 08 | [Window & Clipboard](SPEC-08-window-clipboard.md) | ✅ done | auto-copy-on-selection (needs AppKit text view) |
 | 09 | [Packaging & Distribution](SPEC-09-packaging.md) | 🟡 partial | Developer ID, notarize, DMG — blocked on **B2** |
 | 10 | [Live AI Summary (on-device)](SPEC-10-live-summary.md) | ✅ done | on-device 1B LLM (local mlx-lm server), "Key points" card every ~50 words; native MLX-Swift deferred |
+| 11 | [Interview Assist — overview & shared contract](SPEC-11-interview-assist.md) | ⬜ not started | config group, hotkey/selection/prompt/record contracts, Windows vectors |
+| 12 | [Codex answer engine](SPEC-12-codex-engine.md) | ⬜ not started | **S0 spike gate first**; `codex app-server` client, lockdown, usage |
+| 13 | [Interview library & preparation](SPEC-13-interview-prep.md) | ⬜ not started | skills/CV/JD library, mode picker, Prepare on one thread |
+| 14 | [Live ask: hotkey, selection, screenshots](SPEC-14-live-ask.md) | ⬜ not started | F8 → answer streaming; clipboard images; Answers panel |
+| 15 | [Interview window, results & Settings](SPEC-15-interview-ui-results.md) | ⬜ not started | compact layout, end summary, history, Settings → Interview |
 
 **Built:** the Python **spike** (`../spike/`) that proved the ASR architecture, the
 **minimal app** (`../minimal/`) vertical slice, and the **full app** (`../app/`, Phases 1–5).
@@ -55,7 +60,10 @@ Remaining work: **[SEQUENCE.md](SEQUENCE.md)**; shipped-state detail: **[STATUS.
 | **B5** | Product decisions (journal encryption, JSON sidecar, bundled model, min-OS) — SPEC.md §22 | 04, 09 | ✅ Resolved in Phase 2 |
 | **B6–B8** | Local-LLM memory pressure · latency > cadence · summary quality | 10 | New — see [SPEC-10](SPEC-10-live-summary.md) |
 
-Only **B2** blocks shipped phases (distribution). Spec 10 introduces its own risks (B6–B8).
+| **B9–B14** | Codex latency · protocol drift · Plus limits · lockdown · noisy questions · terms | 11–15 | New — see [SPEC-11](SPEC-11-interview-assist.md#blockers--risks) |
+
+Only **B2** blocks shipped phases (distribution). Spec 10 introduces its own risks (B6–B8);
+Interview Assist (11–15) introduces B9–B14 and is gated on the S0 spike in SPEC-12.
 
 ---
 

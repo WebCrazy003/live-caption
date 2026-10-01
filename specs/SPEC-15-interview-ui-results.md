@@ -1,0 +1,142 @@
+# SPEC-15 — Interview window, results & history, Settings
+
+**Status:** ⬜ Not started · **Step:** 5 of [SPEC-11](SPEC-11-interview-assist.md) · **Depends on:**
+SPEC-11 – SPEC-14, SPEC-06 (session list), SPEC-07 (Settings), SPEC-08 (window)
+
+> Finishes the feature: the interview screen stays usable when the window is small (buttons
+> shrink to icons, panes stack), the interview is **summarized** on the same thread when it
+> ends, every interview can be reopened from the session list, and **Settings → Interview**
+> holds all configuration, including Codex sign-in and **Plus usage**.
+
+---
+
+## Interview screen
+
+### Header (Interview mode)
+
+`[● Recording] Interview · Acme — Senior iOS   [Ready ✓]  [⚠ 5h: 12% left]  [⚠ F8]   00:23:41`
+
+- [ ] Mode/name chip; prep state chip (*Preparing… / Ready / Not prepared / Failed*).
+- [ ] Usage chip appears **only** when the 5-hour or weekly window has < 20 % left (tooltip: both
+      windows and reset times).
+- [ ] Hotkey chip appears **only** when registration failed.
+
+### Responsive layout
+
+The interview window often sits in a narrow strip beside the video call. Layout by available
+width of the caption area:
+
+| Width | Layout |
+|---|---|
+| ≥ 820 pt | Captions left · Answers right (side by side, as today with Key points) |
+| 560 – 819 | **Stacked**: Answers on top (60 %), Captions below (40 %), draggable divider |
+| < 560 | **One pane** with a segmented toggle *Answers / Captions*; an Ask switches to Answers automatically |
+
+### Buttons shrink to icons
+
+Extend the existing transport-bar pattern (`BarDensity` + `ViewThatFits` in
+`ActiveSessionView.swift`) to the Answers bottom bar and the header. Densities, roomiest first:
+
+1. **Full** — labelled Ask (`Ask  F8`), labelled quick prompts, text field.
+2. **Quick prompts in a menu** — quick prompts move into a `⋯` menu.
+3. **Icon actions** — Ask, Stop, Copy, Regenerate become icon-only.
+4. **Icon everything** — transport and answers bars icon-only; the text field collapses to a
+   *keyboard* button that opens a popover with the field.
+
+Every control that loses its text keeps its **tooltip** and **accessibility label** (same rule as
+today's transport bar). No control is ever clipped or hidden without an alternative.
+
+## Ending the interview
+
+- [ ] **Stop** runs the existing save path unchanged (transcript `.txt` + `.json` + DB row). The
+      transcript save **never waits** for anything in this spec.
+- [ ] Then the DB row gets `mode = 'interview'` and `interview_dir`; `interview.json` gets
+      `session_id`, `ended_at`.
+- [ ] If an answer is streaming at Stop, let it finish (cap 30 s, then interrupt).
+- [ ] If `summarize_on_end`: send the **summary turn** on the same thread with
+      `prep_reasoning_effort`; stream into the Results view; write `summary.md`;
+      `summary.status = "done"`. Then shut the engine down.
+- [ ] Summary failure (offline, usage limit) → `summary.status = "failed"` and a **Generate summary**
+      button in Results and in the history viewer. Retrying restarts the engine and
+      `thread/resume`s the same `thread_id`.
+
+### Summary message (Kit `InterviewPrompt`, golden-tested)
+
+```
+INTERVIEW FINISHED
+The interview is over. This is the full transcript of what the interviewer said:
+"""
+{transcript}
+"""
+Write my interview summary in Markdown with exactly these sections:
+## Overview
+Three or four sentences: what they focused on and the overall tone.
+## Questions asked
+Every real question, in order, each with a one-line note on the strongest answer angle.
+## Follow-ups
+Anything I promised, anything they asked me to send, and open questions.
+## Prepare next time
+Up to five bullets.
+## Thank-you note
+A short, friendly email draft of four to six sentences.
+I captured only the interviewer's audio, not mine, so do not judge how I answered.
+```
+
+`{transcript}` = the session's committed transcript, last 15 000 words if longer.
+
+### Results view
+
+Shown in the Active Session area after Stop in Interview mode, and in the history viewer.
+
+- [ ] Tabs: **Summary** (streams in) · **Q&A** (every turn: question, answer, time into the
+      interview, *Interrupted/Failed* marks, image thumbnails) · **Briefing** · **Transcript**.
+- [ ] Actions: Copy summary, Copy all Q&A as Markdown, Reveal interview folder, Generate summary
+      (when missing or failed).
+
+## History
+
+- [ ] **Session list** (SPEC-06): interview sessions show a briefcase icon; a filter
+      *All / Captions / Interviews*. Search also matches the interview's company and role.
+- [ ] **Opening** an interview session shows the Results view read-only (the `TranscriptViewer`
+      gains the extra tabs when `mode = 'interview'`).
+- [ ] **Delete** (SPEC-06 confirm flow) offers, checked by default: *"Also delete the interview
+      data (CV text, Q&A, screenshots)"* → removes the interview folder and archives the Codex
+      thread (SPEC-12).
+- [ ] **Crash recovery:** `interview.json` stores `capture_session_uuid` (the journal session id).
+      When the existing recovery flow saves a recovered session, it links the matching interview
+      record. On launch, any turn left `streaming` becomes `failed` ("app closed"); a saved
+      interview with no summary shows *Generate summary*.
+
+## Settings → Interview
+
+A new section in `SettingsView`, mirroring the existing sections. All keys are SPEC-11's.
+
+| Group | Contents |
+|---|---|
+| **Codex** | Status line (path, version, *Signed in as … (Plus)* / signed out / not installed / too old). **Sign in**, or the copyable `codex login` command (SPEC-12). Path override with *Choose…*. **Test** button (handshake + model list, shows the round-trip time). |
+| **Usage** | 5-hour window and weekly window: remaining % bar, *resets at 14:20* (local time), plan type, last updated, **Refresh**. Read on open and on Refresh; if no engine is running, start one for the read and stop it after 30 s idle. |
+| **Model** | Model picker from `model/list` (coding-tuned ones labelled); answer effort; prep/summary effort (both pickers list only the chosen model's supported efforts); friendly personality toggle (hidden if unsupported); answer length. |
+| **Hotkey** | Record shortcut, Reset to F8, Mac F-key hint, registration status. |
+| **Sending** | Send mode (*Everything since my last ask* / *Last N sentences* + stepper); max words; when busy (*Interrupt and answer the new question* / *Queue it*). |
+| **Screenshots** | Include clipboard images (off by default, with a one-line privacy note); remove them from the clipboard after sending. |
+| **Prompts** | Custom instructions (multi-line, prefilled into each new interview); quick prompts editor (add, remove, reorder; label + text). |
+| **Library** | *Open library…* (SPEC-13). |
+| **After the interview** | Summarize when the interview ends; show Key points in Interview mode. |
+| **Privacy** | What Interview mode sends to OpenAI, and *Show the notice again*. |
+
+Out-of-range values clamp, as in SPEC-07.
+
+## Acceptance
+
+- At 900, 700 and 420 pt wide, the interview screen shows side-by-side, stacked and one-pane
+  layouts; at the narrowest width every control is still reachable, with tooltips.
+- Stop saves the transcript immediately; the summary streams in afterwards; `summary.md` has the
+  five sections; the summary turn is on the same `thread_id` as prep and all asks.
+- Offline at Stop → transcript saved, summary *failed*, **Generate summary** later succeeds on
+  the same thread.
+- The interview appears in the session list with the icon and filter; reopening shows Summary,
+  Q&A, Briefing and Transcript; deleting removes the interview folder.
+- Settings → Interview shows Codex status, both usage windows with reset times, and a model list
+  read live from Codex; changing the hotkey takes effect without restarting.
+- Killing the app mid-answer, then relaunching: the session recovers as today, the interview
+  links to it, the in-flight turn shows *failed (app closed)*.
