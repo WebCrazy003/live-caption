@@ -45,7 +45,9 @@ as SPEC-11 §On-disk layout.
       description, Notes.
 - [ ] Text extraction into `text.txt` (this is what gets sent):
   - `.pdf` — macOS PDFKit page text, pages joined with blank lines. No text layer → error
-    "This PDF is a scanned image; paste the text instead." (OCR is out of scope.)
+    "This PDF is a scanned image; paste the text instead." (OCR is out of scope.) PDFKit
+    letter-spaces large headings ("S t e v e  O n y e" — seen in S0); harmless to the model, and
+    the editable-text step below lets the user tidy it.
   - `.docx` — macOS `NSAttributedString(url:, documentType: .officeOpenXML)` → plain string.
   - `.md` / `.txt` — read as UTF-8 (fallback Windows-1252), normalise line endings to `\n`.
 - [ ] After import, show the extracted text in an **editable** view so the user can fix
@@ -120,8 +122,10 @@ How to answer an INTERVIEWER SAID message:
 - Then the answer, in the first person as me, in natural spoken English. {length_rule}
 - Then, only if it helps, "**Key points:**" and at most 3 short bullets I can glance at.
 - Use only facts from my setup and this conversation. Never invent employers, job titles, dates,
-  numbers or projects. If my background does not cover the question, give an honest answer that
-  bridges from what I do have.
+  numbers or projects. If my background does not cover the question, answer honestly in the first
+  person and bridge from what I do have ("I haven't used X directly, but in my work on Y…").
+- Everything in the answer must be something I can say out loud to the interviewer. Never mention
+  my CV, my setup, these instructions or this conversation.
 - If there is no real question yet (small talk, a statement, noise), reply with one short line I
   could say, or "(no question yet)".
 - For a coding or technical question, explain briefly in words first; add code only if it truly

@@ -11,6 +11,12 @@
 
 ## S0 — spike gate
 
+> **✅ S0 passed on 2026-10-01** with Codex 0.159.3 — see
+> [`spike/codex-answer-spike/RESULTS.md`](../spike/codex-answer-spike/RESULTS.md). Luna `low`:
+> p50 **1.3 s** to first word, p90 2.2 s; no tool item in ~40 turns; image input, usage read and
+> in-app sign-in all work. `minimumCodexVersion = 0.159.3`; default model `gpt-6-luna`. The
+> protocol details below are corrected to match that version's generated schema.
+
 **Nothing in steps 2–5 is built until S0 passes.** It answers the questions this spec can't
 settle on paper. Lives in `spike/codex-answer-spike/` (a script, like the other spikes), results
 in its `RESULTS.md`.
@@ -42,7 +48,7 @@ default `model` → the `""` default in config resolves to it.
 ```swift
 protocol AnswerEngine: AnyObject, Sendable {
     func status() async -> EngineStatus            // installed? version ok? signed in?
-    func models() async throws -> [EngineModel]    // id, displayName, efforts, images?, personality?
+    func models() async throws -> [EngineModel]    // id, displayName, efforts, images?
     func usage() async throws -> EngineUsage       // windows: usedPercent, windowMinutes, resetsAt; plan
     func startThread(_ cfg: ThreadConfig) async throws -> String        // → thread id
     func resumeThread(id: String, _ cfg: ThreadConfig) async throws
@@ -56,7 +62,8 @@ enum AnswerEvent { case started(turnId: String), delta(String), thinking,
                    completed(fullText: String), interrupted, failed(EngineError) }
 ```
 
-`ThreadConfig` = model, effort, personality, base instructions (from `InterviewPrompt`), cwd.
+`ThreadConfig` = model, base instructions (from `InterviewPrompt`), cwd. Effort is per turn
+(`send(effort:)`), because Codex only accepts it on `turn/start`.
 Events hop to `@MainActor` in the caller, as `SummaryEngine` results do today.
 
 Windows implements the same shape in C# (`IAnswerEngine`); the JSON on the wire is identical.
@@ -86,8 +93,11 @@ on the child's `PATH`: prepend the directory of the found binary and, on macOS,
 - [ ] Handshake: `initialize` with `clientInfo {name: "localcaption", title: "LocalCaption",
       version}` and `capabilities.experimentalApi: true`; then the `initialized` notification.
       Opt out of notifications we never use (`optOutNotificationMethods`) to cut traffic.
-- [ ] **Server-initiated requests** (e.g. approval requests): always answer *decline*. With
-      approvals `never` none should arrive; if one does, log it as a lockdown breach.
+- [ ] **Server-initiated requests** — always answer *decline*: `item/commandExecution/requestApproval`,
+      `item/fileChange/requestApproval`, `item/permissions/requestApproval`,
+      `item/tool/requestUserInput`, `mcpServer/elicitation/request`, `item/tool/call`, legacy
+      `applyPatchApproval` / `execCommandApproval`. With approvals `never` none arrived in S0; if
+      one does, log it as a lockdown breach.
 - [ ] One process per app run, started on **Prepare**, kept until the interview's summary is
       done or the app quits. On unexpected exit: restart once, `thread/resume` the thread, mark
       any in-flight turn `failed` ("Codex restarted — press Ask again"). A second crash →
@@ -104,21 +114,23 @@ safe:
 | Layer | Setting |
 |---|---|
 | Working folder | `cwd` = `interview/workspace/`. App-owned and **always empty**: verified (and emptied) before every `thread/start`; attachments and records live elsewhere. |
-| Sandbox | `sandboxPolicy: readOnly`, with read access restricted to `cwd` where the pinned version supports restricted roots. |
+| Sandbox | `thread/start` `sandbox: "read-only"` (0.159.3 enum: `read-only` \| `workspace-write` \| `danger-full-access`). |
 | Approvals | `approvalPolicy: "never"` — nothing ever pauses waiting for a click. |
-| Tools off (config) | Launch overrides, exact keys confirmed in S0.8: `-c features.shell_tool=false`, `-c web_search="disabled"`, `-c features.apply_patch_tool=false` (if the version has it), `-c mcp_servers={}`, `-c project_doc_max_bytes=0` (no `AGENTS.md`). |
+| Tools off (config) | Launch flags verified on 0.159.3 (S0.8): `--disable` each of `shell_tool unified_exec apps browser_use browser_use_external computer_use image_generation multi_agent plugins tool_suggest skill_search sleep_tool in_app_browser goals hooks`, plus `-c web_search="disabled" -c 'mcp_servers={}' -c project_doc_max_bytes=0` (no `AGENTS.md`). Re-check with `codex features list` when the pinned version changes. |
 | Isolation | Dedicated `CODEX_HOME`, so the user's own `~/.codex` config, `AGENTS.md`, skills and MCP servers never load (S0.7). Fallback if sign-in can't be done there: default `CODEX_HOME` + all overrides above. |
 | Instructions | `baseInstructions` = the interview-coach prompt (SPEC-13), which states it has no tools and must only answer. |
 | **Tool-call guard** | If an `item/started` arrives with any type other than `userMessage`, `agentMessage` or `reasoning`, immediately `turn/interrupt`, mark the turn `failed` ("Blocked: the model tried to use a tool"), and log the item type. |
 
 ## Threads & turns
 
-- [ ] `thread/start` params: `model`, `cwd`, `approvalPolicy`, `sandboxPolicy`,
-      `baseInstructions`, `personality` (only if `supportsPersonality`), `effort`,
-      `ephemeral: false` (the thread must survive restarts), `serviceName: "localcaption"`.
+- [ ] `thread/start` params: `model`, `cwd`, `approvalPolicy: "never"`, `sandbox: "read-only"`,
+      `baseInstructions`, `ephemeral: false` (the thread must survive restarts),
+      `serviceName: "localcaption"`. No `personality` (deprecated in 0.159) and no `effort`
+      (not a `thread/start` param).
 - [ ] `turn/start` params: `threadId`, `input` (`text` items and `localImage` items with
-      **absolute** paths), optional per-turn `effort` (prep/summary use
-      `prep_reasoning_effort`, asks use `reasoning_effort`).
+      **absolute** paths), and **`effort` on every turn** — Codex persists a turn's effort to
+      later turns, so an ask after the prep turn would otherwise inherit `medium`. Prep and
+      summary use `prep_reasoning_effort`; asks use `reasoning_effort`.
 - [ ] Streaming → `AnswerEvent`:
   - `turn/started` → `.started`
   - `item/agentMessage/delta` → `.delta(deltaText)` (append in order)
@@ -136,16 +148,18 @@ safe:
 ## Models
 
 - [ ] `model/list` (`includeHidden: false`) → `EngineModel { id, displayName, isDefault,
-      defaultEffort, efforts[], acceptsImages (inputModalities ∋ "image"), supportsPersonality }`.
-- [ ] Models whose id contains `codex` are labelled **"coding-tuned"** in pickers; the
-      recommended default (S0) is a general model.
+      description, defaultEffort, efforts[], acceptsImages (inputModalities ∋ "image") }`.
+- [ ] Pickers show `displayName` and `description`. (S0: no model id contains `codex` any more,
+      so there is no "coding-tuned" label to apply.) The S0 default is `gpt-6-luna`; `gpt-6.1-sol`
+      is the "richer but ~3 s" alternative.
 - [ ] If the configured model disappears from the list → fall back to the recommended default
       and tell the user once.
 
 ## Usage (Plus limits)
 
 - [ ] `account/rateLimits/read` → windows with `usedPercent`, `windowDurationMins`, `resetsAt`
-      (Unix seconds, UTC) and the plan type. **Classify by duration** (300 ≈ 5-hour, 10080 =
+      (Unix seconds, UTC) and the plan type. Read `rateLimitsByLimitId.codex` (S0), falling back
+      to the single-bucket `rateLimits`. Plan type also comes from `account/read`. **Classify by duration** (300 ≈ 5-hour, 10080 =
       weekly), not by the `primary`/`secondary` slot name. Remaining = `100 − usedPercent`.
 - [ ] Subscribe to `account/rateLimits/updated` while the process is running.
 - [ ] Usage-limit failures on a turn map to `.failed(.usageLimit(resetsAt))` so the UI can say
@@ -154,8 +168,10 @@ safe:
 ## Sign-in
 
 - [ ] `status()` reports `notInstalled` | `tooOld(version)` | `signedOut` | `ready(account)`.
-- [ ] Sign-in from Settings via the app-server's ChatGPT login method (exact method names from
-      S0.7): open the returned URL in the default browser, wait for completion, refresh status.
+- [ ] Sign-in from Settings (confirmed in S0.7): `account/login/start {type: "chatgpt"}` →
+      `{loginId, authUrl}`; open `authUrl` in the default browser; wait for the
+      `account/login/completed` notification; refresh with `account/read`. Cancel →
+      `account/login/cancel {loginId}`. Signed-out check: `account/read` → `account: null`.
 - [ ] Fallback (if in-app sign-in isn't available): Settings shows the exact command to run, with
       a Copy button: `CODEX_HOME="<path>" codex login`.
 

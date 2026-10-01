@@ -115,7 +115,7 @@ A new section in `SettingsView`, mirroring the existing sections. All keys are S
 |---|---|
 | **Codex** | Status line (path, version, *Signed in as … (Plus)* / signed out / not installed / too old). **Sign in**, or the copyable `codex login` command (SPEC-12). Path override with *Choose…*. **Test** button (handshake + model list, shows the round-trip time). |
 | **Usage** | 5-hour window and weekly window: remaining % bar, *resets at 14:20* (local time), plan type, last updated, **Refresh**. Read on open and on Refresh; if no engine is running, start one for the read and stop it after 30 s idle. |
-| **Model** | Model picker from `model/list` (coding-tuned ones labelled); answer effort; prep/summary effort (both pickers list only the chosen model's supported efforts); friendly personality toggle (hidden if unsupported); answer length. |
+| **Model** | Model picker from `model/list` (name + description; default `gpt-6-luna`); answer effort; prep/summary effort (both pickers list only the chosen model's supported efforts); answer length. |
 | **Hotkey** | Record shortcut, Reset to F8, Mac F-key hint, registration status. |
 | **Sending** | Send mode (*Everything since my last ask* / *Last N sentences* + stepper); max words; when busy (*Interrupt and answer the new question* / *Queue it*). |
 | **Screenshots** | Include clipboard images (off by default, with a one-line privacy note); remove them from the clipboard after sending. |

@@ -43,7 +43,7 @@ it. Typing the question into ChatGPT by hand is too slow and visibly distracting
 | D2 | **Engine behind an interface** (`AnswerEngine`) | If S0 shows Codex is too slow, an OpenAI-API engine drops in without touching the UI or the flow (the fallback discussed with the user). |
 | D3 | **One Codex thread per interview** | Prep, instructions, questions and the end-of-interview summary are all turns on the same thread. |
 | D4 | **Codex is locked down to a chat model** | Empty working folder, read-only sandbox, approvals `never`, shell / file-edit / web-search / MCP tools disabled. It answers; it never reads files, runs commands or edits anything ([SPEC-12 §Lockdown](SPEC-12-codex-engine.md#lockdown)). |
-| D5 | **GPT-style answers** | Codex's coding base instructions are **replaced** (`baseInstructions`) with an interview-coach prompt, `personality: "friendly"`, and a general (non-`-codex`) model by default. |
+| D5 | **GPT-style answers** | Codex's coding base instructions are **replaced** (`baseInstructions`) with an interview-coach prompt. S0 showed this alone gives conversational, first-person answers (`personality` is deprecated in Codex 0.159 and no longer selects a style). Default model **`gpt-6-luna` at `low`** (S0: 1.3 s to first word). |
 | D6 | **The app inlines all context as text** | Skill, CV and JD text are put into the prep message by the app; Codex never opens a file. This works with the lockdown, and would work unchanged with an API engine (D2). |
 | D7 | **Two modes: Caption only / Interview** | Caption only is today's app, byte-for-byte unchanged, and keeps the on-device guarantee. Interview mode is explicit opt-in. |
 | D8 | **macOS first, Windows later**; both share config keys, file formats, prompt text and test vectors, never code | Same approach as the existing port ([SPEC-WINDOWS.md](../SPEC-WINDOWS.md) §6.1). |
@@ -123,10 +123,9 @@ old files load with defaults. Snake_case keys; identical on both platforms.
 | `privacy_acknowledged` | bool | `false` | Set by the one-time notice. |
 | `engine` | `"codex"` | `"codex"` | Reserved for `"openai_api"` (D2). |
 | `codex_path` | string | `""` | `""` = auto-detect ([SPEC-12](SPEC-12-codex-engine.md#finding-codex)). Platform-specific → `"$default"` in vectors. |
-| `model` | string | `""` | `""` = the recommended default chosen in S0. Picker lists `model/list`. |
+| `model` | string | `""` | `""` = the S0 recommended default, **`gpt-6-luna`** (falls back to the server's `isDefault` model if absent). Picker lists `model/list`. |
 | `reasoning_effort` | string | `"low"` | For **answers**. Values come from the model's `supportedReasoningEfforts`. |
 | `prep_reasoning_effort` | string | `"medium"` | For prep and summary turns (not time-critical). |
-| `personality` | string | `"friendly"` | Sent only if the model `supportsPersonality`. |
 | `answer_length` | `"short"` \| `"medium"` \| `"long"` | `"medium"` | 2–3 / 4–6 / 8–10 spoken sentences. |
 | `custom_instructions` | string | `""` | Global answer instructions, prefilled into every new interview's setup. |
 | `quick_prompts` | `[{label, text}]` | 3 defaults | Buttons on the Answers panel ([SPEC-14 §Answers panel](SPEC-14-live-ask.md#answers-panel)). |
@@ -287,7 +286,7 @@ machines before the feature is ported. Windows-specific risks to verify on the G
 
 | Step | Spec | Delivers | Gate to the next step |
 |---|---|---|---|
-| **0** | [12 §S0](SPEC-12-codex-engine.md#s0--spike-gate) | `spike/codex-answer-spike/`: measured latency, lockdown, tone, images, usage read | **S0 passes**, or the user picks the API engine |
+| **0** ✅ | [12 §S0](SPEC-12-codex-engine.md#s0--spike-gate) | `spike/codex-answer-spike/`: measured latency, lockdown, tone, images, usage read | **Passed 2026-10-01** — [RESULTS.md](../spike/codex-answer-spike/RESULTS.md) |
 | 1 | **11** (this) | Kit: config group, hotkey parser, `AskSelection`, `InterviewPrompt`, records, vectors; DB migration | `swift test` green incl. new vectors |
 | 2 | [12](SPEC-12-codex-engine.md) | `CodexAppServerEngine`: process, JSON-RPC, lockdown, streaming, models, usage, sign-in | Engine passes its scripted fake-server tests + a live smoke run |
 | 3 | [13](SPEC-13-interview-prep.md) | Library (skills, CV, JD, prompts), mode picker, Prepare flow | A prepared thread with a visible briefing |
