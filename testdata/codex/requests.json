@@ -1,0 +1,229 @@
+{
+  "name": "requests",
+  "description": "Builder inputs → the exact params object sent (compared as JSON, key order irrelevant). These are the lockdown settings S0 verified.",
+  "cases": [
+    {
+      "build": "initialize",
+      "args": {
+        "name": "localcaption",
+        "title": "LocalCaption",
+        "version": "1.0"
+      },
+      "expect": {
+        "clientInfo": {
+          "name": "localcaption",
+          "title": "LocalCaption",
+          "version": "1.0"
+        },
+        "capabilities": {
+          "experimentalApi": true
+        }
+      }
+    },
+    {
+      "build": "thread_start",
+      "args": {
+        "model": "gpt-6-luna",
+        "cwd": "/w",
+        "base_instructions": "You are a coach."
+      },
+      "expect": {
+        "model": "gpt-6-luna",
+        "cwd": "/w",
+        "approvalPolicy": "never",
+        "sandbox": "read-only",
+        "baseInstructions": "You are a coach.",
+        "ephemeral": false,
+        "serviceName": "localcaption"
+      }
+    },
+    {
+      "build": "thread_resume",
+      "args": {
+        "thread_id": "thr",
+        "model": "gpt-6-luna",
+        "cwd": "/w",
+        "base_instructions": "You are a coach."
+      },
+      "expect": {
+        "threadId": "thr",
+        "model": "gpt-6-luna",
+        "cwd": "/w",
+        "approvalPolicy": "never",
+        "sandbox": "read-only",
+        "baseInstructions": "You are a coach."
+      }
+    },
+    {
+      "build": "turn_start",
+      "args": {
+        "thread_id": "thr",
+        "effort": "low",
+        "input": [
+          {
+            "type": "text",
+            "text": "Q"
+          },
+          {
+            "type": "localImage",
+            "path": "/a/1-1.png"
+          }
+        ]
+      },
+      "expect": {
+        "threadId": "thr",
+        "effort": "low",
+        "input": [
+          {
+            "type": "text",
+            "text": "Q"
+          },
+          {
+            "type": "localImage",
+            "path": "/a/1-1.png"
+          }
+        ]
+      }
+    },
+    {
+      "build": "turn_interrupt",
+      "args": {
+        "thread_id": "thr",
+        "turn_id": "u"
+      },
+      "expect": {
+        "threadId": "thr",
+        "turnId": "u"
+      }
+    },
+    {
+      "build": "thread_archive",
+      "args": {
+        "thread_id": "thr"
+      },
+      "expect": {
+        "threadId": "thr"
+      }
+    },
+    {
+      "build": "model_list",
+      "args": {},
+      "expect": {
+        "includeHidden": false
+      }
+    },
+    {
+      "build": "login_start",
+      "args": {},
+      "expect": {
+        "type": "chatgpt"
+      }
+    },
+    {
+      "build": "login_cancel",
+      "args": {
+        "login_id": "L1"
+      },
+      "expect": {
+        "loginId": "L1"
+      }
+    },
+    {
+      "build": "decline",
+      "args": {
+        "id": "srv-1",
+        "method": "item/commandExecution/requestApproval"
+      },
+      "expect": {
+        "jsonrpc": "2.0",
+        "id": "srv-1",
+        "result": {
+          "decision": "decline"
+        }
+      }
+    },
+    {
+      "build": "decline",
+      "args": {
+        "id": 7,
+        "method": "execCommandApproval"
+      },
+      "expect": {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "result": {
+          "decision": "abort"
+        }
+      }
+    },
+    {
+      "build": "decline",
+      "args": {
+        "id": 8,
+        "method": "item/tool/call"
+      },
+      "expect": {
+        "jsonrpc": "2.0",
+        "id": 8,
+        "result": {
+          "contentItems": [],
+          "success": false
+        }
+      }
+    },
+    {
+      "build": "decline",
+      "args": {
+        "id": 9,
+        "method": "something/new"
+      },
+      "expect": {
+        "jsonrpc": "2.0",
+        "id": 9,
+        "error": {
+          "code": -32601,
+          "message": "Not supported by LocalCaption"
+        }
+      }
+    }
+  ],
+  "launch_arguments": [
+    "app-server",
+    "--disable",
+    "shell_tool",
+    "--disable",
+    "unified_exec",
+    "--disable",
+    "apps",
+    "--disable",
+    "browser_use",
+    "--disable",
+    "browser_use_external",
+    "--disable",
+    "computer_use",
+    "--disable",
+    "image_generation",
+    "--disable",
+    "multi_agent",
+    "--disable",
+    "plugins",
+    "--disable",
+    "tool_suggest",
+    "--disable",
+    "skill_search",
+    "--disable",
+    "sleep_tool",
+    "--disable",
+    "in_app_browser",
+    "--disable",
+    "goals",
+    "--disable",
+    "hooks",
+    "-c",
+    "web_search=\"disabled\"",
+    "-c",
+    "mcp_servers={}",
+    "-c",
+    "project_doc_max_bytes=0"
+  ]
+}

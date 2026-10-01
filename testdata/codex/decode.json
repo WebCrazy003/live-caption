@@ -1,0 +1,44 @@
+{
+  "name": "decode",
+  "description": "One stdout line → message class. Responses carry an integer id; server requests carry both id and method; notifications carry no id.",
+  "cases": [
+    {
+      "line": "{\"id\": 6, \"result\": {\"turn\": {\"id\": \"01a0f852-1533-7823-98d5-2b116ca725fa\", \"items\": [], \"itemsView\": \"notLoaded\", \"status\": \"inProgress\", \"error\": null, \"startedAt\": null, \"completedAt\": null, \"durationMs\": null}}}",
+      "expect": {
+        "class": "response",
+        "id": 6
+      }
+    },
+    {
+      "line": "{\"id\":9,\"error\":{\"code\":-32600,\"message\":\"bad\"}}",
+      "expect": {
+        "class": "error",
+        "id": 9,
+        "code": -32600,
+        "message": "bad"
+      }
+    },
+    {
+      "line": "{\"id\":\"srv-1\",\"method\":\"item/commandExecution/requestApproval\",\"params\":{\"threadId\":\"t\"}}",
+      "expect": {
+        "class": "server_request",
+        "method": "item/commandExecution/requestApproval"
+      }
+    },
+    {
+      "line": "{\"method\": \"thread/status/changed\", \"params\": {\"threadId\": \"01a0f852-14aa-79f2-b28c-5bf1f9273ece\", \"status\": {\"type\": \"active\", \"activeFlags\": []}}, \"emittedAtMs\": 1790872524087}",
+      "expect": {
+        "class": "notification",
+        "method": "thread/status/changed"
+      }
+    },
+    {
+      "line": "   ",
+      "expect": null
+    },
+    {
+      "line": "not json",
+      "expect": null
+    }
+  ]
+}

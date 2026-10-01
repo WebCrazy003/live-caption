@@ -1,0 +1,378 @@
+{
+  "name": "events",
+  "description": "Server notifications → engine events (SPEC-12 §Threads & turns). Cases marked (captured) are real codex-cli 0.159.3 output, scrubbed of account email and local paths. Note the server omits the \"jsonrpc\" field.",
+  "cases": [
+    {
+      "name": "turn-started (captured)",
+      "message": {
+        "method": "turn/started",
+        "params": {
+          "threadId": "01a0f852-14aa-79f2-b28c-5bf1f9273ece",
+          "turn": {
+            "id": "01a0f852-1533-7823-98d5-2b116ca725fa",
+            "items": [],
+            "itemsView": "notLoaded",
+            "status": "inProgress",
+            "error": null,
+            "startedAt": 1790872524,
+            "completedAt": null,
+            "durationMs": null
+          }
+        },
+        "emittedAtMs": 1790872524087
+      },
+      "expect": {
+        "event": "turn_started",
+        "thread_id": "01a0f852-14aa-79f2-b28c-5bf1f9273ece",
+        "turn_id": "01a0f852-1533-7823-98d5-2b116ca725fa"
+      }
+    },
+    {
+      "name": "item-started user message (captured)",
+      "message": {
+        "method": "item/started",
+        "params": {
+          "item": {
+            "type": "userMessage",
+            "id": "01a0f852-20fc-75d1-81ec-baedd7bf6e47",
+            "clientId": null,
+            "content": [
+              {
+                "type": "text",
+                "text": "Say hello in five words.",
+                "text_elements": []
+              }
+            ]
+          },
+          "threadId": "01a0f852-14aa-79f2-b28c-5bf1f9273ece",
+          "turnId": "01a0f852-1533-7823-98d5-2b116ca725fa",
+          "startedAtMs": 1790872527101
+        },
+        "emittedAtMs": 1790872527102
+      },
+      "expect": {
+        "event": "item_started",
+        "thread_id": "01a0f852-14aa-79f2-b28c-5bf1f9273ece",
+        "turn_id": "01a0f852-1533-7823-98d5-2b116ca725fa",
+        "type": "userMessage"
+      }
+    },
+    {
+      "name": "item-started agent message (captured)",
+      "message": {
+        "method": "item/started",
+        "params": {
+          "item": {
+            "type": "agentMessage",
+            "id": "msg_06cea8f4dc43a97e016abe8bd0b5f087d0827f6d187fb0aefb",
+            "text": "",
+            "phase": "final_answer",
+            "memoryCitation": null,
+            "delivery": null,
+            "questions": null
+          },
+          "threadId": "01a0f852-14aa-79f2-b28c-5bf1f9273ece",
+          "turnId": "01a0f852-1533-7823-98d5-2b116ca725fa",
+          "startedAtMs": 1790872528630
+        },
+        "emittedAtMs": 1790872528630
+      },
+      "expect": {
+        "event": "item_started",
+        "thread_id": "01a0f852-14aa-79f2-b28c-5bf1f9273ece",
+        "turn_id": "01a0f852-1533-7823-98d5-2b116ca725fa",
+        "type": "agentMessage"
+      }
+    },
+    {
+      "name": "agent delta (captured)",
+      "message": {
+        "method": "item/agentMessage/delta",
+        "params": {
+          "threadId": "01a0f852-14aa-79f2-b28c-5bf1f9273ece",
+          "turnId": "01a0f852-1533-7823-98d5-2b116ca725fa",
+          "itemId": "msg_06cea8f4dc43a97e016abe8bd0b5f087d0827f6d187fb0aefb",
+          "delta": "Hello"
+        },
+        "emittedAtMs": 1790872528631
+      },
+      "expect": {
+        "event": "agent_delta",
+        "thread_id": "01a0f852-14aa-79f2-b28c-5bf1f9273ece",
+        "turn_id": "01a0f852-1533-7823-98d5-2b116ca725fa",
+        "delta": "Hello"
+      }
+    },
+    {
+      "name": "agent message completed (captured)",
+      "message": {
+        "method": "item/completed",
+        "params": {
+          "item": {
+            "type": "agentMessage",
+            "id": "msg_06cea8f4dc43a97e016abe8bd0b5f087d0827f6d187fb0aefb",
+            "text": "Hello there, nice to meet you!",
+            "phase": "final_answer",
+            "memoryCitation": null,
+            "delivery": null,
+            "questions": null
+          },
+          "threadId": "01a0f852-14aa-79f2-b28c-5bf1f9273ece",
+          "turnId": "01a0f852-1533-7823-98d5-2b116ca725fa",
+          "completedAtMs": 1790872528896
+        },
+        "emittedAtMs": 1790872528897
+      },
+      "expect": {
+        "event": "agent_message_completed",
+        "thread_id": "01a0f852-14aa-79f2-b28c-5bf1f9273ece",
+        "turn_id": "01a0f852-1533-7823-98d5-2b116ca725fa",
+        "text": "Hello there, nice to meet you!"
+      }
+    },
+    {
+      "name": "turn completed (captured)",
+      "message": {
+        "method": "turn/completed",
+        "params": {
+          "threadId": "01a0f852-14aa-79f2-b28c-5bf1f9273ece",
+          "turn": {
+            "id": "01a0f852-1533-7823-98d5-2b116ca725fa",
+            "items": [
+              {
+                "type": "agentMessage",
+                "id": "msg_06cea8f4dc43a97e016abe8bd0b5f087d0827f6d187fb0aefb",
+                "text": "Hello there, nice to meet you!",
+                "phase": "final_answer",
+                "memoryCitation": null,
+                "delivery": null,
+                "questions": null
+              }
+            ],
+            "itemsView": "summary",
+            "status": "completed",
+            "error": null,
+            "startedAt": 1790872524,
+            "completedAt": 1790872528,
+            "durationMs": 4827
+          }
+        },
+        "emittedAtMs": 1790872528912
+      },
+      "expect": {
+        "event": "turn_completed",
+        "thread_id": "01a0f852-14aa-79f2-b28c-5bf1f9273ece",
+        "turn_id": "01a0f852-1533-7823-98d5-2b116ca725fa",
+        "status": "completed",
+        "failure": null
+      }
+    },
+    {
+      "name": "rate limits updated (captured)",
+      "message": {
+        "method": "account/rateLimits/updated",
+        "params": {
+          "rateLimits": {
+            "limitId": "codex",
+            "limitName": null,
+            "normalModelSlug": null,
+            "primary": {
+              "usedPercent": 7,
+              "windowDurationMins": 300,
+              "resetsAt": 1790882651
+            },
+            "secondary": {
+              "usedPercent": 35,
+              "windowDurationMins": 10080,
+              "resetsAt": 1791275898
+            },
+            "credits": {
+              "hasCredits": false,
+              "unlimited": false,
+              "balance": "0"
+            },
+            "individualLimit": null,
+            "spendControlReached": null,
+            "planType": "plus",
+            "rateLimitReachedType": null
+          }
+        },
+        "emittedAtMs": 1790872528911
+      },
+      "expect": {
+        "event": "rate_limits_updated",
+        "usage": {
+          "plan_type": "plus",
+          "windows": [
+            {
+              "minutes": 300,
+              "used_percent": 7,
+              "resets_at": 1790882651
+            },
+            {
+              "minutes": 10080,
+              "used_percent": 35,
+              "resets_at": 1791275898
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "tool item started — trips the guard",
+      "message": {
+        "method": "item/started",
+        "params": {
+          "item": {
+            "type": "commandExecution",
+            "id": "x",
+            "command": "ls"
+          },
+          "startedAtMs": 0,
+          "threadId": "t",
+          "turnId": "u"
+        }
+      },
+      "expect": {
+        "event": "item_started",
+        "thread_id": "t",
+        "turn_id": "u",
+        "type": "commandExecution"
+      }
+    },
+    {
+      "name": "turn failed on the usage limit",
+      "message": {
+        "method": "turn/completed",
+        "params": {
+          "threadId": "t",
+          "turn": {
+            "id": "u",
+            "items": [],
+            "status": "failed",
+            "error": {
+              "message": "You've hit your usage limit.",
+              "codexErrorInfo": "usageLimitExceeded",
+              "additionalDetails": null
+            }
+          }
+        }
+      },
+      "expect": {
+        "event": "turn_completed",
+        "thread_id": "t",
+        "turn_id": "u",
+        "status": "failed",
+        "failure": {
+          "message": "You've hit your usage limit.",
+          "kind": "usage_limit"
+        }
+      }
+    },
+    {
+      "name": "error notification, network, object-shaped codexErrorInfo",
+      "message": {
+        "method": "error",
+        "params": {
+          "threadId": "t",
+          "turnId": "u",
+          "willRetry": true,
+          "error": {
+            "message": "stream disconnected",
+            "codexErrorInfo": {
+              "responseStreamDisconnected": {
+                "httpStatusCode": null
+              }
+            }
+          }
+        }
+      },
+      "expect": {
+        "event": "error",
+        "thread_id": "t",
+        "turn_id": "u",
+        "will_retry": true,
+        "failure": {
+          "message": "stream disconnected",
+          "kind": "network"
+        }
+      }
+    },
+    {
+      "name": "unauthorized → signed out",
+      "message": {
+        "method": "turn/completed",
+        "params": {
+          "threadId": "t",
+          "turn": {
+            "id": "u",
+            "status": "failed",
+            "error": {
+              "message": "401",
+              "codexErrorInfo": "unauthorized"
+            }
+          }
+        }
+      },
+      "expect": {
+        "event": "turn_completed",
+        "thread_id": "t",
+        "turn_id": "u",
+        "status": "failed",
+        "failure": {
+          "message": "401",
+          "kind": "signed_out"
+        }
+      }
+    },
+    {
+      "name": "login completed",
+      "message": {
+        "method": "account/login/completed",
+        "params": {
+          "loginId": "L1",
+          "success": true,
+          "error": null
+        }
+      },
+      "expect": {
+        "event": "login_completed",
+        "login_id": "L1",
+        "success": true,
+        "error": null
+      }
+    },
+    {
+      "name": "account updated (captured)",
+      "message": {
+        "method": "account/updated",
+        "params": {
+          "authMode": "chatgpt",
+          "planType": "plus"
+        },
+        "emittedAtMs": 1790872522606
+      },
+      "expect": {
+        "event": "account_updated"
+      }
+    },
+    {
+      "name": "unknown method",
+      "message": {
+        "method": "thread/status/changed",
+        "params": {
+          "threadId": "01a0f852-14aa-79f2-b28c-5bf1f9273ece",
+          "status": {
+            "type": "active",
+            "activeFlags": []
+          }
+        },
+        "emittedAtMs": 1790872524087
+      },
+      "expect": {
+        "event": "other",
+        "method": "thread/status/changed"
+      }
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # SPEC-12 — Codex answer engine
 
-**Status:** ⬜ Not started · **Step:** 0 (spike) and 2 of [SPEC-11](SPEC-11-interview-assist.md) ·
+**Status:** ✅ Engine built (step 2) — `CodexRPC` (Kit) + `CodexAppServerEngine` (app); scripted + live tests pass · **Step:** 0 (spike) and 2 of [SPEC-11](SPEC-11-interview-assist.md) ·
 **Depends on:** SPEC-11 (config, prompts, records)
 
 > Talks to a long-lived **`codex app-server`** child process over JSON-RPC (stdio) and turns it
@@ -181,6 +181,13 @@ safe:
 |---|---|---|
 | `CodexRPC` — request builders, response/notification decoders, `AnswerEvent` mapping, rate-limit window classification | Kit (pure) | ✅ unit + `testdata/codex/` vectors |
 | `CodexLocator`, `LineTransport` over `Process`, `CodexAppServerEngine` | App | ✅ with a scripted transport; live smoke run |
+
+**Built:** `LocalCaptionKit/CodexRPC.swift` (+ `CodexRPCTests`, vectors in `testdata/codex/` — mostly
+real 0.159.3 output, scrubbed); `LocalCaption/Interview/{AnswerEngine,CodexProcess,CodexAppServerEngine}.swift`
+(+ `CodexEngineTests` against a scripted server, `CodexLiveSmokeTests` opt-in with
+`LC_LIVE_CODEX=1`). Notes from building it: the server omits `"jsonrpc"` on its messages; each
+server-request kind has its own "no" shape (`decline`, `abort`, empty permissions/answers,
+`success: false`), unknown ones get JSON-RPC error −32601.
 
 ## Acceptance
 
