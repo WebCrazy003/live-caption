@@ -8,6 +8,7 @@ import LocalCaptionKit
 struct SettingsView: View {
     @EnvironmentObject var env: AppEnvironment
     @State private var folderError: String?
+    @State private var showingLibrary = false
 
     private let interimModels = ["tiny.en", "base.en", "small.en"]
     private let finalModels = ["small.en", "large-v3-turbo", "large-v3", "distil-large-v3"]
@@ -100,6 +101,23 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
+            // MARK: Interview (SPEC-11 – SPEC-15)
+            Section {
+                CodexStatusRow(codex: env.codex)
+                LabeledContent("Codex path") {
+                    TextField("Auto-detect", text: $env.config.interview.codexPath)
+                        .multilineTextAlignment(.trailing)
+                }
+                Button("Open interview library…") { showingLibrary = true }
+            } header: {
+                Text("Interview")
+            } footer: {
+                Text("Interview mode answers live questions with ChatGPT through the Codex app, using "
+                     + "its own sign-in (separate from your Codex terminal). Codex is locked down: "
+                     + "no files, commands or web.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
             // MARK: Window (Phase 5)
             Section {
                 Toggle("Always on top", isOn: $env.config.window.alwaysOnTop)
@@ -139,6 +157,7 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 480, height: 560)
+        .sheet(isPresented: $showingLibrary) { LibraryView(library: env.library) }
     }
 
     private func pickFolder() {

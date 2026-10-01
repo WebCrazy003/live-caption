@@ -1,6 +1,6 @@
 # SPEC-13 — Interview library & preparation
 
-**Status:** ⬜ Not started · **Step:** 3 of [SPEC-11](SPEC-11-interview-assist.md) · **Depends on:**
+**Status:** 🟢 Built (step 3) — library, mode picker, privacy notice, Prepare on one thread, extra prep turns; flow tests pass, app launches; on-screen check by the user pending · **Step:** 3 of [SPEC-11](SPEC-11-interview-assist.md) · **Depends on:**
 SPEC-11 (config, layout, records), SPEC-12 (engine)
 
 > Before the interview: the user keeps a **library** of interview skills, CVs, JDs and notes,

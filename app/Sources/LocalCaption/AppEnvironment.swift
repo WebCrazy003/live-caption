@@ -9,8 +9,20 @@ import LocalCaptionKit
 /// which is what gives Settings its two-way binding + live persistence.
 @MainActor
 final class AppEnvironment: ObservableObject {
-    @Published var config: Config { didSet { persist() } }
+    @Published var config: Config {
+        didSet {
+            persist()
+            codexPath.set(config.interview.codexPath)
+        }
+    }
     let store: Store
+
+    /// Interview Assist (SPEC-11): the user's library, and the one Codex engine for this app run.
+    lazy var library = InterviewLibrary()
+    /// Where interview records live; injectable for tests.
+    var interviewsRoot = AppPaths.interviews
+    lazy var codex = CodexService(engine: CodexAppServerEngine(codexPath: { [codexPath] in codexPath.get() }))
+    private let codexPath = LockedValue("")
 
     /// True if the config on disk was corrupt and had to be repaired to defaults.
     let configWasRepaired: Bool
@@ -37,12 +49,14 @@ final class AppEnvironment: ObservableObject {
         }
 
         self.pendingRecoveries = Journal.pending()
+        codexPath.set(config.interview.codexPath)
     }
 
     /// Explicit dependencies for previews/tests; does not read or persist user settings.
     init(config: Config, store: Store) {
         self.config = config; self.store = store
         configWasRepaired = false; configURL = nil
+        codexPath.set(config.interview.codexPath)
     }
 
     private func persist() {
@@ -86,4 +100,14 @@ final class AppEnvironment: ObservableObject {
         Journal.remove(at: session.url)
         pendingRecoveries.removeAll { $0.url == session.url }
     }
+}
+
+/// A value readable from any thread — lets the engine (an actor) read `interview.codex_path`
+/// without touching the main-actor config.
+final class LockedValue<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: T
+    init(_ value: T) { self.value = value }
+    func get() -> T { lock.lock(); defer { lock.unlock() }; return value }
+    func set(_ v: T) { lock.lock(); value = v; lock.unlock() }
 }

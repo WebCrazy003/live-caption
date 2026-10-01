@@ -39,8 +39,8 @@ final class SessionController: ObservableObject {
     private var orchestratorObservation: AnyCancellable?
     private var transitioning = false
     private var capturePauseRequested = false
-    private var sessionId = UUID()
-    private var startDate = Date()
+    private(set) var sessionId = UUID()
+    private(set) var startDate = Date()
     private var clockTask: Task<Void, Never>?
 
     // Summary trigger state (SPEC-10). Counts committed final words; at the threshold it

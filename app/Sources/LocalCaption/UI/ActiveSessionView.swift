@@ -7,16 +7,20 @@ import LocalCaptionKit
 struct ActiveSessionView: View {
     @EnvironmentObject var env: AppEnvironment
     @StateObject private var controller: SessionController
+    @StateObject private var interview: InterviewController
     @State private var showingIssues = false
+    @State private var showingPrivacyNotice = false
 
     init(env: AppEnvironment) {
         _controller = StateObject(wrappedValue: SessionController(env: env))
+        _interview = StateObject(wrappedValue: InterviewController(env: env))
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
             modelStatusArea
+            if canChangeMode { modePicker }
             Divider()
             captionArea
             transportBar
@@ -24,6 +28,45 @@ struct ActiveSessionView: View {
         .padding()
         .navigationTitle(controller.displayName)
         .task { if controller.phase == .preparing { await controller.prepare() } }
+        .sheet(isPresented: $showingPrivacyNotice) {
+            InterviewPrivacyNotice(
+                accept: {
+                    env.config.interview.privacyAcknowledged = true
+                    env.config.interview.mode = .interview
+                    showingPrivacyNotice = false
+                },
+                cancel: { showingPrivacyNotice = false })
+        }
+        .onDisappear { Task { await interview.discardUnstarted() } }
+    }
+
+    // MARK: Mode (SPEC-13 §Mode picker)
+
+    private var isInterviewMode: Bool { env.config.interview.mode == .interview }
+
+    /// The mode is fixed once a session is live or has unsaved data.
+    private var canChangeMode: Bool { !isLive && !controller.hasUnsavedSession && controller.phase != .saving }
+
+    private var modePicker: some View {
+        Picker("Mode", selection: Binding(
+            get: { env.config.interview.mode },
+            set: { mode in
+                if mode == .interview && !env.config.interview.privacyAcknowledged { showingPrivacyNotice = true }
+                else { env.config.interview.mode = mode }
+            })) {
+            Label("Caption only", systemImage: "captions.bubble").tag(Config.Interview.Mode.caption)
+            Label("Interview", systemImage: "person.2.wave.2").tag(Config.Interview.Mode.interview)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(maxWidth: 320)
+    }
+
+    private func startSession() async {
+        await controller.start()
+        if isInterviewMode, controller.phase == .recording {
+            interview.recordingStarted(uuid: controller.sessionId, at: controller.startDate)
+        }
     }
 
     // MARK: Header (name · status pill · elapsed)
@@ -71,7 +114,15 @@ struct ActiveSessionView: View {
     }
 
     @ViewBuilder private var captionArea: some View {
-        if env.config.summary.enabled {
+        if isInterviewMode {
+            HStack(alignment: .top, spacing: 12) {
+                captionView.frame(maxWidth: .infinity)
+                Divider()
+                PreparePanel(interview: interview, codex: env.codex, library: env.library,
+                             fontSize: Double(env.config.caption.fontSize))
+                    .frame(minWidth: 300, idealWidth: 400, maxWidth: 520)
+            }
+        } else if env.config.summary.enabled {
             HStack(alignment: .top, spacing: 12) {
                 captionView.frame(maxWidth: .infinity)
                 Divider()
@@ -180,7 +231,7 @@ struct ActiveSessionView: View {
                     }
                     .help("Retry save")
                 case .ready, .saved, .failed:
-                    Button { Task { await controller.start() } } label: {
+                    Button { Task { await startSession() } } label: {
                         Label("Start", systemImage: "record.circle")
                     }
                     .buttonStyle(.borderedProminent)
