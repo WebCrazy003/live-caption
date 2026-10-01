@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AppKit
 import LocalCaptionKit
 
 /// One interview (SPEC-13–15): the setup draft, the Prepare step, and every turn on the
@@ -226,7 +227,8 @@ final class InterviewController: ObservableObject {
     /// Returns when the turn ends.
     @discardableResult
     func runTurn(kind: InterviewRecord.TurnKind, text: String, question: String,
-                 images: [URL] = [], span: (from: Int, to: Int)? = nil) async -> InterviewRecord.TurnStatus? {
+                 images: [URL] = [], span: (from: Int, to: Int)? = nil,
+                 onAccepted: (() -> Void)? = nil) async -> InterviewRecord.TurnStatus? {
         guard prepState.isReady, let thread = record?.threadId, var rec = record else { return nil }
         let n = rec.nextTurnNumber
         let relImages = images.map { "\(InterviewFiles.attachmentsName)/\($0.lastPathComponent)" }
@@ -262,7 +264,9 @@ final class InterviewController: ObservableObject {
                 final = .failed
             case .slow:
                 status = "Still thinking…"
-            case .started, .thinking:
+            case .started:
+                onAccepted?()
+            case .thinking:
                 break
             }
         }
@@ -270,6 +274,148 @@ final class InterviewController: ObservableObject {
         status = nil
         persist()
         return final
+    }
+
+    // MARK: Asking (SPEC-14)
+
+    /// The live transcript at press time; set by the session screen.
+    var transcriptSource: (() -> (segments: [AskSelection.Segment], interim: String, audioMs: Int))?
+    @Published private(set) var clipboardImageCount = 0
+    private var clipboardChangeCount = -1
+    private var mark: AskSelection.Mark?
+    private var queued: Request?
+    private var draining = false
+
+    /// One turn to send, already built at press time.
+    struct Request {
+        var kind: InterviewRecord.TurnKind
+        var text: String
+        var question: String
+        var images: [URL] = []
+        var span: (from: Int, to: Int)?
+        var onAccepted: (() -> Void)?
+        /// For merging queued asks: the transcript text and screenshot count behind `text`.
+        var askText = ""
+    }
+
+    /// The Ask hotkey / button.
+    func ask() async {
+        guard prepState.isReady else {
+            status = "Still preparing…"
+            NSSound.beep()
+            return
+        }
+        let cfg = env.config.interview
+        let src = transcriptSource?() ?? (segments: [], interim: "", audioMs: 0)
+        let sel = AskSelection.select(segments: src.segments, interim: src.interim, mode: cfg.askMode,
+                                      mark: mark, pressAudioMs: src.audioMs, maxWords: cfg.clampedMaxWords)
+        mark = sel.mark   // advances on every press, in both modes
+
+        var snapshot: ClipboardImages.Snapshot?
+        if cfg.includeClipboardImages {
+            let s = ClipboardImages.read()
+            if !s.images.isEmpty, !codex.acceptsImages(record?.model ?? cfg.effectiveModel) {
+                status = "This model can't read images — sending the text only."
+            } else if !s.images.isEmpty {
+                snapshot = s
+                if s.skipped > 0 { status = "\(s.skipped) image(s) left out (too large or over the limit of \(ClipboardImages.maxImages))." }
+            }
+        }
+        let images = snapshot?.images.count ?? 0
+        guard !sel.text.isEmpty || images > 0 else {
+            status = "Nothing new since your last ask"
+            return
+        }
+
+        var urls: [URL] = []
+        if let snapshot, let folder {
+            let turn = record?.nextTurnNumber ?? 1   // a queued ask still becomes the next turn
+            let offset = queued?.images.count ?? 0
+            do {
+                urls = try ClipboardImages.save(snapshot, turn: turn, to: folder.appendingPathComponent(InterviewFiles.attachmentsName))
+                if offset > 0 {   // a merged queued ask keeps every file name unique
+                    urls = try urls.enumerated().map { i, u in
+                        let dest = u.deletingLastPathComponent().appendingPathComponent("\(turn)-\(offset + i + 1).png")
+                        try? FileManager.default.removeItem(at: dest)
+                        try FileManager.default.moveItem(at: u, to: dest)
+                        return dest
+                    }
+                }
+            } catch {
+                status = "Couldn't save the screenshot: \(error.localizedDescription)"
+                urls = []
+            }
+        }
+        let clear = cfg.clearClipboardImagesAfterSend
+        let accepted: (() -> Void)? = (snapshot != nil && clear && !urls.isEmpty) ? {
+            if ClipboardImages.removeImages(after: snapshot!) { self.clipboardImageCount = 0 }
+        } : nil
+        await submit(Request(kind: .ask, text: InterviewPrompt.ask(sel.text, imageCount: urls.count),
+                             question: sel.text.isEmpty ? "(screenshot)" : sel.text, images: urls,
+                             span: (sel.fromMs, sel.toMs), onAccepted: accepted, askText: sel.text))
+    }
+
+    func sendTyped(_ text: String) async {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, prepState.isReady else { return }
+        await submit(Request(kind: .typed, text: t, question: t))
+    }
+
+    func sendQuick(_ prompt: Config.Interview.QuickPrompt) async {
+        guard prepState.isReady else { return }
+        await submit(Request(kind: .quick, text: prompt.text, question: prompt.label))
+    }
+
+    /// A different answer to the latest question (latest card only).
+    func regenerate() async {
+        guard prepState.isReady, let last = turns.last else { return }
+        await submit(Request(kind: .regenerate, text: InterviewPrompt.regenerate,
+                             question: "Another answer: \(last.question)"))
+    }
+
+    /// One turn at a time per thread; what happens to a new request while an answer is still
+    /// streaming is `interview.busy_policy` (SPEC-14 §Busy policy).
+    func submit(_ request: Request) async {
+        if isStreaming {
+            switch env.config.interview.busyPolicy {
+            case .interrupt:
+                await stopStreaming()
+                let deadline = Date().addingTimeInterval(2.5)
+                while isStreaming, Date() < deadline { try? await Task.sleep(nanoseconds: 50_000_000) }
+            case .queue:
+                queued = merge(queued, request)
+                status = "Queued — sends when this answer finishes."
+                return
+            }
+        }
+        var next: Request? = request
+        while let r = next {
+            await runTurn(kind: r.kind, text: r.text, question: r.question, images: r.images,
+                          span: r.span, onAccepted: r.onAccepted)
+            next = queued
+            queued = nil
+        }
+    }
+
+    /// A further Ask merges into the queued one; anything else replaces it.
+    private func merge(_ old: Request?, _ new: Request) -> Request {
+        guard let old, old.kind == .ask, new.kind == .ask else { return new }
+        let text = [old.askText, new.askText].filter { !$0.isEmpty }.joined(separator: " ")
+        let images = old.images + new.images
+        let both = [old.onAccepted, new.onAccepted].compactMap { $0 }
+        return Request(kind: .ask, text: InterviewPrompt.ask(text, imageCount: images.count),
+                       question: text.isEmpty ? "(screenshot)" : text, images: images,
+                       span: (old.span?.from ?? new.span?.from ?? 0, new.span?.to ?? old.span?.to ?? 0),
+                       onAccepted: both.isEmpty ? nil : { both.forEach { $0() } }, askText: text)
+    }
+
+    /// Ask-button badge: image count from clipboard *types* only, re-read when the clipboard changes.
+    func refreshClipboardBadge() {
+        guard env.config.interview.includeClipboardImages else { clipboardImageCount = 0; return }
+        let pb = NSPasteboard.general
+        guard pb.changeCount != clipboardChangeCount else { return }
+        clipboardChangeCount = pb.changeCount
+        clipboardImageCount = min(ClipboardImages.imageCount(pb), ClipboardImages.maxImages)
     }
 
     func stopStreaming() async {

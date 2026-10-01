@@ -57,6 +57,12 @@ final class SessionController: ObservableObject {
 
     var displayName: String { sessionName.isEmpty ? "New Session" : sessionName }
 
+    /// What an Ask reads at press time (SPEC-14): committed finals, the live interim line, and
+    /// the pause-aware audio clock.
+    var askSnapshot: (segments: [AskSelection.Segment], interim: String, audioMs: Int) {
+        (transcript.segments.map(AskSelection.Segment.init), orchestrator.hypothesis, orchestrator.recordedMs)
+    }
+
     init(env: AppEnvironment) {
         self.env = env
         orchestrator.onFinal = { [weak self] text, start, end in
@@ -230,7 +236,7 @@ final class SessionController: ObservableObject {
     private func resetSummaryState() {
         summaries = []; summaryBuffer = ""; summaryWords = 0; summaryContextTail = ""
         summaryCardSeq = 0; summarizing = false; summaryFlushPending = false; summaryUnavailable = false
-        guard env.config.summary.enabled else { summaryEngine = nil; return }
+        guard summaryActive else { summaryEngine = nil; return }
         let engine = MLXServerEngine(serverURL: env.config.summary.serverURL,
                                      model: env.config.summary.model)
         summaryEngine = engine
@@ -238,9 +244,16 @@ final class SessionController: ObservableObject {
         Task { @MainActor [weak self] in self?.summaryUnavailable = !(await engine.probe()) }
     }
 
+    /// Key points run in Caption only mode when enabled; in Interview mode only if also asked
+    /// for there (`interview.show_key_points`, SPEC-11) — otherwise the GPU stays free.
+    private var summaryActive: Bool {
+        env.config.summary.enabled
+            && (env.config.interview.mode != .interview || env.config.interview.showKeyPoints)
+    }
+
     /// Add a committed final to the pending block; summarize once it reaches the word threshold.
     private func accumulateForSummary(_ text: String) {
-        guard env.config.summary.enabled, summaryEngine != nil else { return }
+        guard summaryActive, summaryEngine != nil else { return }
         let t = text.trimmingCharacters(in: .whitespaces)
         guard !t.isEmpty else { return }
         summaryBuffer = summaryBuffer.isEmpty ? t : summaryBuffer + " " + t
@@ -262,7 +275,7 @@ final class SessionController: ObservableObject {
 
     /// Summarize the tail (any remaining words) on pause/stop. Never blocks the save path.
     private func flushSummary() {
-        guard env.config.summary.enabled, summaryEngine != nil, !summaryBuffer.isEmpty else { return }
+        guard summaryActive, summaryEngine != nil, !summaryBuffer.isEmpty else { return }
         summaryFlushPending = true
         if !summarizing { summaryFlushPending = false; dispatchSummary() }
     }

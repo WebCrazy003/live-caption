@@ -1,6 +1,6 @@
 # SPEC-14 — Live ask: hotkey, selection, screenshots, Answers panel
 
-**Status:** ⬜ Not started · **Step:** 4 of [SPEC-11](SPEC-11-interview-assist.md) · **Depends on:**
+**Status:** 🟢 Built (step 4) — hotkey, selection, screenshots, Answers panel, busy policy; tests + live Prepare→Ask (1.25 s to first words) pass; in-call check by the user pending · **Step:** 4 of [SPEC-11](SPEC-11-interview-assist.md) · **Depends on:**
 SPEC-11, SPEC-12, SPEC-13 (a prepared thread)
 
 > During the interview the user presses the **Ask** hotkey (default **F8**) or the Ask button.

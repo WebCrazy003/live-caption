@@ -16,6 +16,7 @@ final class CodexLiveSmokeTests: XCTestCase {
     override func setUpWithError() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["LC_LIVE_CODEX"] == "1", "set LC_LIVE_CODEX=1 to run")
         tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lc-live-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
     }
 
     override func tearDownWithError() throws { if let tmp { try? FileManager.default.removeItem(at: tmp) } }
@@ -62,5 +63,42 @@ final class CodexLiveSmokeTests: XCTestCase {
         print("live smoke: first text after \(String(format: "%.2f", firstText ?? -1)) s")
         await e.archiveThread(id: thread)
         await e.shutdown()
+    }
+
+    /// Prepare → Ask through the real controller (SPEC-13/14), with a made-up CV.
+    @MainActor
+    func testPrepareThenAskEndToEnd() async throws {
+        let home = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
+        var cfg = Config(); cfg.interview.mode = .interview
+        let env = AppEnvironment(config: cfg, store: try Store(url: tmp.appendingPathComponent("db.sqlite")))
+        env.library = InterviewLibrary(root: tmp.appendingPathComponent("library"))
+        env.interviewsRoot = tmp.appendingPathComponent("interviews")
+        env.codex = CodexService(engine: CodexAppServerEngine(codexPath: { "" }, workspace: tmp.appendingPathComponent("ws"),
+                                                              codexHome: home, stderrLog: nil))
+        await env.codex.refresh()
+        guard env.codex.isReady else { throw XCTSkip("default ~/.codex is not signed in") }
+
+        let cv = try env.library.addPastedDocument(
+            title: "Test CV", text: "Alex Example. iOS engineer, 6 years. Swift, SwiftUI, Combine. "
+                + "Led the rewrite of a banking app's payments flow at Northwind Bank (2021–2024).", kind: .cv)
+        let interview = InterviewController(env: env)
+        interview.draft.company = "Contoso"; interview.draft.role = "Senior iOS Engineer"
+        interview.draft.cvId = cv.id; interview.draft.answerLength = .short
+        interview.draft.usePastedJD = true; interview.draft.jdPaste = "Senior iOS engineer for a fintech app. SwiftUI required."
+        await interview.prepare()
+        XCTAssertEqual(interview.prepState, .ready, "\(interview.prepState)")
+        XCTAssertTrue(interview.briefing.contains("READY"))
+
+        interview.transcriptSource = { ([.init(text: "Great, thanks for joining.", tStartMs: 0, tEndMs: 2000)],
+                                        "so tell me about a project you're proud of in swift ui", 8000) }
+        await interview.ask()
+        let turn = try XCTUnwrap(interview.turns.last)
+        XCTAssertEqual(turn.status, .completed, turn.error ?? "")
+        XCTAssertTrue(turn.answer.hasPrefix("**Q:**"), turn.answer)
+        XCTAssertTrue(turn.answer.localizedCaseInsensitiveContains("Northwind") || turn.answer.contains("payment"),
+                      "grounded in the CV: \(turn.answer)")
+        print("e2e: briefing \(interview.briefing.count) chars; ask first words after \(turn.ttftMs ?? -1) ms\n\(turn.answer)")
+        if let thread = interview.record?.threadId { await env.codex.engine.archiveThread(id: thread) }
+        await env.codex.engine.shutdown()
     }
 }

@@ -109,6 +109,7 @@ struct SettingsView: View {
                         .multilineTextAlignment(.trailing)
                 }
                 Button("Open interview library…") { showingLibrary = true }
+                HotkeyRecorder(hotkey: $env.config.interview.hotkey)
             } header: {
                 Text("Interview")
             } footer: {

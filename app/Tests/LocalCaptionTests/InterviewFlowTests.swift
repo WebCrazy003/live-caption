@@ -17,6 +17,17 @@ final class InterviewFlowTests: XCTestCase {
         private var _sent: [Sent] = []
         private var _archived: [String] = []
         var reply: (String) -> [AnswerEvent] = { _ in [.delta("Brief"), .delta("ing"), .completed("Briefing\nREADY")] }
+        /// When set, a turn whose text matches stays open until `release()` or `interrupt`.
+        var holdIf: (String) -> Bool = { _ in false }
+        private var held: AsyncThrowingStream<AnswerEvent, Error>.Continuation?
+        private(set) var interrupts = 0
+
+        func release(with text: String = "Done") {
+            let c = lock.withLock { () -> AsyncThrowingStream<AnswerEvent, Error>.Continuation? in
+                defer { held = nil }; return held
+            }
+            c?.yield(.completed(text)); c?.finish()
+        }
 
         init() { (notices, noticeSink) = AsyncStream.makeStream(of: EngineNotice.self) }
         var threads: [ThreadConfig] { lock.lock(); defer { lock.unlock() }; return _threads }
@@ -37,10 +48,21 @@ final class InterviewFlowTests: XCTestCase {
         func send(threadId: String, input: [CodexRPC.Input], effort: String) -> AsyncThrowingStream<AnswerEvent, Error> {
             lock.lock(); _sent.append(Sent(threadId: threadId, input: input, effort: effort)); lock.unlock()
             let text: String = { if case .text(let t) = input.first { return t }; return "" }()
+            if holdIf(text) {
+                return AsyncThrowingStream { c in
+                    c.yield(.started(turnId: "u")); c.yield(.delta("Partial"))
+                    lock.withLock { held = c }
+                }
+            }
             let events = [.started(turnId: "u")] + reply(text)
             return AsyncThrowingStream { c in events.forEach { c.yield($0) }; c.finish() }
         }
-        func interrupt(threadId: String) async {}
+        func interrupt(threadId: String) async {
+            let c = lock.withLock { () -> AsyncThrowingStream<AnswerEvent, Error>.Continuation? in
+                interrupts += 1; defer { held = nil }; return held
+            }
+            c?.yield(.interrupted(partial: "Partial")); c?.finish()
+        }
         func archiveThread(id: String) async { lock.withLock { _archived.append(id) } }
         func startLogin() async throws -> LoginTicket { throw EngineError.other("n/a") }
         func cancelLogin(_ ticket: LoginTicket) async {}

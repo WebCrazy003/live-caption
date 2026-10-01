@@ -10,6 +10,7 @@ struct ActiveSessionView: View {
     @StateObject private var interview: InterviewController
     @State private var showingIssues = false
     @State private var showingPrivacyNotice = false
+    @State private var showingSetup = false
 
     init(env: AppEnvironment) {
         _controller = StateObject(wrappedValue: SessionController(env: env))
@@ -37,7 +38,30 @@ struct ActiveSessionView: View {
                 },
                 cancel: { showingPrivacyNotice = false })
         }
-        .onDisappear { Task { await interview.discardUnstarted() } }
+        .onAppear {
+            interview.transcriptSource = { [weak controller] in
+                controller?.askSnapshot ?? (segments: [], interim: "", audioMs: 0)
+            }
+            updateHotkey()
+        }
+        .onChange(of: env.config.interview.mode) { _, _ in updateHotkey() }
+        .onChange(of: env.config.interview.hotkey) { _, _ in updateHotkey() }
+        .onChange(of: controller.phase) { _, _ in updateHotkey() }
+        .onDisappear {
+            GlobalHotkey.shared.unregister()
+            Task { await interview.discardUnstarted() }
+        }
+    }
+
+    /// The Ask hotkey is live only on this screen, in Interview mode, until the session is
+    /// saved (SPEC-14 §Global hotkey).
+    private func updateHotkey() {
+        let hk = GlobalHotkey.shared
+        guard isInterviewMode, controller.phase != .saved else { hk.unregister(); return }
+        hk.onPress = { [weak interview] in Task { await interview?.ask() } }
+        let wanted = Hotkey.resolve(env.config.interview.hotkey)
+        if case .registered(let current) = hk.state, current == wanted { return }
+        hk.register(wanted)
     }
 
     // MARK: Mode (SPEC-13 §Mode picker)
@@ -118,9 +142,7 @@ struct ActiveSessionView: View {
             HStack(alignment: .top, spacing: 12) {
                 captionView.frame(maxWidth: .infinity)
                 Divider()
-                PreparePanel(interview: interview, codex: env.codex, library: env.library,
-                             fontSize: Double(env.config.caption.fontSize))
-                    .frame(minWidth: 300, idealWidth: 400, maxWidth: 520)
+                interviewPanel.frame(minWidth: 300, idealWidth: 400, maxWidth: 520)
             }
         } else if env.config.summary.enabled {
             HStack(alignment: .top, spacing: 12) {
@@ -137,6 +159,33 @@ struct ActiveSessionView: View {
             }
         } else {
             captionView
+        }
+    }
+
+    /// Prepare until ready; then Answers (with Key points below when enabled).
+    @ViewBuilder private var interviewPanel: some View {
+        if interview.prepState.isReady && !showingSetup {
+            VStack(spacing: 8) {
+                AnswersPanel(interview: interview, fontSize: Double(env.config.caption.fontSize),
+                             onEditSetup: { showingSetup = true })
+                    .layoutPriority(2)
+                if env.config.interview.showKeyPoints && env.config.summary.enabled {
+                    Divider()
+                    SummaryView(cards: controller.summaries, summarizing: controller.summarizing,
+                                unavailable: controller.summaryUnavailable,
+                                fontSize: Double(env.config.caption.fontSize), isLive: isLive)
+                        .frame(maxHeight: 220)
+                }
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                if interview.prepState.isReady {
+                    Button { showingSetup = false } label: { Label("Back to answers", systemImage: "chevron.left") }
+                        .buttonStyle(.link)
+                }
+                PreparePanel(interview: interview, codex: env.codex, library: env.library,
+                             fontSize: Double(env.config.caption.fontSize))
+            }
         }
     }
 

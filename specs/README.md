@@ -34,7 +34,7 @@ Legend: ✅ done · 🟢 mostly · 🟡 partial · 🔴 barely · ⬜ not starte
 | 11 | [Interview Assist — overview & shared contract](SPEC-11-interview-assist.md) | 🟡 step 1 done | config group, hotkey/selection/prompt/record contracts, Windows vectors |
 | 12 | [Codex answer engine](SPEC-12-codex-engine.md) | ✅ engine built | S0 ✅ (Luna low: 1.3 s to first word, lockdown holds); `codex app-server` client, lockdown, usage |
 | 13 | [Interview library & preparation](SPEC-13-interview-prep.md) | 🟢 built | skills/CV/JD library, mode picker, Prepare on one thread |
-| 14 | [Live ask: hotkey, selection, screenshots](SPEC-14-live-ask.md) | ⬜ not started | F8 → answer streaming; clipboard images; Answers panel |
+| 14 | [Live ask: hotkey, selection, screenshots](SPEC-14-live-ask.md) | 🟢 built | F8 → answer streaming; clipboard images; Answers panel |
 | 15 | [Interview window, results & Settings](SPEC-15-interview-ui-results.md) | ⬜ not started | compact layout, end summary, history, Settings → Interview |
 
 **Built:** the Python **spike** (`../spike/`) that proved the ASR architecture, the
