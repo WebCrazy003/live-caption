@@ -1,6 +1,6 @@
 # SPEC-11 — Interview Assist: overview & shared contract
 
-**Status:** 🟡 Step 1 done (Kit contract, vectors, migrations — both platforms) · **Depends on:** SPEC-04 (finals), SPEC-05 (Active Session layout),
+**Status:** 🟢 Steps 0–5 built on macOS (Windows: config group + migration only) · **Depends on:** SPEC-04 (finals), SPEC-05 (Active Session layout),
 SPEC-07 (Settings), SPEC-08 (clipboard) · **Extends:** SPEC.md §9, §12, §15 — a **new feature**,
 not in SPEC.md v2.0 · **Build steps:** this spec + [12](SPEC-12-codex-engine.md) →
 [13](SPEC-13-interview-prep.md) → [14](SPEC-14-live-ask.md) → [15](SPEC-15-interview-ui-results.md)
@@ -295,10 +295,10 @@ machines before the feature is ported. Windows-specific risks to verify on the G
 |---|---|---|---|
 | **0** ✅ | [12 §S0](SPEC-12-codex-engine.md#s0--spike-gate) | `spike/codex-answer-spike/`: measured latency, lockdown, tone, images, usage read | **Passed 2026-10-01** — [RESULTS.md](../spike/codex-answer-spike/RESULTS.md) |
 | 1 ✅ | **11** (this) | Kit: config group, hotkey parser, `AskSelection`, `InterviewPrompt`, records, vectors; DB migration | `swift test` green incl. new vectors |
-| 2 | [12](SPEC-12-codex-engine.md) | `CodexAppServerEngine`: process, JSON-RPC, lockdown, streaming, models, usage, sign-in | Engine passes its scripted fake-server tests + a live smoke run |
-| 3 | [13](SPEC-13-interview-prep.md) | Library (skills, CV, JD, prompts), mode picker, Prepare flow | A prepared thread with a visible briefing |
-| 4 | [14](SPEC-14-live-ask.md) | Hotkey, selection, clipboard images, Answers panel, typed/quick prompts | F8 during a real call → answer streaming |
-| 5 | [15](SPEC-15-interview-ui-results.md) | Compact layout, end-of-interview summary, history, Settings (usage) | Full acceptance below |
+| 2 ✅ | [12](SPEC-12-codex-engine.md) | `CodexAppServerEngine`: process, JSON-RPC, lockdown, streaming, models, usage, sign-in | Engine passes its scripted fake-server tests + a live smoke run |
+| 3 ✅ | [13](SPEC-13-interview-prep.md) | Library (skills, CV, JD, prompts), mode picker, Prepare flow | A prepared thread with a visible briefing |
+| 4 ✅ | [14](SPEC-14-live-ask.md) | Hotkey, selection, clipboard images, Answers panel, typed/quick prompts | F8 during a real call → answer streaming |
+| 5 ✅ | [15](SPEC-15-interview-ui-results.md) | Compact layout, end-of-interview summary, history, Settings (usage) | Full acceptance below |
 
 Step 1 can start before S0 finishes (it is engine-independent). Steps 2–5 wait for S0.
 

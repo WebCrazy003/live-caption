@@ -19,6 +19,8 @@ final class SessionController: ObservableObject {
     @Published var current = ""                 // building paragraph
     @Published var elapsed = "00:00:00"
     @Published var savedTxtURL: URL?
+    /// The `sessions` row written by the last save (links an interview to it, SPEC-15).
+    @Published private(set) var savedSessionId: Int64?
     @Published var saveError: String?
     @Published var justCopied = false
 
@@ -195,7 +197,7 @@ final class SessionController: ObservableObject {
 
     // MARK: Clipboard (write-only; never reads — SPEC.md §9.4)
 
-    private var committedText: String { transcript.segments.map(\.text).joined(separator: " ") }
+    var committedText: String { transcript.segments.map(\.text).joined(separator: " ") }
 
     /// Copy the last N completed sentences to the clipboard (N from Settings).
     func copyLastN() {
@@ -332,7 +334,7 @@ final class SessionController: ObservableObject {
                 endedAt: TimeFormat.iso(end),
                 durationSeconds: duration,
                 transcriptFile: result.txtURL.path)
-            _ = try? env.store.insert(rec)
+            savedSessionId = (try? env.store.insert(rec))?.id
             await journal?.deleteFile(); journal = nil
             savedTxtURL = result.txtURL
             saveError = nil

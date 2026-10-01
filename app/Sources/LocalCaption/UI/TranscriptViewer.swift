@@ -11,13 +11,17 @@ struct TranscriptViewer: View {
     @State private var record: SessionRecord?
     @State private var text = ""
     @State private var loadError: String?
+    @State private var interview: InterviewController?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let rec = record {
                 header(rec)
                 Divider()
-                if let err = loadError {
+                if let interview {
+                    ResultsView(interview: interview, transcript: text,
+                                fontSize: Double(env.config.caption.fontSize))
+                } else if let err = loadError {
                     ContentUnavailableCompat(err)
                 } else {
                     ScrollView {
@@ -61,7 +65,11 @@ struct TranscriptViewer: View {
 
     private func load() {
         record = try? env.store.fetch(id: sessionID)
+        interview = nil
         guard let rec = record else { text = ""; loadError = nil; return }
+        if rec.isInterview, let dir = rec.interviewDir {
+            interview = try? InterviewController(env: env, existing: URL(fileURLWithPath: dir))
+        }
         if let path = rec.transcriptFile,
            let contents = try? String(contentsOfFile: path, encoding: .utf8) {
             text = contents; loadError = nil

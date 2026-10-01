@@ -1,6 +1,6 @@
 # SPEC-15 — Interview window, results & history, Settings
 
-**Status:** ⬜ Not started · **Step:** 5 of [SPEC-11](SPEC-11-interview-assist.md) · **Depends on:**
+**Status:** 🟢 Built (step 5) — responsive layout, header chips, summary on Stop, Results, history, recovery linking, full Settings → Interview; tests pass, app launches; on-screen check by the user pending. Deviation: the engine is not stopped after 30 s idle when Settings reads usage (it stays up until the interview's summary is done or the app quits) · **Step:** 5 of [SPEC-11](SPEC-11-interview-assist.md) · **Depends on:**
 SPEC-11 – SPEC-14, SPEC-06 (session list), SPEC-07 (Settings), SPEC-08 (window)
 
 > Finishes the feature: the interview screen stays usable when the window is small (buttons

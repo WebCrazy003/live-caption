@@ -369,3 +369,31 @@ public enum SkillFile {
         return (included, ignored)
     }
 }
+
+// MARK: - Export
+
+extension InterviewRecord {
+    /// "Copy all Q&A as Markdown" (SPEC-15 §Results view): every turn in order, with its time
+    /// into the interview when known and an Interrupted/Failed mark.
+    public func qaMarkdown() -> String {
+        var out = ["# \(name)"]
+        let who = [setup.company, setup.role].filter { !$0.isEmpty }.joined(separator: " — ")
+        if !who.isEmpty && who != name { out.append(who) }
+        for t in turns {
+            var head = "## \(t.n). "
+            if let ms = t.audioToMs { head += "[\(TimeFormat.clock(ms / 1000))] " }
+            switch t.kind {
+            case .ask: head += t.question
+            case .typed: head += "You: \(t.question)"
+            case .quick: head += "Quick: \(t.question)"
+            case .regenerate: head += t.question
+            }
+            out.append(head)
+            if !t.images.isEmpty { out.append("_\(t.images.count) screenshot(s)_") }
+            out.append(t.answer.isEmpty ? "_(no answer)_" : t.answer)
+            if t.status == .interrupted { out.append("_(interrupted)_") }
+            if t.status == .failed { out.append("_(failed\(t.error.map { ": \($0)" } ?? ""))_") }
+        }
+        return out.joined(separator: "\n\n")
+    }
+}

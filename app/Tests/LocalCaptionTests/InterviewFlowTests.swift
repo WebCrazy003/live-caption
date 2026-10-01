@@ -21,6 +21,8 @@ final class InterviewFlowTests: XCTestCase {
         var holdIf: (String) -> Bool = { _ in false }
         private var held: AsyncThrowingStream<AnswerEvent, Error>.Continuation?
         private(set) var interrupts = 0
+        private(set) var resumed: [String] = []
+        private(set) var shutdowns = 0
 
         func release(with text: String = "Done") {
             let c = lock.withLock { () -> AsyncThrowingStream<AnswerEvent, Error>.Continuation? in
@@ -44,7 +46,7 @@ final class InterviewFlowTests: XCTestCase {
             let n = lock.withLock { _threads.append(cfg); return _threads.count }
             return "thr\(n)"
         }
-        func resumeThread(id: String, _ cfg: ThreadConfig) async throws {}
+        func resumeThread(id: String, _ cfg: ThreadConfig) async throws { lock.withLock { resumed.append(id) } }
         func send(threadId: String, input: [CodexRPC.Input], effort: String) -> AsyncThrowingStream<AnswerEvent, Error> {
             lock.lock(); _sent.append(Sent(threadId: threadId, input: input, effort: effort)); lock.unlock()
             let text: String = { if case .text(let t) = input.first { return t }; return "" }()
@@ -66,7 +68,7 @@ final class InterviewFlowTests: XCTestCase {
         func archiveThread(id: String) async { lock.withLock { _archived.append(id) } }
         func startLogin() async throws -> LoginTicket { throw EngineError.other("n/a") }
         func cancelLogin(_ ticket: LoginTicket) async {}
-        func shutdown() async {}
+        func shutdown() async { lock.withLock { shutdowns += 1 } }
     }
 
     private var tmp: URL!

@@ -60,6 +60,21 @@ final class InterviewController: ObservableObject {
         self.draft = Self.initialDraft(env: env)
     }
 
+    /// Reopen a saved interview (history viewer): its record, and the ability to (re)generate
+    /// the summary on the same thread — resumed first, since this app run may not know it.
+    init(env: AppEnvironment, existing folder: URL) throws {
+        self.env = env
+        self.draft = Draft()
+        let rec = try InterviewFiles.read(from: folder)
+        self.folder = folder
+        self.record = rec
+        self.briefing = rec.prep.briefing
+        self.prepState = rec.prep.status == .done ? .ready : .notPrepared
+        self.needsResume = true
+        self.summaryText = (try? String(contentsOf: folder.appendingPathComponent(InterviewFiles.summaryName),
+                                        encoding: .utf8)) ?? ""
+    }
+
     // MARK: Draft
 
     /// Prefill from the most recent interview, else from config (SPEC-13 §Prepare panel).
@@ -205,6 +220,103 @@ final class InterviewController: ObservableObject {
         if let thread = rec.threadId { await engine.archiveThread(id: thread) }
         record = nil; folder = nil; preparedDraft = nil; briefing = ""
         prepState = .notPrepared
+    }
+
+    // MARK: End of interview (SPEC-15)
+
+    @Published private(set) var summaryText = ""
+    @Published private(set) var summarizing = false
+    @Published private(set) var summaryError: String?
+    private var needsResume = false
+
+    var isFinished: Bool { record?.endedAt != nil }
+
+    /// After Stop has saved the transcript: link the record to its session row, let a streaming
+    /// answer finish (≤ 30 s), then summarize on the same thread. Never delays the save.
+    func sessionSaved(sessionId: Int64?, transcript: String) async {
+        guard record != nil else { return }
+        record?.endedAt = TimeFormat.iso(Date())
+        record?.sessionId = sessionId
+        if let sessionId, let folder {
+            try? env.store.setInterview(id: sessionId, dir: folder.path)
+            NotificationCenter.default.post(name: .sessionsChanged, object: nil)
+        }
+        persist()
+
+        queued = nil
+        let deadline = Date().addingTimeInterval(30)
+        while isStreaming, Date() < deadline { try? await Task.sleep(nanoseconds: 200_000_000) }
+        if isStreaming {
+            await stopStreaming()
+            let grace = Date().addingTimeInterval(2.5)
+            while isStreaming, Date() < grace { try? await Task.sleep(nanoseconds: 50_000_000) }
+        }
+
+        if env.config.interview.summarizeOnEnd, record?.threadId != nil, prepState.isReady {
+            await generateSummary(transcript: transcript)
+        } else {
+            record?.summary.status = .skipped
+            persist()
+        }
+        await engine.shutdown()
+    }
+
+    /// The summary turn (SPEC-15 §Summary message) → `summary.md`. Retryable.
+    func generateSummary(transcript: String) async {
+        guard let thread = record?.threadId, let folder, !summarizing else { return }
+        summarizing = true
+        summaryError = nil
+        summaryText = ""
+        record?.summary.status = .running
+        persist()
+        defer { summarizing = false }
+
+        if needsResume, let rec = record {
+            let length = Config.Interview.AnswerLength(rawValue: rec.setup.answerLength) ?? .medium
+            do {
+                try await engine.resumeThread(id: thread, ThreadConfig(
+                    model: rec.model, baseInstructions: InterviewPrompt.baseInstructions(length: length)))
+                needsResume = false
+            } catch {
+                failSummary(error.localizedDescription); return
+            }
+        }
+
+        let message = InterviewPrompt.summary(transcript: transcript)
+        for await event in streamEvents(engine.send(threadId: thread, input: [.text(message)],
+                                                    effort: env.config.interview.prepReasoningEffort)) {
+            switch event {
+            case .delta(let d): summaryText += d
+            case .completed(let full):
+                summaryText = full
+                do {
+                    try Data(full.utf8).write(to: folder.appendingPathComponent(InterviewFiles.summaryName), options: .atomic)
+                    record?.summary = .init(status: .done, file: InterviewFiles.summaryName, completedAt: TimeFormat.iso(Date()))
+                    persist()
+                } catch {
+                    failSummary("Could not save the summary: \(error.localizedDescription)")
+                }
+            case .interrupted:
+                failSummary("The summary was interrupted.")
+            case .failed(let e, _):
+                failSummary(e.localizedDescription)
+            case .started, .thinking, .slow:
+                break
+            }
+        }
+    }
+
+    private func failSummary(_ message: String) {
+        summaryError = message
+        record?.summary.status = .failed
+        persist()
+    }
+
+    /// The session screen starts a new recording after Results: start a fresh interview.
+    func resetForNewInterview() {
+        record = nil; folder = nil; preparedDraft = nil; briefing = ""; summaryText = ""; summaryError = nil
+        prepState = .notPrepared; mark = nil; queued = nil; recordingStart = nil; status = nil
+        draft = Self.initialDraft(env: env)
     }
 
     // MARK: Recording hooks

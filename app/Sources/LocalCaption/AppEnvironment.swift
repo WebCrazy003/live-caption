@@ -50,6 +50,27 @@ final class AppEnvironment: ObservableObject {
 
         self.pendingRecoveries = Journal.pending()
         codexPath.set(config.interview.codexPath)
+        sweepInterviews()
+    }
+
+    /// On launch: answers, preps or summaries left `streaming`/`running` by a quit or crash
+    /// are marked failed (SPEC-15 §History), so the UI never shows a spinner that can't finish.
+    func sweepInterviews() {
+        for (folder, var rec) in InterviewFiles.all(in: interviewsRoot) where rec.failInterruptedTurns() {
+            try? InterviewFiles.write(rec, to: folder)
+        }
+    }
+
+    /// Link a recovered capture to the interview recorded alongside it (SPEC-15 §History).
+    func linkRecoveredInterview(captureId: UUID, sessionId: Int64?) {
+        guard let sessionId else { return }
+        for (folder, var rec) in InterviewFiles.all(in: interviewsRoot)
+        where rec.captureSessionUUID == captureId.uuidString && rec.sessionId == nil {
+            rec.sessionId = sessionId
+            rec.endedAt = rec.endedAt ?? TimeFormat.iso(Date())
+            try? InterviewFiles.write(rec, to: folder)
+            try? store.setInterview(id: sessionId, dir: folder.path)
+        }
     }
 
     /// Explicit dependencies for previews/tests; does not read or persist user settings.
@@ -88,7 +109,8 @@ final class AppEnvironment: ObservableObject {
             let rec = SessionRecord(
                 sessionName: name, createdAt: TimeFormat.iso(start), endedAt: TimeFormat.iso(end),
                 durationSeconds: durationMs / 1000, transcriptFile: result.txtURL.path)
-            _ = try? store.insert(rec)
+            let inserted = try? store.insert(rec)
+            linkRecoveredInterview(captureId: session.sessionId, sessionId: inserted?.id)
             Journal.remove(at: session.url)
             pendingRecoveries.removeAll { $0.url == session.url }
             NotificationCenter.default.post(name: .sessionsChanged, object: nil)

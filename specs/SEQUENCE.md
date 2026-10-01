@@ -48,7 +48,7 @@ Phase 4  ✅  02-finish  ‖  03-finish          capture hardening ‖ ASR hybri
 Phase 5  ✅  08                               window + clipboard
 Phase 7  ▶  10                               live AI summary (on-device MLX LLM)   ← next
 Phase 6  ▶  09                               sign + notarize + ship                 (blocked on B2)
-Phase 8  ▶  12-S0 ✅ → 11 → 12 → 13 → 14 → 15  interview assist (Codex)               ← next (S0 passed)
+Phase 8  🟢  12-S0 → 11 → 12 → 13 → 14 → 15  interview assist (Codex)               built; in-call check pending
 ```
 
 > **Phase 8 — Interview Assist ([11](SPEC-11-interview-assist.md)–[15](SPEC-15-interview-ui-results.md)):**

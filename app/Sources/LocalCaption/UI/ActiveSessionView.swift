@@ -11,6 +11,9 @@ struct ActiveSessionView: View {
     @State private var showingIssues = false
     @State private var showingPrivacyNotice = false
     @State private var showingSetup = false
+    @State private var narrowTab: NarrowTab = .answers
+
+    private enum NarrowTab: String, CaseIterable { case answers = "Answers", captions = "Captions" }
 
     init(env: AppEnvironment) {
         _controller = StateObject(wrappedValue: SessionController(env: env))
@@ -53,6 +56,15 @@ struct ActiveSessionView: View {
         }
     }
 
+    /// Stop saves the transcript exactly as before; only then does the interview link itself to
+    /// the saved session and summarize (SPEC-15 §Ending the interview).
+    private func stopSession() async {
+        await controller.stop()
+        if isInterviewMode, controller.phase == .saved {
+            await interview.sessionSaved(sessionId: controller.savedSessionId, transcript: controller.committedText)
+        }
+    }
+
     /// The Ask hotkey is live only on this screen, in Interview mode, until the session is
     /// saved (SPEC-14 §Global hotkey).
     private func updateHotkey() {
@@ -87,6 +99,7 @@ struct ActiveSessionView: View {
     }
 
     private func startSession() async {
+        if interview.isFinished { interview.resetForNewInterview() }
         await controller.start()
         if isInterviewMode, controller.phase == .recording {
             interview.recordingStarted(uuid: controller.sessionId, at: controller.startDate)
@@ -112,6 +125,7 @@ struct ActiveSessionView: View {
                     .textSelection(.enabled).padding().frame(width: 360)
                 }
             }
+            if isInterviewMode { InterviewHeaderChips(interview: interview, codex: env.codex) }
             Spacer()
             if isLive {
                 Text(controller.elapsed).font(.headline).monospacedDigit()
@@ -138,12 +152,11 @@ struct ActiveSessionView: View {
     }
 
     @ViewBuilder private var captionArea: some View {
-        if isInterviewMode {
-            HStack(alignment: .top, spacing: 12) {
-                captionView.frame(maxWidth: .infinity)
-                Divider()
-                interviewPanel.frame(minWidth: 300, idealWidth: 400, maxWidth: 520)
-            }
+        if isInterviewMode && controller.phase == .saved && interview.isFinished {
+            ResultsView(interview: interview, transcript: controller.committedText,
+                        fontSize: Double(env.config.caption.fontSize))
+        } else if isInterviewMode {
+            interviewLayout
         } else if env.config.summary.enabled {
             HStack(alignment: .top, spacing: 12) {
                 captionView.frame(maxWidth: .infinity)
@@ -160,6 +173,38 @@ struct ActiveSessionView: View {
         } else {
             captionView
         }
+    }
+
+    /// The interview window often sits in a narrow strip beside the call (SPEC-15 §Responsive
+    /// layout): side by side ≥ 820 pt, stacked 560–819, one pane with a toggle below 560.
+    private var interviewLayout: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            Group {
+                if w >= 820 {
+                    HStack(alignment: .top, spacing: 12) {
+                        captionView.frame(maxWidth: .infinity)
+                        Divider()
+                        interviewPanel.frame(minWidth: 300, idealWidth: 400, maxWidth: 520)
+                    }
+                } else if w >= 560 {
+                    VSplitView {
+                        interviewPanel.frame(minHeight: 180, idealHeight: geo.size.height * 0.6)
+                        captionView.frame(minHeight: 100, idealHeight: geo.size.height * 0.4)
+                    }
+                } else {
+                    VStack(spacing: 8) {
+                        Picker("", selection: $narrowTab) {
+                            ForEach(NarrowTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                        }
+                        .pickerStyle(.segmented).labelsHidden()
+                        if narrowTab == .answers { interviewPanel } else { captionView }
+                    }
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+        }
+        .onChange(of: interview.turns.count) { _, _ in narrowTab = .answers }
     }
 
     /// Prepare until ready; then Answers (with Key points below when enabled).
@@ -275,7 +320,7 @@ struct ActiveSessionView: View {
                         Label("Retry capture", systemImage: "play.fill")
                     }
                     .help("Retry capture")
-                    Button { Task { await controller.stop() } } label: {
+                    Button { Task { await stopSession() } } label: {
                         Label("Retry save", systemImage: "square.and.arrow.down")
                     }
                     .help("Retry save")
@@ -289,14 +334,14 @@ struct ActiveSessionView: View {
                 case .recording:
                     Button { Task { await controller.pause() } } label: { Label("Pause", systemImage: "pause.fill") }
                         .help("Pause")
-                    Button(role: .destructive) { Task { await controller.stop() } } label: { Label("Stop", systemImage: "stop.fill") }
+                    Button(role: .destructive) { Task { await stopSession() } } label: { Label("Stop", systemImage: "stop.fill") }
                         .keyboardShortcut(".", modifiers: .command)
                         .help("Stop")
                 case .paused:
                     Button { Task { await controller.resume() } } label: { Label("Resume", systemImage: "play.fill") }
                         .buttonStyle(.borderedProminent)
                         .help("Resume")
-                    Button(role: .destructive) { Task { await controller.stop() } } label: { Label("Stop", systemImage: "stop.fill") }
+                    Button(role: .destructive) { Task { await stopSession() } } label: { Label("Stop", systemImage: "stop.fill") }
                         .help("Stop")
                 case .preparing, .pausing, .saving:
                     EmptyView()
@@ -349,5 +394,57 @@ private extension View {
     /// Drop the title of any `Label` inside, keeping the icon.
     @ViewBuilder func iconOnly(_ on: Bool) -> some View {
         if on { labelStyle(.iconOnly) } else { self }
+    }
+}
+
+/// Interview header chips (SPEC-15 §Header): name + prep state always; usage and hotkey only
+/// when there is something to warn about. Text drops away as the window narrows.
+private struct InterviewHeaderChips: View {
+    @ObservedObject var interview: InterviewController
+    @ObservedObject var codex: CodexService
+    @ObservedObject var hotkey = GlobalHotkey.shared
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            chips(compact: false)
+            chips(compact: true)
+        }
+    }
+
+    private func chips(compact: Bool) -> some View {
+        HStack(spacing: 8) {
+            if !compact, let name = interview.record?.name {
+                Text(name).font(.callout.weight(.medium)).lineLimit(1)
+            }
+            prepChip(compact: compact)
+            if codex.usageIsLow, let w = codex.usage?.lowest {
+                chip(compact ? "\(w.remainingPercent)%" : "\(w.label): \(w.remainingPercent)% left",
+                     icon: "gauge.with.dots.needle.67percent", color: .orange)
+                    .help((codex.usage?.windows ?? []).map(\.line).joined(separator: "\n"))
+            }
+            if case .unavailable(let hk, let reason) = hotkey.state {
+                chip(compact ? "" : "\(hk) unavailable", icon: "keyboard.badge.exclamationmark", color: .orange)
+                    .help("Hotkey \(hk) unavailable: \(reason) — change it in Settings. The Ask button still works.")
+            }
+        }
+    }
+
+    @ViewBuilder private func prepChip(compact: Bool) -> some View {
+        switch interview.prepState {
+        case .notPrepared: chip(compact ? "" : "Not prepared", icon: "circle.dashed", color: .secondary)
+        case .preparing: chip(compact ? "" : "Preparing…", icon: "hourglass", color: .secondary)
+        case .ready: chip(compact ? "" : "Ready", icon: "checkmark.circle.fill", color: .green)
+        case .failed: chip(compact ? "" : "Prep failed", icon: "exclamationmark.triangle.fill", color: .orange)
+        }
+    }
+
+    private func chip(_ text: String, icon: String, color: Color) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+            if !text.isEmpty { Text(text) }
+        }
+        .font(.caption).foregroundStyle(color)
+        .padding(.horizontal, 6).padding(.vertical, 2)
+        .background(color.opacity(0.1), in: Capsule())
     }
 }

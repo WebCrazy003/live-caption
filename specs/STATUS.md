@@ -18,6 +18,7 @@ WhisperKit), and auto-saves transcripts. This document reflects what is actually
 | 5 | Always-on-top overlay, opacity, window memory, clipboard | ✅ Done |
 | 6 | Developer ID signing + notarization + DMG | ⛔ Blocked on Apple Developer account (B2) |
 | 7 | Live AI Summary — on-device 1B LLM, right-side "Key points" card every ~50 words | ✅ Done — engine via local mlx-lm server ([SPEC-10](SPEC-10-live-summary.md)) |
+| 8 | Interview Assist — F8 sends the interviewer's words to a locked-down Codex (ChatGPT) thread prepared with CV/JD/skill; answers stream beside captions; summary + history | 🟢 Built ([SPEC-11](SPEC-11-interview-assist.md)–[15](SPEC-15-interview-ui-results.md)); real-call check pending |
 
 **Phases 1–5 and 7 are built.** The app builds, runs, captions, saves, recovers, is locally
 signed, and now shows a **live AI summary** ("Key points", Phase 7 / [SPEC-10](SPEC-10-live-summary.md))
@@ -40,8 +41,10 @@ data/logic layer. Live captioning verified manually.
 - **Build system = SwiftPM** (no Xcode project). Builds, bundles, and locally signs via
   `run.sh` with a stable self-signed identity (so macOS keeps the Screen Recording grant
   across rebuilds).
-- **On-device only.** The sole network use is the one-time model download; nothing else
-  leaves the machine.
+- **On-device only — in Caption only mode.** The sole network use is the one-time model
+  download. Interview mode (opt-in, behind a notice) sends the CV, JD, questions and optional
+  screenshots to OpenAI through the `codex` child process; the app itself still makes no
+  network calls (SPEC-11 §Privacy).
 
 ---
 

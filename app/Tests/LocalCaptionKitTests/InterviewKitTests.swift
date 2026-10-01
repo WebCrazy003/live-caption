@@ -52,6 +52,30 @@ final class InterviewKitTests: XCTestCase {
         XCTAssertFalse(rec.failInterruptedTurns())
     }
 
+    func testQAMarkdownExport() {
+        var rec = InterviewRecord(name: "Acme — iOS", createdAt: "t", model: "m", reasoningEffort: "low",
+                                  setup: .init(company: "Acme", role: "iOS"))
+        rec.turns = [.init(n: 1, kind: .ask, question: "why us", audioToMs: 65_000, images: ["attachments/1-1.png"],
+                           answer: "**Q:** Why us?\nBecause.", status: .completed, askedAt: "t"),
+                     .init(n: 2, kind: .typed, question: "shorter", answer: "", status: .failed, error: "offline", askedAt: "t")]
+        XCTAssertEqual(rec.qaMarkdown(), """
+        # Acme — iOS
+
+        ## 1. [00:01:05] why us
+
+        _1 screenshot(s)_
+
+        **Q:** Why us?
+        Because.
+
+        ## 2. You: shorter
+
+        _(no answer)_
+
+        _(failed: offline)_
+        """)
+    }
+
     // MARK: Folders
 
     func testFolderNameIsSafeOnBothPlatforms() {
