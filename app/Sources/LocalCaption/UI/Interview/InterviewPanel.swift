@@ -201,24 +201,27 @@ struct InterviewPanel: View {
         }
     }
 
+    /// One line at first, growing as the text wraps — up to 6 lines, then it scrolls (owner,
+    /// 2026-10-02). Return or ⌘Return sends; Option-Return adds a line break.
     private var typeField: some View {
         HStack(alignment: .bottom, spacing: 6) {
             TextField("Type to the coach…", text: $draft, axis: .vertical)
-            .lineLimit(1...4)
-            .textFieldStyle(.roundedBorder)
-            .onSubmit {
-                let text = draft
-                draft = ""
-                Task { await interview.sendTyped(text) }
-            }
-            Button {
-                let text = draft
-                draft = ""
-                Task { await interview.sendTyped(text) }
-            } label: { Image(systemName: "paperplane.fill") }
-            .help("Send" + (interview.pendingImages.isEmpty ? "" : " with \(interview.pendingImages.count) screenshot(s)"))
-            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && interview.pendingImages.isEmpty)
+                .lineLimit(1...6)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(sendDraft)
+                .help("Return sends · Option-Return adds a line")
+            Button(action: sendDraft) { Image(systemName: "paperplane.fill") }
+                .keyboardShortcut(.return, modifiers: .command)
+                .help("Send" + (interview.pendingImages.isEmpty ? "" : " with \(interview.pendingImages.count) screenshot(s)"))
+                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && interview.pendingImages.isEmpty)
         }
+    }
+
+    private func sendDraft() {
+        guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !interview.pendingImages.isEmpty else { return }
+        let text = draft
+        draft = ""
+        Task { await interview.sendTyped(text) }
     }
 
     private var hotkeyLabel: String {
