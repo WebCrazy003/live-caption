@@ -57,7 +57,9 @@ public static class AsrFallback
 
     private static string CpuBanner(string? replaced)
     {
-        const string core = "Running on CPU — captions will be slower. Enable the NVIDIA GPU for best results.";
+        // Not "enable the NVIDIA GPU": most PCs have none, and CPU is simply how they run.
+        const string core = "Running on CPU — captions will be slower. If this PC has an NVIDIA GPU, " +
+                            "make sure it is switched on (not Eco or integrated-only mode) for best results.";
         return replaced is null
             ? core
             : $"{core} ({replaced} needs about 17 seconds per window without a GPU, so {CpuModels.Final} " +

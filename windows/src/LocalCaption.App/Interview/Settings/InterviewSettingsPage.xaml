@@ -1,0 +1,126 @@
+<UserControl x:Class="LocalCaption.App.Interview.Settings.InterviewSettingsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:LocalCaption.App.Interview.Settings"
+             Focusable="False">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/LocalCaption;component/Interview/Settings/SettingsPageResources.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <!-- Settings → Interview (specs/SPEC-16 §5.7, Mac InterviewSettingsSections .interview):
+         Skills, Model & answers, Layout, Privacy. DataContext: InterviewSettingsModel. -->
+    <StackPanel Style="{StaticResource Settings.Page}">
+        <TextBlock Style="{StaticResource Type.Heading}" Text="Interview" />
+
+        <!-- ── Skills ── -->
+        <TextBlock Style="{StaticResource Settings.Group}" Margin="0,0,0,2" Text="SKILLS" />
+        <ItemsControl ItemsSource="{Binding Skills}" Focusable="False" Margin="0,4,0,0">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="{x:Type local:SkillSlotModel}">
+                    <Grid Margin="0,6,0,6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" MinWidth="110" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <!-- ✓ loaded / ○ not loaded -->
+                        <TextBlock x:Name="State" Style="{StaticResource Type.Icon}" FontSize="15"
+                                   Margin="0,0,10,0" VerticalAlignment="Center" Text="&#xEA3A;"
+                                   Foreground="{DynamicResource Caution}" />
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Slot}" FontFamily="{StaticResource Font.Mono}" FontSize="12.5"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Style="{StaticResource Type.Muted}" FontSize="11.5" Margin="0,2,0,0"
+                                       Text="{Binding Detail}" ToolTip="{Binding Detail}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
+                            <Button Content="{Binding LoadLabel}" MinWidth="84" Click="OnLoadFile"
+                                    ToolTip="Load a SKILL.md or other .md file" />
+                            <Button Content="Folder…" Margin="6,0,0,0" Click="OnLoadFolder"
+                                    AutomationProperties.Name="{Binding LoadFolderName}"
+                                    ToolTip="Load a skill folder (one with a SKILL.md in it)" />
+                            <Button x:Name="Remove" Style="{StaticResource Button.Ghost}" Tag="&#xE74D;"
+                                    Margin="4,0,0,0" Click="OnRemove" ToolTip="Remove"
+                                    AutomationProperties.Name="{Binding RemoveName}" Visibility="Hidden" />
+                        </StackPanel>
+                    </Grid>
+                    <DataTemplate.Triggers>
+                        <DataTrigger Binding="{Binding IsLoaded}" Value="True">
+                            <Setter TargetName="State" Property="Text" Value="&#xE930;" />
+                            <Setter TargetName="State" Property="Foreground" Value="{DynamicResource Ok}" />
+                            <Setter TargetName="Remove" Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                    </DataTemplate.Triggers>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock x:Name="SkillMessage" Text="{Binding SkillMessage}"
+                   Visibility="{Binding SkillMessage, Converter={StaticResource Visible}}"
+                   AutomationProperties.LiveSetting="Polite">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock" BasedOn="{StaticResource Type.Note}">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding SkillMessageIsError}" Value="True">
+                            <Setter Property="Foreground" Value="{DynamicResource Caution}" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+        <TextBlock Style="{StaticResource Type.Note}" Margin="0,6,0,0"
+                   Text="Load all four before an interview: a SKILL.md file, any .md file, or a skill folder. Its text is sent the first time that step runs. CVs are uploaded and JDs pasted in the preparation panel, not here." />
+
+        <!-- ── Model & answers ── -->
+        <TextBlock Style="{StaticResource Settings.Group}" Text="MODEL &amp; ANSWERS" />
+        <TextBlock Style="{StaticResource Settings.Field}" Text="Model" />
+        <ComboBox ItemsSource="{Binding Models}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                  SelectedValue="{Binding Model}" AutomationProperties.Name="Model" />
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="14" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Style="{StaticResource Settings.Field}" Text="Answer effort" />
+                <ComboBox ItemsSource="{Binding AnswerEfforts}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                          SelectedValue="{Binding ReasoningEffort}" AutomationProperties.Name="Answer effort" />
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+                <TextBlock Style="{StaticResource Settings.Field}" Text="Skill steps &amp; summary effort" />
+                <ComboBox ItemsSource="{Binding PrepEfforts}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                          SelectedValue="{Binding PrepReasoningEffort}"
+                          AutomationProperties.Name="Skill steps &amp; summary effort" />
+            </StackPanel>
+        </Grid>
+        <TextBlock Style="{StaticResource Settings.Field}" Text="Answer length" />
+        <WrapPanel>
+            <RadioButton Content="Short" Margin="0,0,22,4"
+                         IsChecked="{Binding AnswerLength, Converter={StaticResource Equals}, ConverterParameter=short}" />
+            <RadioButton Content="Medium" Margin="0,0,22,4"
+                         IsChecked="{Binding AnswerLength, Converter={StaticResource Equals}, ConverterParameter=medium}" />
+            <RadioButton Content="Long" Margin="0,0,0,4"
+                         IsChecked="{Binding AnswerLength, Converter={StaticResource Equals}, ConverterParameter=long}" />
+        </WrapPanel>
+        <TextBlock Style="{StaticResource Type.Note}" Margin="0,6,0,0" Text="{Binding ModelNote}" />
+
+        <!-- ── Layout ── -->
+        <TextBlock Style="{StaticResource Settings.Group}" Text="LAYOUT" />
+        <TextBlock Style="{StaticResource Settings.Field}" Text="Captions and answers" />
+        <ComboBox ItemsSource="{Binding Layouts}" DisplayMemberPath="Label" SelectedValuePath="Value"
+                  SelectedValue="{Binding PanelLayout}" AutomationProperties.Name="Captions and answers" />
+        <TextBlock Style="{StaticResource Type.Note}" Margin="0,6,0,0"
+                   Text="Automatic puts them side by side from 820 px wide and stacks them below that. Either way, drag the border between them, or hide the captions from the top bar. Applied when you save." />
+
+        <!-- ── Privacy ── -->
+        <TextBlock Style="{StaticResource Settings.Group}" Text="PRIVACY" />
+        <TextBlock Margin="0,10,0,0" TextWrapping="Wrap" FontSize="12.5" Foreground="{DynamicResource Text.Secondary}"
+                   Text="Interview mode sends your CV, the job description and your skills (when you run a skill step), the interviewer's recent words (on each Ask), screenshots you take with the Screenshot hotkey and, if enabled, clipboard screenshots to OpenAI through Codex. Caption only mode sends nothing." />
+        <Button Content="Show the notice again next time" HorizontalAlignment="Left" Margin="0,12,0,0"
+                IsEnabled="{Binding CanShowNoticeAgain}" Click="OnShowNoticeAgain" />
+    </StackPanel>
+</UserControl>

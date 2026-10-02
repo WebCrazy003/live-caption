@@ -255,9 +255,30 @@ public sealed record Config
         [JsonPropertyName("toggle_theme")] public Shortcut ToggleTheme { get; set; } = new("Ctrl+Shift+L");
     }
 
-    /// <summary>Windows-only shell state: theme, sidebar, and the pin.</summary>
+    /// <summary>
+    /// Windows-only shell state: theme, sidebar, the pin, the interview layout's split, and
+    /// where the Sessions and Settings windows were left. Per-machine, so it never goes in the
+    /// shared <c>interview</c> group (specs/SPEC-16 §5.3, §7); the Mac drops it on write.
+    /// </summary>
     public sealed record UiGroup
     {
+        /// <summary>Default of <see cref="InterviewAnswerShareStacked"/> (Mac 0.6).</summary>
+        public const double DefaultAnswerShareStacked = 0.6;
+
+        /// <summary>Default of <see cref="InterviewCaptionShareWide"/> (Mac 0.58).</summary>
+        public const double DefaultCaptionShareWide = 0.58;
+
+        /// <summary>Interview layout, stacked: the answers' share of the height, 0–1 exclusive.</summary>
+        [JsonPropertyName("interview_answer_share_stacked")]
+        public double InterviewAnswerShareStacked { get; set; } = DefaultAnswerShareStacked;
+
+        /// <summary>Interview layout, side by side: the captions' share of the width, 0–1 exclusive.</summary>
+        [JsonPropertyName("interview_caption_share_wide")]
+        public double InterviewCaptionShareWide { get; set; } = DefaultCaptionShareWide;
+
+        /// <summary>Interview layout: the caption column is hidden and the answers take the space.</summary>
+        [JsonPropertyName("interview_captions_hidden")] public bool InterviewCaptionsHidden { get; set; }
+
         /// <summary>
         /// Keep the window above the meeting app. Separate from the reserved
         /// <c>window.always_on_top</c>, whose default of <c>true</c> exists for macOS
@@ -265,11 +286,28 @@ public sealed record Config
         /// </summary>
         [JsonPropertyName("pin_on_top")] public bool PinOnTop { get; set; }
 
+        /// <summary>The Sessions window's last restore bounds (DIPs); absent: 980 × 640, centred.</summary>
+        [JsonPropertyName("sessions_window")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public WindowBounds? SessionsWindow { get; set; }
+
+        /// <summary>The Settings page last shown (its label), so Settings reopens there; empty: the first.</summary>
+        [JsonPropertyName("settings_page")] public string SettingsPage { get; set; } = "";
+
         [JsonPropertyName("sidebar_collapsed")] public bool SidebarCollapsed { get; set; }
         [JsonPropertyName("sidebar_width")] public double SidebarWidth { get; set; } = 260;
 
         /// <summary><c>system</c> (follow Windows) | <c>dark</c> | <c>light</c>.</summary>
         [JsonPropertyName("theme")] public string Theme { get; set; } = "system";
+    }
+
+    /// <summary>A window's restore bounds in device-independent pixels (Windows-only <c>ui</c> state).</summary>
+    public sealed record WindowBounds
+    {
+        [JsonPropertyName("height")] public double Height { get; set; }
+        [JsonPropertyName("width")] public double Width { get; set; }
+        [JsonPropertyName("x")] public double X { get; set; }
+        [JsonPropertyName("y")] public double Y { get; set; }
     }
 
     /// <summary>

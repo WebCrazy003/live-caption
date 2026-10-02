@@ -55,6 +55,10 @@ build\release.ps1 -CudaDirectory C:\cuda-redist\bin # first time on a new machin
 build\release.ps1 -SkipPublish                      # install what publish/ already holds
 ```
 
+`release.ps1` builds for the PC it runs on — `win-arm64` on a Windows-on-ARM machine,
+`win-x64` otherwise (`-Runtime` overrides). It warns if this PC lacks the Visual C++
+runtime the speech engine needs (see *Packaging*).
+
 Publishes, bundles the CUDA payload, mirrors the result into `%LOCALAPPDATA%\LocalCaptionBuild`
 and points **Local Caption** on the desktop at it — no installer, no admin rights, and no
 uninstall to undo. `-Run` starts it, `-NoShortcut` leaves the desktop alone, `-Destination`
@@ -99,16 +103,52 @@ payload, and how it gets beside the executable, lives once in `build\cuda.ps1` �
 scripts dot-source it, because the three ways of getting it wrong all fail the same silent
 way (CPU fallback, no message).
 
-Publishes self-contained `win-x64` (§11), prunes the Linux, macOS and ARM native libraries
-Whisper.net copies in regardless of RID, and packs a Velopack installer into `artifacts/` —
+Publishes self-contained `win-x64` or `win-arm64` (§11), prunes the native libraries for every
+other platform that Whisper.net copies in regardless of RID, and packs a Velopack installer into `artifacts/` —
 per-user, no admin, with delta updates. Unsigned by decision (§11, W4): click through
 SmartScreen once and add a Defender exclusion.
 
-**`-CudaDirectory` is not optional.** The CUDA redistributables (`cublas64_13`,
+**`-CudaDirectory` is what makes an x64 installer fast on NVIDIA PCs.** Leave it out and the
+installer still works everywhere, on the CPU. The CUDA redistributables (`cublas64_13`,
 `cublasLt64_13`, `cudart64_13`) are in no NuGet package — they come from NVIDIA's redist
 archives — and without them the GPU backend cannot load and Whisper.net drops to the CPU
 without saying so. `nvcudart_hybrid64.dll` is different again: it ships with the *display
-driver*, in `System32\DriverStore`, and the script copies it out for you.
+driver*, in `System32\DriverStore`, and the script copies it out for you. Bundled CUDA DLLs
+are harmless on a PC without an NVIDIA GPU: `BackendProbe` only chooses CUDA when the NVIDIA
+driver (`nvcuda.dll`) is present, and if Whisper.net still ends up on its CPU library (a GPU
+or driver too old for CUDA 13) the app reloads with CPU-sized models.
+
+### Other PCs: ARM64, Windows 10, no NVIDIA GPU
+
+The target is any Windows 10 1809+ / 11 PC, x64 or ARM64 ([SPEC-16, Compatibility
+target](../specs/SPEC-16-windows-parity.md#compatibility-target)). Every build script takes
+`-Runtime win-x64` (default) or `-Runtime win-arm64`:
+
+```powershell
+build\publish.ps1 -Runtime win-arm64                  # -> publish-arm64\
+build\package.ps1 -Version 1.0.0 -Runtime win-arm64   # -> artifacts\arm64\LocalCaption-Setup-1.0.0-arm64.exe
+```
+
+Both architectures build on an x64 PC (the .NET SDK cross-compiles ReadyToRun). The two
+installers are separate Velopack channels — `win` for x64, as before, and `win-arm64` — so
+an install only ever updates to its own architecture.
+
+- **ARM64** gets Whisper.net's native `win-arm64` CPU build (NEON); there is no CUDA for
+  Windows on ARM, so `-CudaDirectory` is refused and the CPU models are used. Windows 10 on
+  ARM cannot run the x64 build at all; Windows 11 on ARM can, emulated and slower — Settings ▸
+  System says "emulated" when that is happening.
+- **No NVIDIA GPU** (Intel, AMD, ARM): the CPU backend, with `auto` choosing models the CPU
+  keeps up with. x64 CPUs without AVX2 (pre-2013 Intel, many Pentium/Celeron/Atom) use the
+  bundled `Whisper.net.Runtime.NoAvx` build.
+- **Visual C++ runtime.** whisper.cpp's DLLs link the VC++ 2015–2022 runtime (MSVCP140,
+  VCRUNTIME140, and on x64 VCRUNTIME140_1 and VCOMP140), which a self-contained publish does
+  not include. The installer installs it first when missing (`vpk --framework
+  vcredist143-<arch>`); a copied `publish\` folder or the portable zip does not, and on a
+  PC without it the app says what to install instead of failing to load whisper.dll.
+- **Windows 10** has no per-process loopback (build 20348+), so "capture one app" and
+  "Auto" are not offered there and a saved app choice captures the whole output device, with
+  a note in the status line. Corners stay square; icons come from Segoe MDL2 Assets.
+
 
 ## Layout
 
@@ -243,6 +283,9 @@ tool then does with a question is that tool's business and the user's choice.
 
 Config keys added, all Windows-only and all defaulted so an older `config.json` loads
 unchanged: `ui.theme`, `ui.pin_on_top`, `ui.sidebar_collapsed`, `ui.sidebar_width`,
+`ui.interview_answer_share_stacked`, `ui.interview_caption_share_wide`, `ui.interview_captions_hidden`
+(Interview mode's split — per-machine, so not in the shared `interview` group), `ui.sessions_window`
+(the Sessions window's bounds), `ui.settings_page` (Settings reopens there),
 `asr.vocabulary`, `asr.final_beam_size`, `audio.auto_gain`, the `send` group, `audio.capture_mode: auto`, and
 `shortcuts.<action>.{keys, global}`. `window.opacity`, reserved by §7.3,
 is now honoured; its default of 1.0 means nothing changes until the slider is touched. `window.always_on_top` stays reserved and unread (§7.3) —

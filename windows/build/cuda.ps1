@@ -82,7 +82,7 @@ function Copy-CudaRuntime {
     The warning to print when a build is about to go out with no GPU payload at all.
 #>
 function Write-NoCudaWarning {
-    Write-Warning ("No CUDA runtime DLLs. This build will run on the CPU only, which " +
-                   "BENCH-RESULTS.md measures at 17 s per window for large-v3-turbo — so " +
-                   "§5.8 will fall back to small.en and captions will lag.")
+    Write-Warning ("No CUDA runtime DLLs. This build runs on any PC, but on the CPU only - " +
+                   "even one with an NVIDIA GPU. BENCH-RESULTS.md measures the CPU at 17 s per " +
+                   "window for large-v3-turbo, so §5.8 falls back to small.en and captions lag.")
 }

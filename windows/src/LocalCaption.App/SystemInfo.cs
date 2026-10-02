@@ -45,7 +45,13 @@ public static class SystemInfo
             engineRows.Add(new("Threads", engine.Threads.ToString()));
             engineRows.Add(new("Word timings", engine.WordTimings ? "DTW" : "none", !engine.WordTimings));
         }
-        engineRows.Add(new("CUDA runtime", cuda ? "found" : "not found — 'auto' runs on the CPU", !cuda));
+        // Flagged only where it is a missed opportunity: no NVIDIA driver means no CUDA to miss.
+        var nvidia = BackendProbe.HasNvidiaDriver();
+        engineRows.Add(new("CUDA runtime",
+            cuda ? "found" : nvidia ? "not found — 'auto' runs on the CPU" : "not applicable — no NVIDIA GPU; runs on the CPU",
+            !cuda && nvidia));
+        if (BackendProbe.MissingNativeRuntime() is { Count: > 0 } missing)
+            engineRows.Add(new("Visual C++ runtime", $"missing ({string.Join(", ", missing)}) — speech models cannot load", true));
 
         var speedRows = speed is { Decodes: > 0 }
             ? new List<Row>
@@ -66,10 +72,14 @@ public static class SystemInfo
             new("This machine",
             [
                 new("Processor", Processor()),
-                new("Cores", $"{Math.Max(1, Environment.ProcessorCount / 2)} physical (est.) · {Environment.ProcessorCount} logical"),
+                new("Cores", $"{Environment.ProcessorCount} logical · {BackendProbe.DefaultThreads()} speech threads by default"),
                 new("Memory", Memory()),
                 new("Graphics", string.Join(" · ", Graphics())),
-                new("Windows", RuntimeInformation.OSDescription),
+                // An x64 build on an ARM64 PC runs emulated — slower, and worth seeing at a glance.
+                new("Windows", $"{RuntimeInformation.OSDescription} · {Lower(RuntimeInformation.OSArchitecture)}" +
+                               (RuntimeInformation.OSArchitecture != RuntimeInformation.ProcessArchitecture
+                                   ? $" · app is {Lower(RuntimeInformation.ProcessArchitecture)} (emulated)" : ""),
+                    RuntimeInformation.OSArchitecture != RuntimeInformation.ProcessArchitecture),
             ]),
             new("Models on disk", Models()),
             new("Application",
@@ -89,6 +99,7 @@ public static class SystemInfo
                              Environment.NewLine));
 
     private static string Lower(AsrBackend backend) => backend.ToString().ToLowerInvariant();
+    private static string Lower(Architecture architecture) => architecture.ToString().ToLowerInvariant();
 
     /// <summary>The app's version (<see cref="AppInfo.Version"/>).</summary>
     public static string Version() => AppInfo.Version();

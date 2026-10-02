@@ -130,7 +130,14 @@ These are acceptance criteria, verified with a network monitor (§17.13).
 - Speaker diarization.
 - Languages other than English.
 - Cloud sync, accounts, auto-update telemetry.
-- Windows 10, Intel-Mac-style universal builds, Linux.
+- Intel-Mac-style universal builds, Linux. (One installer per architecture instead:
+  `win-x64` and `win-arm64`.)
+- ~~Windows 10~~ — **no longer a non-goal** (owner, 2026-10-02). The app targets Windows 10
+  1809+ and Windows 11, x64 and ARM64, with or without an NVIDIA GPU, at any display scale
+  and on any keyboard layout; Windows-11-only features (process loopback before build 20348,
+  rounded corners, Fluent icons) degrade gracefully. See
+  [SPEC-16 "Compatibility target"](specs/SPEC-16-windows-parity.md#compatibility-target),
+  which also supersedes §0.5's single-machine assumptions.
 - Saving or replaying raw audio.
 
 ---

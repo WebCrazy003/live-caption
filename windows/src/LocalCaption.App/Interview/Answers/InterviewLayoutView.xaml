@@ -1,0 +1,63 @@
+<UserControl x:Class="LocalCaption.App.Interview.Answers.InterviewLayoutView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:answers="clr-namespace:LocalCaption.App.Interview.Answers"
+             Focusable="False">
+
+    <!-- Stage 2 of Interview mode (SPEC-16 §5.3; Mac ActiveSessionView.interviewLayout and
+         InterviewHeaderChips): a header strip, then captions and answers side by side
+         (≥ 820 DIP) or stacked, with a draggable border. Never tabs. The captions are the
+         host's own caption view and transport bar, handed in through Captions. -->
+    <DockPanel>
+        <Grid x:Name="HeaderGrid" DockPanel.Dock="Top" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Record name · coach · usage (< 20 %) · hotkeys unavailable. Text drops away as it narrows. -->
+            <StackPanel x:Name="Chips" Grid.Column="0" Orientation="Horizontal" ClipToBounds="True"
+                        VerticalAlignment="Center" />
+
+            <StackPanel x:Name="HeaderRight" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button x:Name="PreparationButton" Tag="&#xE8A5;" Content="Preparation" MinHeight="24"
+                        Padding="8,0" FontSize="11.5" Margin="6,0,0,0" Click="OnPreparation"
+                        ToolTip="Back to the preparation (interview details, CV, JD, mode)"
+                        AutomationProperties.Name="Preparation" />
+                <!-- With captions hidden there is no caption column to hold Start / Pause / Stop. -->
+                <ContentControl x:Name="CompactTransportHost" Margin="6,0,0,0" Focusable="False"
+                                VerticalAlignment="Center" Visibility="Collapsed" />
+                <Button x:Name="CaptionsButton" Tag="&#xE890;" Content="Captions" MinHeight="24"
+                        Padding="8,0" FontSize="11.5" Margin="6,0,0,0" Click="OnCaptions" />
+                <Border x:Name="FontBox" Height="24" Margin="6,0,0,0" CornerRadius="4" BorderThickness="1"
+                        Background="{DynamicResource Bg.Input}" BorderBrush="{DynamicResource Line.Strong}">
+                    <StackPanel Orientation="Horizontal">
+                        <RepeatButton x:Name="FontSmaller" Style="{StaticResource Button.Step}" Tag="&#xE8E7;"
+                                      Click="OnFontSmaller" ToolTip="Smaller text"
+                                      AutomationProperties.Name="Smaller text" />
+                        <TextBlock x:Name="FontValue" Style="{StaticResource Type.Measure}" Text="18"
+                                   MinWidth="22" TextAlignment="Center" Foreground="{DynamicResource Text}" />
+                        <RepeatButton x:Name="FontLarger" Style="{StaticResource Button.Step}" Tag="&#xE8E8;"
+                                      Click="OnFontLarger" ToolTip="Larger text" Margin="0,0,2,0"
+                                      AutomationProperties.Name="Larger text" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Grid>
+
+        <!-- Rows and columns are rebuilt by ApplyLayout; the three children never change parent. -->
+        <Grid x:Name="SplitGrid">
+            <ContentControl x:Name="CaptionsHost" Focusable="False"
+                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+            <Border x:Name="SplitLine" IsHitTestVisible="False" Background="{DynamicResource Line}" />
+            <GridSplitter x:Name="Splitter" Focusable="True" KeyboardIncrement="20" ShowsPreview="False"
+                          ResizeBehavior="PreviousAndNext"
+                          HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                          ToolTip="Drag to resize · double-click to reset"
+                          AutomationProperties.Name="Resize captions and answers"
+                          DragCompleted="OnSplitterDragged" KeyUp="OnSplitterKeyUp"
+                          PreviewMouseLeftButtonDown="OnSplitterMouseDown" />
+            <answers:AnswersPanel x:Name="Answers" />
+        </Grid>
+    </DockPanel>
+</UserControl>

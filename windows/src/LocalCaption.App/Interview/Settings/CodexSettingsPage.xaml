@@ -1,0 +1,142 @@
+<UserControl x:Class="LocalCaption.App.Interview.Settings.CodexSettingsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:LocalCaption.App.Interview.Settings"
+             Focusable="False">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/LocalCaption;component/Interview/Settings/SettingsPageResources.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <!-- Settings → Codex (specs/SPEC-16 §5.7, Mac InterviewSettingsSections .codex +
+         CodexStatusRow): status, path, Check again, Sign out…, Plus usage.
+         DataContext: InterviewSettingsModel. -->
+    <StackPanel Style="{StaticResource Settings.Page}">
+        <TextBlock Style="{StaticResource Type.Heading}" Text="Codex" />
+
+        <!-- ── Status row ── -->
+        <Border Padding="12,10" CornerRadius="5" Background="{DynamicResource Bg.Raised}"
+                BorderBrush="{DynamicResource Line}" BorderThickness="1">
+            <StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock VerticalAlignment="Center" Margin="0,0,10,0" FontSize="15">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource Type.Icon}">
+                                <!-- Unknown: checking or not checked yet. -->
+                                <Setter Property="Text" Value="&#xE895;" />
+                                <Setter Property="Foreground" Value="{DynamicResource Text.Muted}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding StatusKind}" Value="{x:Static local:CodexStatusKind.Ready}">
+                                        <Setter Property="Text" Value="&#xE930;" />
+                                        <Setter Property="Foreground" Value="{DynamicResource Ok}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding StatusKind}" Value="{x:Static local:CodexStatusKind.Problem}">
+                                        <Setter Property="Text" Value="&#xE7BA;" />
+                                        <Setter Property="Foreground" Value="{DynamicResource Caution}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <TextBlock Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap" FontSize="12.5"
+                               Text="{Binding StatusText}" AutomationProperties.LiveSetting="Polite" />
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
+                        <Button Content="Sign in…" Click="OnSignIn"
+                                Visibility="{Binding ShowSignIn, Converter={StaticResource Visible}}" />
+                        <Button Content="Cancel" Click="OnCancelSignIn"
+                                Visibility="{Binding ShowCancelSignIn, Converter={StaticResource Visible}}" />
+                        <Button Content="Check again" Click="OnCheckAgain"
+                                Visibility="{Binding ShowRowCheckAgain, Converter={StaticResource Visible}}" />
+                    </StackPanel>
+                </Grid>
+                <TextBlock Style="{StaticResource Type.Note}" Margin="0,6,0,0"
+                           Text="Finish signing in to ChatGPT in your browser."
+                           Visibility="{Binding SigningIn, Converter={StaticResource Visible}}" />
+                <TextBlock Style="{StaticResource Settings.Warning}" Margin="0,6,0,0" Text="{Binding SignInError}"
+                           Visibility="{Binding SignInError, Converter={StaticResource Visible}}" />
+                <TextBlock Margin="0,6,0,0" Text="{Binding LowestUsageLine}"
+                           Visibility="{Binding LowestUsageLine, Converter={StaticResource Visible}}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock" BasedOn="{StaticResource Type.Note}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding UsageIsLow}" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource Caution}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </StackPanel>
+        </Border>
+
+        <TextBlock Style="{StaticResource Settings.Field}" Text="Codex path" />
+        <TextBox Text="{Binding CodexPath, UpdateSourceTrigger=PropertyChanged}" Tag="Auto-detect"
+                 AutomationProperties.Name="Codex path" IsEnabled="{Binding CodexAvailable}" />
+
+        <DockPanel Margin="0,12,0,0">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <TextBlock Style="{StaticResource Type.Note}" VerticalAlignment="Center" Margin="0,0,10,0"
+                           Text="Signing out…" Visibility="{Binding SigningOut, Converter={StaticResource Visible}}" />
+                <Button Content="Sign out…" Style="{StaticResource Button.Danger}" Click="OnSignOut"
+                        ToolTip="Sign LocalCaption out of your ChatGPT account"
+                        Visibility="{Binding IsReady, Converter={StaticResource Visible}}"
+                        IsEnabled="{Binding CanCheckAgain}" />
+            </StackPanel>
+            <Button Content="Check again" HorizontalAlignment="Left" Click="OnCheckAgain"
+                    IsEnabled="{Binding CanCheckAgain}" />
+        </DockPanel>
+        <TextBlock Style="{StaticResource Settings.Warning}" Margin="0,6,0,0" Text="{Binding CodexActionError}"
+                   Visibility="{Binding CodexActionError, Converter={StaticResource Visible}}" />
+        <TextBlock Style="{StaticResource Type.Note}" Margin="0,10,0,0"
+                   Text="Interview mode answers live questions with ChatGPT through the Codex app, with its own sign-in (separate from your Codex terminal). Codex is locked down: no files or commands; it may search the web when a skill asks for research." />
+
+        <!-- ── Plus usage ── -->
+        <TextBlock Style="{StaticResource Settings.Group}" Text="PLUS USAGE" />
+        <StackPanel Visibility="{Binding HasUsage, Converter={StaticResource Visible}}">
+            <ItemsControl ItemsSource="{Binding UsageWindows}" Focusable="False">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type local:UsageWindowModel}">
+                        <StackPanel Margin="0,12,0,0">
+                            <DockPanel>
+                                <TextBlock x:Name="Left" DockPanel.Dock="Right" Style="{StaticResource Type.Measure}"
+                                           FontSize="12" Foreground="{DynamicResource Text}" Text="{Binding RemainingText}" />
+                                <TextBlock Text="{Binding Label}" FontSize="12.5" />
+                            </DockPanel>
+                            <ProgressBar x:Name="Bar" Style="{StaticResource Settings.UsageBar}" Margin="0,5,0,0"
+                                         Value="{Binding Remaining, Mode=OneWay}"
+                                         AutomationProperties.Name="{Binding Label}" />
+                            <TextBlock Style="{StaticResource Type.Note}" Margin="0,4,0,0" Text="{Binding Line}" />
+                        </StackPanel>
+                        <DataTemplate.Triggers>
+                            <DataTrigger Binding="{Binding IsLow}" Value="True">
+                                <Setter TargetName="Left" Property="Foreground" Value="{DynamicResource Caution}" />
+                                <Setter TargetName="Bar" Property="Foreground" Value="{DynamicResource Caution}" />
+                            </DataTrigger>
+                        </DataTemplate.Triggers>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <DockPanel Margin="0,12,0,0">
+                <Button DockPanel.Dock="Right" Content="Refresh" Click="OnRefreshUsage" Margin="10,0,0,0" />
+                <TextBlock DockPanel.Dock="Right" Style="{StaticResource Type.Note}" VerticalAlignment="Center"
+                           Margin="0" Text="{Binding UpdatedText}" />
+                <TextBlock Style="{StaticResource Type.Note}" VerticalAlignment="Center" Margin="0"
+                           Text="{Binding PlanText}" />
+            </DockPanel>
+        </StackPanel>
+        <DockPanel Margin="0,12,0,0" Visibility="{Binding HasUsage, Converter={StaticResource Visible}, ConverterParameter=Invert}">
+            <Button DockPanel.Dock="Right" Content="Refresh" Click="OnRefreshUsage" Margin="10,0,0,0"
+                    IsEnabled="{Binding CodexAvailable}" />
+            <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource Text.Muted}"
+                       Text="{Binding NoUsageText}" />
+        </DockPanel>
+    </StackPanel>
+</UserControl>

@@ -40,6 +40,8 @@ public sealed class SessionController : IAsyncDisposable
     private readonly List<string> _paragraphs = [];
 
     private Transcript _transcript = new();
+    // Finals arrive on a pipeline thread; the interview's Ask reads them on the UI thread.
+    private readonly Lock _transcriptGate = new();
     private JournalWriter? _journal;
     private CancellationTokenSource? _clock;
     private bool _transitioning;
@@ -90,6 +92,15 @@ public sealed class SessionController : IAsyncDisposable
 
     public string DisplayName => SessionName.Length == 0 ? "New Session" : SessionName;
 
+    /// <summary>
+    /// The current capture's id — the journal's, and what an interview stores as
+    /// <c>capture_session_uuid</c>, so crash recovery can find the interview again.
+    /// </summary>
+    public Guid CaptureId => _sessionId;
+
+    /// <summary>When the current (or last) session started; names it and dates its interview.</summary>
+    public DateTimeOffset StartedAt => _startedAt;
+
     /// <summary>True once any final has been committed — gates "Copy last N".</summary>
     public bool HasTranscript => !_transcript.IsEmpty;
 
@@ -110,7 +121,11 @@ public sealed class SessionController : IAsyncDisposable
         Notify();
     }
 
-    public async Task StartAsync()
+    /// <param name="name">
+    /// The session's name — Interview mode names it from the interview details (specs/SPEC-16
+    /// §5.3); null or blank: <c>session_name_prefix</c> + the start time, as always.
+    /// </param>
+    public async Task StartAsync(string? name = null)
     {
         if (_transitioning || HasUnsavedSession) return;
         if (!Orchestrator.ModelReady && !_modelsStale) return;
@@ -125,8 +140,10 @@ public sealed class SessionController : IAsyncDisposable
             _startedAt = DateTimeOffset.Now;
             Orchestrator.ApplyTuning(_env.Config);
 
-            SessionName = _env.Config.General.SessionNamePrefix + TimeFormat.FileStamp(_startedAt);
-            _transcript = new Transcript();
+            SessionName = string.IsNullOrWhiteSpace(name)
+                ? _env.Config.General.SessionNamePrefix + TimeFormat.FileStamp(_startedAt)
+                : name.Trim();
+            lock (_transcriptGate) _transcript = new Transcript();
             _lastTurnAnnouncedEndMs = -1;
             _paragraphs.Clear();
             Current = "";
@@ -379,7 +396,7 @@ public sealed class SessionController : IAsyncDisposable
             SaveError = $"Recovery journal write failed: {e.Message}. Stop to save the transcript.";
         }
 
-        _transcript.Append(segment);
+        lock (_transcriptGate) _transcript.Append(segment);
         AddToParagraphs(text);
         WatchForTurnEnd();
         Notify();
@@ -396,7 +413,17 @@ public sealed class SessionController : IAsyncDisposable
 
     // Bookmarks are segments so that they are journalled and saved like everything else, but
     // they are the user's marks, not the interviewer's words — nothing copied or sent has them.
-    private string CommittedText => string.Join(" ", _transcript.Segments.Where(s => !Turns.IsBookmark(s)).Select(s => s.Text));
+    /// <summary>Every committed final, bookmarks left out, joined by spaces — what End interview saves with the interview.</summary>
+    public string CommittedText => string.Join(" ", CommittedSegments().Select(s => s.Text));
+
+    /// <summary>
+    /// A snapshot of the committed finals, bookmarks left out — safe to call from any thread
+    /// while finals keep arriving (the interview's Ask reads it at press time).
+    /// </summary>
+    public IReadOnlyList<TranscriptSegment> CommittedSegments()
+    {
+        lock (_transcriptGate) return [.. _transcript.Segments.Where(s => !Turns.IsBookmark(s))];
+    }
 
     /// <summary>The last unbroken stretch of speech — "what they just asked". See <see cref="Turns"/>.</summary>
     public string LastTurn() => Turns.LastText(_transcript.Segments, _env.Config.Send.TurnGapMs,
@@ -440,7 +467,7 @@ public sealed class SessionController : IAsyncDisposable
             SaveError = $"Recovery journal write failed: {e.Message}. Stop to save the transcript.";
         }
 
-        _transcript.Append(segment);
+        lock (_transcriptGate) _transcript.Append(segment);
 
         // On a line of its own: a mark buried mid-paragraph is a mark nobody finds.
         if (Current.Length > 0) _paragraphs.Add(Current);
@@ -569,6 +596,73 @@ public sealed class SessionController : IAsyncDisposable
             SaveError = $"Saved, but the transcript file export failed: {e.Message}";
         }
         return true;
+    }
+
+    // ── naming and opening saved sessions ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Rename the session in progress before Stop saves it — End interview names it from the
+    /// interview details as they are now (Mac <c>ActiveSessionView.stopSession</c>). Ignored
+    /// when nothing is live or the name is blank.
+    /// </summary>
+    public void Rename(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return;
+        if (Phase is not (SessionPhase.Recording or SessionPhase.Pausing or SessionPhase.Paused) &&
+            !(Phase == SessionPhase.Failed && HasUnsavedSession)) return;
+        SessionName = name.Trim();
+        Notify();
+    }
+
+    /// <summary>
+    /// Nothing live or unsaved and the speech model has settled, so a saved session can be shown
+    /// (Mac <c>SessionController.canOpenSaved</c>).
+    /// </summary>
+    public bool CanOpenSaved =>
+        !_transitioning && !HasUnsavedSession &&
+        Phase is SessionPhase.Ready or SessionPhase.Saved or SessionPhase.Failed;
+
+    /// <summary>
+    /// Sessions → Open in Interview Panel: show a saved session as if it had just been saved —
+    /// its captions from <paramref name="segments"/>, phase Saved, nothing unsaved (Mac
+    /// <c>SessionController.openSaved</c>). Start then begins a new session, as usual. Does
+    /// nothing unless <see cref="CanOpenSaved"/>.
+    /// </summary>
+    public void OpenSaved(SessionRecord record, IReadOnlyList<TranscriptSegment> segments)
+    {
+        if (!CanOpenSaved) return;
+
+        lock (_transcriptGate) _transcript = new Transcript(segments);
+        _paragraphs.Clear();
+        Current = "";
+        foreach (var segment in segments)
+        {
+            if (Turns.IsBookmark(segment))
+            {
+                // On a line of its own, as BookmarkAsync shows it.
+                if (Current.Length > 0) _paragraphs.Add(Current);
+                _paragraphs.Add(segment.Text);
+                Current = "";
+                continue;
+            }
+            AddToParagraphs(segment.Text);
+        }
+        if (Current.Length > 0)
+        {
+            _paragraphs.Add(Current);
+            Current = "";
+        }
+
+        _turnTimer?.Cancel();
+        _lastTurnAnnouncedEndMs = -1;
+        SessionName = record.SessionName;
+        _startedAt = (TimeFormat.ParseIso(record.CreatedAt) ?? DateTimeOffset.Now).ToLocalTime();
+        Elapsed = TimeFormat.Clock(record.DurationSeconds);
+        SavedSessionId = record.Id;
+        SavedTranscriptPath = record.TranscriptFile;
+        SaveError = null;
+        Phase = SessionPhase.Saved;
+        Notify();
     }
 
     // ── clock (sample-based, frozen while paused) ────────────────────────────────────────

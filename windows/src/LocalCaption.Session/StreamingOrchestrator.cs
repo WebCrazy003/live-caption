@@ -51,6 +51,7 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
     private readonly AutoGain _gain = new();
     private bool _gainOn = true;
     private string? _gpuBanner;
+    private string _captureNote = "";     // why the source is not the one asked for, while capturing
 
     public string Hypothesis { get; private set; } = "";
     public string Status { get; private set; } = "Preparing…";
@@ -146,6 +147,25 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
                 onDownload: (model, fraction) => UpdateDownload(model, fraction),
                 cancellationToken).ConfigureAwait(false);
 
+            // Asked for the GPU, got Whisper.net's CPU library — an NVIDIA card too old for the
+            // bundled CUDA build, or a driver too old for its runtime. The GPU-sized models were
+            // kept on the strength of that ask, and on the CPU they are unusable (§5.8), so
+            // reload with the models the CPU can run rather than lag 17 s a window.
+            if (info.FellBack && AsrFallback.Choose(false, InterimName, FinalName) is var (cpuInterim, cpuFinal, cpuBanner) &&
+                (cpuInterim != InterimName || cpuFinal != FinalName))
+            {
+                try { await engine.DisposeAsync().ConfigureAwait(false); } catch (Exception) { }
+                InterimName = cpuInterim;
+                FinalName = cpuFinal;
+                _gpuBanner = cpuBanner;
+                engine = new WhisperEngine(cpuInterim, cpuFinal, AsrBackend.Cpu, config.Asr.Threads, config.Asr.Vocabulary);
+                _engine = engine;
+                info = await engine.PrepareAsync(AppPaths.Models,
+                    onStatus: status => { Status = status; Changed(); },
+                    onDownload: (model, fraction) => UpdateDownload(model, fraction),
+                    cancellationToken).ConfigureAwait(false);
+            }
+
             IsDownloading = false;
             DownloadFraction = 1;
             ModelReady = true;
@@ -167,7 +187,7 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
             IsDownloading = false;
             ModelReady = false;
             Status = "Failed";
-            ErrorText = e.Message;
+            ErrorText = Explain(e);
         }
 
         Changed();
@@ -239,11 +259,22 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
         catch (Exception e)
         {
             ModelReady = false;
-            ErrorText = $"Could not fall back to the CPU: {e.Message}";
+            ErrorText = $"Could not fall back to the CPU: {Explain(e)}";
         }
 
         Changed();
     }
+
+    /// <summary>
+    /// A model-load failure in words someone can act on. A missing Visual C++ runtime, on a
+    /// PC that is not the one this was built on, otherwise surfaces as "unable to load
+    /// whisper.dll" — true, and no help. Download and missing-file failures say what they
+    /// are already, and are left alone.
+    /// </summary>
+    private static string Explain(Exception e) =>
+        e is HttpRequestException or IOException or OperationCanceledException
+            ? e.Message
+            : BackendProbe.ExplainLoadFailure(e) ?? e.Message;
 
     public void ApplyTuning(Config config)
     {
@@ -314,13 +345,15 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
         pipeline.OnOverload = () => OnCaptureMustPause?.Invoke();
         pipeline.OnCatchingUp = behind =>
         {
-            Detail = behind ? "Live captions are catching up…" : "";
+            Detail = behind ? "Live captions are catching up…" : _captureNote;
             Changed();
         };
         pipeline.OnMetric = Measure;
 
-        var capture = Create(config);
+        var (capture, note) = Create(config);
         _capture = capture;
+        _captureNote = note;
+        Detail = note;
         // Level first, then everything else. The gate downstream is an absolute loudness, and
         // a loopback capture is as quiet as the speakers are set — see AutoGain for the
         // session that taught this. In place and length-preserving, so the sample clock,
@@ -364,20 +397,31 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
     /// The capture source §4.1 asks for: process loopback by default, endpoint loopback as
     /// the fallback and whenever no process has been chosen.
     /// </summary>
-    private static IAudioCapture Create(Config config)
+    /// <remarks>
+    /// On Windows 10 (before build 20348) there is no process loopback at all, so a saved
+    /// <c>process</c> or <c>auto</c> choice — from another PC, or from before an OS change —
+    /// captures the whole device and says so in <see cref="Detail"/>, rather than failing
+    /// to start (SPEC-16, Compatibility target).
+    /// </remarks>
+    private static (IAudioCapture Capture, string Note) Create(Config config)
     {
         var mode = config.Audio.CaptureMode;
+        var wantsProcess = mode.Equals("process", StringComparison.OrdinalIgnoreCase) && config.Audio.TargetProcess is { Length: > 0 } ||
+                           mode.Equals("auto", StringComparison.OrdinalIgnoreCase);
+
+        if (wantsProcess && !ProcessLoopbackCapture.IsSupported)
+            return (new EndpointLoopbackCapture(config.Audio.OutputDevice), ProcessLoopbackCapture.UnsupportedNote);
 
         if (mode.Equals("process", StringComparison.OrdinalIgnoreCase) && config.Audio.TargetProcess is { Length: > 0 } target)
-            return new ProcessLoopbackCapture(target);
+            return (new ProcessLoopbackCapture(target), "");
 
         // auto: only when it is unambiguous (see MeetingApps.TheOnePlaying). Otherwise the
         // whole device — noisier, never wrong.
         if (mode.Equals("auto", StringComparison.OrdinalIgnoreCase) &&
             MeetingApps.TheOnePlaying(AudioSessions.List()) is { } call)
-            return new ProcessLoopbackCapture(call.Executable);
+            return (new ProcessLoopbackCapture(call.Executable), "");
 
-        return new EndpointLoopbackCapture(config.Audio.OutputDevice);
+        return (new EndpointLoopbackCapture(config.Audio.OutputDevice), "");
     }
 
     /// <summary>
@@ -583,6 +627,7 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
         _pipeline = null;
         Hypothesis = "";
         Detail = "";
+        _captureNote = "";
         Changed();
     }
 

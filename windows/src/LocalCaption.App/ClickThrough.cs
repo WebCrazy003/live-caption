@@ -206,19 +206,53 @@ public sealed class ClickThrough
         }
 
         /// <summary>Sit over the middle of the owner's title bar, clear of its buttons.</summary>
+        /// <remarks>
+        /// Placed in physical pixels with <c>SetWindowPos</c>, not through Left/Top. Under
+        /// per-monitor DPI (app.manifest) WPF reads this window's Left/Top in <i>its own</i>
+        /// DPI, which is the DPI of the monitor it was last on — so with the owner dragged to
+        /// a monitor at a different scale, DIPs computed from the owner's DPI put the pill on
+        /// the wrong screen. Physical pixels mean the same thing to both windows.
+        /// </remarks>
         public void Follow(Window owner)
         {
             if (owner.WindowState == WindowState.Minimized) return;
-            UpdateLayout();
-            var width = ActualWidth > 0 ? ActualWidth : 230;
 
-            // From where the owner really is on screen, not from Left/Top: those hold the
-            // restore position while it is maximised or snapped.
-            var origin = owner.PointToScreen(new Point(0, 0));
-            var dpi = VisualTreeHelper.GetDpi(owner);
-            Left = origin.X / dpi.DpiScaleX + Math.Max(0, (owner.ActualWidth - width) / 2);
-            Top = origin.Y / dpi.DpiScaleY + 6;
+            // Twice at most: landing on a monitor at another scale rescales the pill (WPF
+            // answers WM_DPICHANGED inside SetWindowPos), and the second pass centres the
+            // new size.
+            for (var pass = 0; pass < 2; pass++)
+            {
+                UpdateLayout();
+                var before = VisualTreeHelper.GetDpi(this);
+
+                // From where the owner really is on screen, not from Left/Top: those hold the
+                // restore position while it is maximised or snapped.
+                var origin = owner.PointToScreen(new Point(0, 0));          // physical pixels
+                var ownerDpi = VisualTreeHelper.GetDpi(owner);
+                var ownerWidth = owner.ActualWidth * ownerDpi.DpiScaleX;
+                var width = (ActualWidth > 0 ? ActualWidth : 230) * before.DpiScaleX;
+                var x = origin.X + Math.Max(0, (ownerWidth - width) / 2);
+                var y = origin.Y + 6 * ownerDpi.DpiScaleY;
+
+                var hwnd = new WindowInteropHelper(this).Handle;
+                if (hwnd == IntPtr.Zero)
+                {
+                    // Not shown yet: one monitor's worth of approximation, corrected on the next move.
+                    Left = x / ownerDpi.DpiScaleX;
+                    Top = y / ownerDpi.DpiScaleY;
+                    return;
+                }
+
+                SetWindowPos(hwnd, IntPtr.Zero, (int)Math.Round(x), (int)Math.Round(y), 0, 0,
+                             NoSize | NoZOrder | NoActivate);
+                if (VisualTreeHelper.GetDpi(this).PixelsPerDip == before.PixelsPerDip) return;
+            }
         }
+
+        private const uint NoSize = 0x0001, NoZOrder = 0x0004, NoActivate = 0x0010;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
 
         protected override void OnSourceInitialized(EventArgs e)
         {

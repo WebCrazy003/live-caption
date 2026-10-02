@@ -3,6 +3,9 @@
   <ItemGroup>
     <ProjectReference Include="..\LocalCaption.Audio\LocalCaption.Audio.csproj" />
     <ProjectReference Include="..\LocalCaption.Core\LocalCaption.Core.csproj" />
+    <!-- SPEC-16 §5: Interview mode (Codex engine, controller, library). Explicit rather than
+         reached through LocalCaption.Session, so the App's use of it does not hang on that path. -->
+    <ProjectReference Include="..\LocalCaption.Interview\LocalCaption.Interview.csproj" />
     <ProjectReference Include="..\LocalCaption.Session\LocalCaption.Session.csproj" />
   </ItemGroup>
 
@@ -34,6 +37,9 @@
          .png is the same mark for the title bar, which WPF scales better from one large
          frame than from an icon's fixed sizes. -->
     <ApplicationIcon>Assets/app.ico</ApplicationIcon>
+    <!-- Per-monitor DPI v2, Windows 10/11 supportedOS, long paths (SPEC-16, Compatibility
+         target). Read the comment at the top of the file before changing it. -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>

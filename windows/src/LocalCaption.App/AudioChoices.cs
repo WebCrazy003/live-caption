@@ -52,11 +52,18 @@ public static class AudioChoices
     /// </remarks>
     public static List<SourceChoice> All(Config config)
     {
-        var choices = new List<SourceChoice>
+        var choices = new List<SourceChoice> { new("Everything this PC plays", "endpoint", null) };
+
+        // Windows 10 cannot capture one app (ProcessLoopbackCapture.IsSupported), so offering
+        // applications there would offer something that silently becomes "everything".
+        if (!ProcessLoopbackCapture.IsSupported)
         {
-            new("Everything this PC plays", "endpoint", null),
-            new("Auto — the call, when only one is playing", "auto", null),
-        };
+            foreach (var (label, id) in Endpoints())
+                choices.Add(new SourceChoice($"Device · {label}", "endpoint", id));
+            return choices;
+        }
+
+        choices.Add(new("Auto — the call, when only one is playing", "auto", null));
 
         var target = config.Audio.TargetProcess;
         var targetListed = false;
@@ -92,7 +99,7 @@ public static class AudioChoices
     public static SourceChoice Current(IReadOnlyList<SourceChoice> choices, Config config)
     {
         if (config.Audio.CaptureMode.Equals("auto", StringComparison.OrdinalIgnoreCase))
-            return choices.First(c => c.Mode == "auto");
+            return choices.FirstOrDefault(c => c.Mode == "auto") ?? choices[0];
 
         var process = config.Audio.CaptureMode.Equals("process", StringComparison.OrdinalIgnoreCase) &&
                       config.Audio.TargetProcess is { Length: > 0 };

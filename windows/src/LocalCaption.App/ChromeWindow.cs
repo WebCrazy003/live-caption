@@ -143,8 +143,9 @@ public class ChromeWindow : Window
         }
 
         // Without an extended frame Windows 11 squares the corners off; ask for them back.
+        // Windows 10 has square corners whatever is asked, and no such attribute.
         var handle = new WindowInteropHelper(this).Handle;
-        if (handle == IntPtr.Zero) return;
+        if (handle == IntPtr.Zero || !IsWindows11) return;
         try
         {
             var round = 2;                                      // DWMWCP_ROUND
@@ -154,6 +155,9 @@ public class ChromeWindow : Window
     }
 
     private const int CornerPreference = 33;       // DWMWA_WINDOW_CORNER_PREFERENCE (Windows 11)
+
+    /// <summary>Build 22000: rounded corners and a settable border colour exist from here.</summary>
+    private static readonly bool IsWindows11 = OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct BlurBehind
@@ -237,12 +241,23 @@ public class ChromeWindow : Window
 
         try
         {
+            // DWMWA_USE_IMMERSIVE_DARK_MODE is 20 from build 18985 (Windows 10 2004 and every
+            // later build); 1809–1909 knew the same switch, undocumented, as 19. Ask with the
+            // id that build understands, and fall back to the other if it is refused. Failure
+            // is an HRESULT, never an exception, and is harmless: the frame keeps the system theme.
             var dark = ThemeManager.IsDark ? 1 : 0;
-            DwmSetWindowAttribute(handle, UseImmersiveDarkMode, ref dark, sizeof(int));
+            var first = OperatingSystem.IsWindowsVersionAtLeast(10, 0, 18985) ? UseImmersiveDarkMode : UseImmersiveDarkModeBefore2004;
+            if (DwmSetWindowAttribute(handle, first, ref dark, sizeof(int)) != 0)
+                DwmSetWindowAttribute(handle, first == UseImmersiveDarkMode ? UseImmersiveDarkModeBefore2004 : UseImmersiveDarkMode,
+                                      ref dark, sizeof(int));
 
             // COLORREF is 0x00BBGGRR. The panel colour, so the frame's edge meets the bar.
-            var border = ThemeManager.IsDark ? 0x00332822 : 0x00C2D3D9;
-            DwmSetWindowAttribute(handle, BorderColor, ref border, sizeof(int));
+            // Windows 11 only; Windows 10 draws its own accent-or-grey border regardless.
+            if (IsWindows11)
+            {
+                var border = ThemeManager.IsDark ? 0x00332822 : 0x00C2D3D9;
+                DwmSetWindowAttribute(handle, BorderColor, ref border, sizeof(int));
+            }
         }
         catch (Exception)
         {
@@ -251,6 +266,7 @@ public class ChromeWindow : Window
     }
 
     private const int UseImmersiveDarkMode = 20;   // DWMWA_USE_IMMERSIVE_DARK_MODE
+    private const int UseImmersiveDarkModeBefore2004 = 19;   // the same, on builds before 18985
     private const int BorderColor = 34;            // DWMWA_BORDER_COLOR (Windows 11)
 
     [DllImport("dwmapi.dll")]

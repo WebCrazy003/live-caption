@@ -32,6 +32,23 @@ public sealed class ProcessLoopbackCapture : WasapiCapture
             ? executable[..^4]
             : executable;
 
+    /// <summary>
+    /// Whether this Windows can capture one application at all.
+    /// </summary>
+    /// <remarks>
+    /// <c>AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK</c> arrived in build 20348 (Server
+    /// 2022); every Windows 11 has it, and Windows 10 client releases (1809–22H2, builds
+    /// 17763–19045) do not. There, activation fails with an HRESULT that says nothing useful,
+    /// so callers ask first and capture the whole output device instead (SPEC-16,
+    /// Compatibility target: "process loopback when the OS supports it, endpoint loopback
+    /// otherwise").
+    /// </remarks>
+    public static bool IsSupported => OperatingSystem.IsWindowsVersionAtLeast(10, 0, 20348);
+
+    /// <summary>What to tell someone whose Windows cannot capture one app.</summary>
+    public const string UnsupportedNote =
+        "This version of Windows cannot capture a single app (that needs Windows 11), so everything this PC plays is being captured.";
+
     /// <summary>The PID resolved at the last Start, for the log.</summary>
     public int? ProcessId { get; private set; }
 
@@ -39,6 +56,10 @@ public sealed class ProcessLoopbackCapture : WasapiCapture
 
     protected override OpenedStream OpenStream()
     {
+        if (!IsSupported)
+            throw new PlatformNotSupportedException(
+                "Capturing a single app needs Windows 11. Choose \"Everything this PC plays\" as the source.");
+
         var target = Resolve(_executable)
             ?? throw new InvalidOperationException(
                 $"{_executable} is not running. Start it, or choose a different source.");

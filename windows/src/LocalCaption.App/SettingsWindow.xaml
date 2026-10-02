@@ -57,7 +57,8 @@
         </Border>
 
         <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Focusable="False">
-            <Grid Margin="26,22,22,22">
+            <!-- PagesHost: the Interview, Asking, Prompts and Codex pages are added from code. -->
+            <Grid x:Name="PagesHost" Margin="26,22,22,22">
 
                 <!-- ── Audio ── -->
                 <StackPanel x:Name="PageAudio" Style="{StaticResource Page}">
@@ -152,7 +153,7 @@
                     <DockPanel>
                         <TextBlock DockPanel.Dock="Right" Style="{StaticResource Type.Measure}" Margin="12,0,0,0"
                                    Text="{Binding ElementName=FontSizeSlider, Path=Value, StringFormat={}{0:0} pt}" />
-                        <Slider x:Name="FontSizeSlider" Minimum="12" Maximum="32"
+                        <Slider x:Name="FontSizeSlider" Minimum="10" Maximum="48"
                                 TickFrequency="1" IsSnapToTickEnabled="True" />
                     </DockPanel>
                     <TextBlock Style="{StaticResource Type.Note}"

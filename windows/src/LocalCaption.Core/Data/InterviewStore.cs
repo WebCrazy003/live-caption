@@ -130,6 +130,40 @@ public sealed partial class Store
         Interviews("SELECT * FROM interviews WHERE session_id = $key ORDER BY created_at DESC LIMIT 1", sessionId)
             .FirstOrDefault();
 
+    /// <summary>
+    /// Every interview linked to <paramref name="sessionId"/>, newest first — what "Delete …
+    /// Interview Data" must remove (<see cref="Interview(long)"/> returns only the newest).
+    /// </summary>
+    public IReadOnlyList<InterviewRecord> Interviews(long sessionId) =>
+        Interviews("SELECT * FROM interviews WHERE session_id = $key ORDER BY created_at DESC, rowid DESC", sessionId);
+
+    /// <summary>
+    /// The columns a sessions list needs from every linked interview — no turns, no CV text —
+    /// newest first, so the first listing per session is the one <see cref="Interview(long)"/>
+    /// would return. One query, where <see cref="AllInterviews"/> reads every turn of every interview.
+    /// </summary>
+    public IReadOnlyList<InterviewListing> InterviewListings()
+    {
+        var listings = new List<InterviewListing>();
+        using var command = _connection.CreateCommand();
+        command.CommandText = """
+            SELECT session_id, candidate_name, company, interview_step, name, cv_title, jd_text
+            FROM interviews WHERE session_id IS NOT NULL
+            ORDER BY created_at DESC, rowid DESC
+            """;
+        using var row = command.ExecuteReader();
+        while (row.Read())
+            listings.Add(new InterviewListing(
+                SessionId: row.GetInt64(0),
+                Candidate: row.IsDBNull(1) ? null : row.GetString(1),
+                Company: row.IsDBNull(2) ? "" : row.GetString(2),
+                Step: row.IsDBNull(3) ? null : row.GetInt32(3),
+                Name: row.GetString(4),
+                CvTitle: row.IsDBNull(5) ? null : row.GetString(5),
+                JdText: row.IsDBNull(6) ? null : row.GetString(6)));
+        return listings;
+    }
+
     /// <summary>Every interview, newest first.</summary>
     public IReadOnlyList<InterviewRecord> AllInterviews() =>
         Interviews("SELECT * FROM interviews ORDER BY created_at DESC, rowid DESC", null);
@@ -343,3 +377,17 @@ public sealed partial class Store
         return row.IsDBNull(i) ? null : row.GetInt32(i);
     }
 }
+
+/// <summary>
+/// One interview as a sessions list shows and searches it (<see cref="Store.InterviewListings"/>):
+/// the linked session, "interviewee · company · step N", and the text the search looks in.
+/// </summary>
+/// <param name="SessionId">The saved session it is linked to.</param>
+/// <param name="Candidate">The interviewee, if entered.</param>
+/// <param name="Company">The company; empty when none (stored as NULL).</param>
+/// <param name="Step">Which round, if entered.</param>
+/// <param name="Name">The interview's name (the JD's first line, else "Interview").</param>
+/// <param name="CvTitle">The CV's title as snapshotted.</param>
+/// <param name="JdText">The pasted job description.</param>
+public sealed record InterviewListing(long SessionId, string? Candidate, string Company, int? Step,
+                                      string Name, string? CvTitle, string? JdText);

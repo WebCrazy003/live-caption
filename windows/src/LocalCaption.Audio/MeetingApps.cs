@@ -38,7 +38,7 @@ public static class MeetingApps
     private static readonly HashSet<string> VirtualMachines = new(StringComparer.OrdinalIgnoreCase)
     {
         "vmware-vmx", "vmware", "vmplayer", "VirtualBoxVM", "VirtualBox", "vmconnect", "vmwp",
-        "mstsc", "msrdc", "qemu-system-x86_64", "prl_vm_app", "JumpDesktop", "AnyDesk", "TeamViewer",
+        "mstsc", "msrdc", "qemu-system-x86_64", "qemu-system-aarch64", "prl_vm_app", "JumpDesktop", "AnyDesk", "TeamViewer",
     };
 
     public static SourceKind Classify(string executable)

@@ -19,7 +19,9 @@ namespace LocalCaption.Audio;
 ///   <item><description>The activation parameters travel as a <b>VT_BLOB PROPVARIANT</b>,
 ///   which has to be laid out by hand.</description></item>
 /// </list>
-/// <para>Requires Windows build 20348 or newer. The target here is 26200 (§0.5).</para>
+/// <para>Requires Windows build 20348 or newer — every Windows 11, no Windows 10 client
+/// release. Callers check <see cref="ProcessLoopbackCapture.IsSupported"/> first and fall back
+/// to endpoint loopback (SPEC-16, Compatibility target).</para>
 /// </remarks>
 internal static class ProcessLoopback
 {
@@ -155,12 +157,17 @@ internal static class ProcessLoopback
     }
 
     /// <summary>
-    /// A PROPVARIANT holding a BLOB, laid out for x64.
+    /// A PROPVARIANT holding a BLOB, for any pointer size.
     /// </summary>
     /// <remarks>
-    /// The union begins at offset 8, and BLOB's pointer is 8-aligned — hence the explicit
-    /// padding. Getting this wrong hands the audio service a garbage length and the
-    /// activation fails with an HRESULT that says nothing about why.
+    /// <para>The union begins at offset 8 with BLOB's <c>cbSize</c>; its pointer follows at
+    /// pointer alignment — offset 16 on x64 and ARM64 (24 bytes in all), offset 12 on x86 (16
+    /// bytes). Sequential layout gives exactly that from the field types alone. An explicit
+    /// 4-byte pad, as this used to have, is right for 64-bit only and would misplace the
+    /// pointer on x86. Getting this wrong hands the audio service a garbage length and the
+    /// activation fails with an HRESULT that says nothing about why.</para>
+    /// <para>A whole PROPVARIANT is 24 bytes on 64-bit, and the buffer handed over is this
+    /// struct's size, which matches it on both 64-bit targets.</para>
     /// </remarks>
     [StructLayout(LayoutKind.Sequential)]
     private struct BlobPropVariant
@@ -170,7 +177,6 @@ internal static class ProcessLoopback
         public ushort Reserved2;
         public ushort Reserved3;
         public uint Size;
-        public uint Padding;
         public IntPtr Data;
     }
 }

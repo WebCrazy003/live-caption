@@ -91,9 +91,8 @@ public sealed class WhisperEngine : IAsyncDisposable
         Prompt = BuildPrompt(vocabulary);
         FinalBeamSize = Math.Clamp(finalBeamSize, 0, 8);
         RequestedBackend = backend;
-        // 0 means "physical cores" (§9.2). Environment.ProcessorCount counts logical
-        // processors, and oversubscribing whisper.cpp with SMT siblings costs throughput.
-        Threads = threads > 0 ? threads : Math.Max(1, Environment.ProcessorCount / 2);
+        // 0 means "physical cores" (§9.2) — estimated per architecture, see DefaultThreads.
+        Threads = threads > 0 ? threads : BackendProbe.DefaultThreads();
     }
 
     /// <summary>

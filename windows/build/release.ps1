@@ -40,10 +40,15 @@
     files no longer in the build are removed, so a stale native DLL cannot be loaded in
     preference to the one that belongs there.
 
+.PARAMETER Runtime
+    win-x64 or win-arm64. Defaults to this PC's own architecture, since the build is
+    installed here.
+
 .PARAMETER CudaDirectory
     Folder holding the CUDA redistributables (cublas64_*, cublasLt64_*, cudart64_*). Needed
     once: publish.ps1 carries them across later rebuilds. Without them the app runs on the
-    CPU, which BENCH-RESULTS.md §1 measures at 17 s per window for large-v3-turbo.
+    CPU, which BENCH-RESULTS.md §1 measures at 17 s per window for large-v3-turbo. x64 only,
+    and only useful on a PC with an NVIDIA GPU.
 
 .PARAMETER SkipPublish
     Install what is already in publish/ rather than rebuilding it first.
@@ -63,6 +68,9 @@
 [CmdletBinding()]
 param(
     [string] $Destination,
+    # Unset means "this PC's architecture" (below); ValidateSet does not check the default.
+    [ValidateSet('win-x64', 'win-arm64')]
+    [string] $Runtime,
     [string] $CudaDirectory,
     [switch] $SkipPublish,
     [switch] $NoShortcut,
@@ -74,7 +82,18 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'cuda.ps1')
 
 $windows = Split-Path -Parent $PSScriptRoot
-$staging = Join-Path $windows 'publish'
+
+# This PC's native architecture. Not $env:PROCESSOR_ARCHITECTURE, which says AMD64 inside an
+# emulated x64 PowerShell on an ARM64 PC; the machine-wide value says what the CPU really is.
+if (-not $Runtime) {
+    $native = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment' `
+                  -ErrorAction SilentlyContinue).PROCESSOR_ARCHITECTURE
+    $Runtime = if ($native -eq 'ARM64') { 'win-arm64' } else { 'win-x64' }
+}
+$x64 = $Runtime -eq 'win-x64'
+if ($CudaDirectory -and -not $x64) { throw "-CudaDirectory is for win-x64 only: there is no CUDA for Windows on ARM." }
+
+$staging = Join-Path $windows $(if ($x64) { 'publish' } else { 'publish-arm64' })
 if (-not $Destination) { $Destination = Join-Path $env:LOCALAPPDATA 'LocalCaptionBuild' }
 $Destination = [System.IO.Path]::GetFullPath($Destination).TrimEnd('\')
 
@@ -127,10 +146,13 @@ if ($SkipPublish) {
     Write-Host "Installing the existing $staging"
 }
 else {
-    & (Join-Path $PSScriptRoot 'publish.ps1') -Output $staging
+    & (Join-Path $PSScriptRoot 'publish.ps1') -Runtime $Runtime -Output $staging
 }
 
-if ($CudaDirectory) {
+if (-not $x64) {
+    Write-Host '  ARM64: CPU speech recognition only (no CUDA on Windows on ARM)'
+}
+elseif ($CudaDirectory) {
     Copy-CudaRuntime -From $CudaDirectory -To $staging
 }
 elseif (Get-CudaRuntimeDll $staging) {
@@ -158,6 +180,20 @@ if ($LASTEXITCODE -ge 8) {
 $global:LASTEXITCODE = 0
 
 if (-not (Test-Path $installed)) { throw "The install finished but $installed is not there." }
+
+# whisper.cpp's native DLLs need the Visual C++ runtime, which a self-contained publish does
+# not carry (publish.ps1). Most PCs have it from some other program; a clean one does not,
+# and then no speech model loads. Check this PC, since this is where the build will run.
+$vcDlls = @('msvcp140.dll', 'vcruntime140.dll')
+if ($x64) { $vcDlls += @('vcruntime140_1.dll', 'vcomp140.dll') }
+$system32 = Join-Path $env:SystemRoot 'System32'
+$vcMissing = @($vcDlls | Where-Object { -not (Test-Path (Join-Path $system32 $_)) })
+if ($vcMissing.Count) {
+    $arch = $Runtime.Substring(4)
+    $missingList = $vcMissing -join ', '
+    Write-Warning ("This PC lacks the Microsoft Visual C++ 2015-2022 Redistributable ($missingList missing), " +
+                   "so speech models will not load. Install it: https://aka.ms/vs/17/release/vc_redist.$arch.exe")
+}
 
 # ---------------------------------------------------------------------------------------
 # Desktop shortcut

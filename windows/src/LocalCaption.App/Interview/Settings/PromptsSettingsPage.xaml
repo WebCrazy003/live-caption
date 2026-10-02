@@ -1,0 +1,25 @@
+<UserControl x:Class="LocalCaption.App.Interview.Settings.PromptsSettingsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Focusable="False">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/LocalCaption;component/Interview/Settings/SettingsPageResources.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <!-- Settings → Prompts (specs/SPEC-16 §5.7). The caption says what really happens: the
+         text is appended to the coach's base instructions as "MY INSTRUCTIONS" when an
+         interview's thread opens — not "prefilled" as the Mac's caption has it. -->
+    <StackPanel Style="{StaticResource Settings.Page}">
+        <TextBlock Style="{StaticResource Type.Heading}" Text="Prompts" />
+        <TextBlock Style="{StaticResource Settings.Field}" Margin="0,0,0,5" Text="Custom instructions" />
+        <TextBox Style="{StaticResource Settings.MultiLine}" MinHeight="140" MaxHeight="360"
+                 Text="{Binding CustomInstructions, UpdateSourceTrigger=PropertyChanged}"
+                 AutomationProperties.Name="Custom instructions" />
+        <TextBlock Style="{StaticResource Type.Note}" Margin="0,6,0,0"
+                   Text="Appended to the coach's instructions when an interview's coach starts." />
+    </StackPanel>
+</UserControl>

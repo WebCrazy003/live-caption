@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using NAudio.CoreAudioApi;
 
 namespace LocalCaption.Audio;
@@ -142,6 +143,17 @@ public sealed class EndpointLoopbackCapture : WasapiCapture
                 // ends mid-session.
             }
         }
-        return enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
+        try
+        {
+            return enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
+        }
+        catch (COMException e) when (e.HResult == unchecked((int)0x80070490))      // E_NOTFOUND
+        {
+            // A desktop with no speakers, headphones or monitor audio — or every output
+            // disabled. COM's "Element not found" would be accurate and no help.
+            throw new InvalidOperationException(
+                "This PC has no audio output device, so there is nothing to capture. Connect or enable " +
+                "speakers or headphones (Settings ▸ System ▸ Sound), then try again.", e);
+        }
     }
 }

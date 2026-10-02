@@ -1,0 +1,151 @@
+<UserControl x:Class="LocalCaption.App.Interview.Answers.InterviewReplayView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:answers="clr-namespace:LocalCaption.App.Interview.Answers"
+             Focusable="False">
+
+    <!-- A finished interview (SPEC-16 §5.5; Mac InterviewReplayView.swift): toolbar, the
+         summary, then transcript / CV / JD beside the conversation (≥ 700 DIP) or a
+         Conversation / Transcript switch. Interactive right after End interview (follow-up
+         bar), read-only from the Sessions window. -->
+    <DockPanel>
+
+        <!-- ── Toolbar: state · Profile: X · Copy Q&A -->
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10" LastChildFill="False">
+            <Button x:Name="CopyQaButton" DockPanel.Dock="Right" Tag="&#xE8C8;" Content="Copy Q&amp;A"
+                    MinHeight="26" Padding="10,0" FontSize="12" Click="OnCopyQa" />
+            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock x:Name="StateIcon" FontFamily="{DynamicResource Font.Icon}" FontSize="11"
+                           VerticalAlignment="Center" Margin="0,1,6,0" Foreground="{DynamicResource Text.Muted}" />
+                <TextBlock x:Name="StateText" FontSize="12" VerticalAlignment="Center"
+                           Foreground="{DynamicResource Text.Muted}" />
+                <TextBlock x:Name="ProfileText" FontSize="12" VerticalAlignment="Center" Margin="12,0,0,0"
+                           Foreground="{DynamicResource Text.Muted}" />
+            </StackPanel>
+        </DockPanel>
+
+        <!-- ── Summary (collapsible; streams while it is written) -->
+        <Border x:Name="SummarySection" DockPanel.Dock="Top" Margin="0,0,0,10" Padding="10,6,10,8"
+                CornerRadius="6" BorderThickness="1"
+                Background="{DynamicResource Bg.Raised}" BorderBrush="{DynamicResource Line}">
+            <StackPanel>
+                <DockPanel>
+                    <Button x:Name="SummarizeButton" DockPanel.Dock="Right" Tag="&#xE8FD;" Content="Summarize interview"
+                            MinHeight="26" Padding="10,0" FontSize="12" Click="OnSummarize" Margin="8,0,0,0" />
+                    <ToggleButton x:Name="SummaryToggle" Style="{DynamicResource Answers.PlainButton}" IsChecked="True"
+                                  Click="OnSummaryToggle" AutomationProperties.Name="Summary">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="SummaryChevron" FontFamily="{DynamicResource Font.Icon}" FontSize="10"
+                                       Text="&#xE70D;" VerticalAlignment="Center" Margin="0,1,8,0"
+                                       Foreground="{DynamicResource Text.Muted}" />
+                            <TextBlock Text="Summary" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource Text}" />
+                        </StackPanel>
+                    </ToggleButton>
+                </DockPanel>
+                <StackPanel x:Name="SummaryBody" Margin="0,6,0,0">
+                    <StackPanel x:Name="SummaryWriting" Orientation="Horizontal" Margin="0,2,0,2">
+                        <ProgressBar IsIndeterminate="True" Width="36" Height="3" BorderThickness="0"
+                                     VerticalAlignment="Center" Focusable="False"
+                                     Foreground="{DynamicResource Accent}" Background="{DynamicResource Line}" />
+                        <TextBlock Text="Writing the summary…" Margin="8,0,0,0" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource Text.Muted}" />
+                    </StackPanel>
+                    <DockPanel x:Name="SummaryError" Margin="0,2,0,2">
+                        <TextBlock DockPanel.Dock="Left" Text="&#xE7BA;" FontFamily="{DynamicResource Font.Icon}"
+                                   FontSize="12" Margin="0,2,6,0" VerticalAlignment="Top"
+                                   Foreground="{DynamicResource Caution}" />
+                        <TextBlock x:Name="SummaryErrorText" TextWrapping="Wrap" FontSize="12.5"
+                                   Foreground="{DynamicResource Caution}" />
+                    </DockPanel>
+                    <ScrollViewer x:Name="SummaryScroll" MaxHeight="260" VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                        <answers:MarkdownView x:Name="SummaryMarkdown" Margin="0,0,6,0" />
+                    </ScrollViewer>
+                    <TextBlock x:Name="SummaryEmpty" FontSize="12.5" TextWrapping="Wrap"
+                               Foreground="{DynamicResource Text.Muted}" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- ── Body. Columns and rows are set by ApplyBodyLayout; the panes never change parent. -->
+        <Grid x:Name="Body">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Narrow only: one pane at a time. -->
+            <StackPanel x:Name="PaneSwitch" Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+                <RadioButton x:Name="ConversationTab" Style="{StaticResource Toggle.Chip}" Content="Conversation"
+                             IsChecked="True" Margin="0,0,4,0" Checked="OnPaneSwitch" />
+                <RadioButton x:Name="TranscriptTab" Style="{StaticResource Toggle.Chip}" Content="Transcript"
+                             Checked="OnPaneSwitch" />
+            </StackPanel>
+
+            <Grid x:Name="BodyGrid" Grid.Row="1">
+                <!-- Transcript / CV / JD -->
+                <DockPanel x:Name="SourcePane">
+                    <StackPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton x:Name="SourceTranscript" Style="{StaticResource Toggle.Chip}" Content="Transcript"
+                                         IsChecked="True" Margin="0,0,4,0" Checked="OnSourceSwitch" />
+                            <RadioButton x:Name="SourceCv" Style="{StaticResource Toggle.Chip}" Content="CV"
+                                         Margin="0,0,4,0" Checked="OnSourceSwitch" />
+                            <RadioButton x:Name="SourceJd" Style="{StaticResource Toggle.Chip}" Content="JD"
+                                         Checked="OnSourceSwitch" />
+                        </StackPanel>
+                        <TextBlock x:Name="CvTitleText" FontSize="11.5" Margin="0,6,0,0" TextTrimming="CharacterEllipsis"
+                                   Foreground="{DynamicResource Text.Muted}" Visibility="Collapsed" />
+                    </StackPanel>
+                    <TextBox x:Name="SourceText" Style="{DynamicResource Answers.ReadOnlyText}"
+                             VerticalScrollBarVisibility="Auto" Padding="0,0,6,0"
+                             AutomationProperties.Name="Transcript" />
+                </DockPanel>
+
+                <Border x:Name="BodySplitLine" IsHitTestVisible="False" Width="1" HorizontalAlignment="Center"
+                        Background="{DynamicResource Line}" />
+                <GridSplitter x:Name="BodySplitter" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                              HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Focusable="True"
+                              KeyboardIncrement="20" ShowsPreview="False"
+                              AutomationProperties.Name="Resize transcript and conversation" />
+
+                <!-- The conversation, with the follow-up bar after End interview. -->
+                <DockPanel x:Name="ConversationPane">
+                    <StackPanel x:Name="FollowUpBar" DockPanel.Dock="Bottom">
+                        <Border Height="1" Margin="0,6,0,8" Background="{DynamicResource Line}" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="FollowUpBox" Style="{DynamicResource Answers.InputBox}" MinLines="1" MaxLines="4"
+                                     Tag="Follow-up prompt — e.g. what should I improve?"
+                                     ToolTip="Enter sends · Shift+Enter adds a line"
+                                     AutomationProperties.Name="Follow-up prompt"
+                                     PreviewKeyDown="OnFollowUpKey" TextChanged="OnFollowUpChanged" />
+                            <Button x:Name="FollowUpSend" Grid.Column="1" Content="Send" MinWidth="72" Margin="6,0,0,0"
+                                    VerticalAlignment="Bottom" Click="OnFollowUpSend" IsEnabled="False" />
+                        </Grid>
+                    </StackPanel>
+                    <ScrollViewer x:Name="ConversationScroll" VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                        <StackPanel Margin="6,0,4,4">
+                            <Border x:Name="BriefingBox" Margin="0,0,0,10" Padding="10,6,10,8" CornerRadius="6"
+                                    BorderThickness="1" BorderBrush="{DynamicResource Line}" Visibility="Collapsed">
+                                <StackPanel>
+                                    <TextBlock Text="Briefing" FontSize="12.5" FontWeight="SemiBold" Margin="0,0,0,6"
+                                               Foreground="{DynamicResource Text.Secondary}" />
+                                    <answers:MarkdownView x:Name="BriefingMarkdown" />
+                                </StackPanel>
+                            </Border>
+                            <TextBlock x:Name="NoQuestions" Text="No questions were asked." Margin="0,12,0,12"
+                                       Foreground="{DynamicResource Text.Muted}" Visibility="Collapsed" />
+                            <StackPanel x:Name="CardList" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
+            </Grid>
+        </Grid>
+    </DockPanel>
+</UserControl>

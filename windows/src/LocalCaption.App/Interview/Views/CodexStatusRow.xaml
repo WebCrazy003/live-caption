@@ -1,0 +1,116 @@
+<UserControl x:Class="LocalCaption.App.Interview.Views.CodexStatusRow"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:prep="clr-namespace:LocalCaption.App.Interview.Views.Prep"
+             AutomationProperties.Name="Codex status">
+
+    <!-- Mac CodexStatusRow (InterviewSupportViews.swift), SPEC-16 §5.2. Bound to a
+         CodexStatusViewModel set from code; never starts Codex by itself. -->
+
+    <UserControl.Resources>
+        <prep:PrepVisibility x:Key="Vis" />
+        <Style x:Key="Row.Button" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="Padding" Value="11,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="Row.Small" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,5,0,0" />
+            <Setter Property="Foreground" Value="{DynamicResource Text.Muted}" />
+        </Style>
+    </UserControl.Resources>
+
+    <StackPanel>
+        <DockPanel>
+            <!-- Buttons on the right; the text takes what is left and wraps. -->
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button Style="{StaticResource Row.Button}" Content="_Sign in…"
+                        Command="{Binding SignInCommand}"
+                        Visibility="{Binding ShowSignIn, Converter={StaticResource Vis}}" />
+                <prep:PrepSpinner Margin="8,0,0,0" VerticalAlignment="Center"
+                                  Visibility="{Binding ShowCancel, Converter={StaticResource Vis}}" />
+                <Button Style="{StaticResource Row.Button}" Content="Cancel"
+                        AutomationProperties.Name="Cancel sign-in"
+                        Command="{Binding CancelCommand}"
+                        Visibility="{Binding ShowCancel, Converter={StaticResource Vis}}" />
+                <Button Style="{StaticResource Row.Button}" Content="Check a_gain"
+                        Command="{Binding CheckCommand}"
+                        Visibility="{Binding ShowCheckAgain, Converter={StaticResource Vis}}" />
+                <Button Style="{StaticResource Row.Button}" Content="Check _now"
+                        Command="{Binding CheckCommand}"
+                        Visibility="{Binding IsUnchecked, Converter={StaticResource Vis}}" />
+            </StackPanel>
+
+            <!-- One of three, in the space the buttons leave. -->
+            <Grid VerticalAlignment="Center">
+                <!-- Checking -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                            Visibility="{Binding IsChecking, Converter={StaticResource Vis}}">
+                    <prep:PrepSpinner Margin="0,0,8,0" VerticalAlignment="Center" />
+                    <TextBlock Text="Checking Codex…" Foreground="{DynamicResource Text.Muted}" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <!-- Not checked yet (the Mac checks on appear; this row waits for the button) -->
+                <DockPanel VerticalAlignment="Center"
+                           Visibility="{Binding IsUnchecked, Converter={StaticResource Vis}}">
+                    <TextBlock DockPanel.Dock="Left" Style="{StaticResource Type.Icon}" Text="&#xE946;"
+                               Margin="0,1,8,0" VerticalAlignment="Top" Foreground="{DynamicResource Text.Muted}" />
+                    <TextBlock Text="Codex hasn't been checked yet." TextWrapping="Wrap"
+                               Foreground="{DynamicResource Text.Muted}" />
+                </DockPanel>
+
+                <!-- Status -->
+                <DockPanel VerticalAlignment="Center"
+                           Visibility="{Binding HasStatus, Converter={StaticResource Vis}}">
+                    <Grid DockPanel.Dock="Left" Margin="0,1,8,0" VerticalAlignment="Top">
+                        <TextBlock Style="{StaticResource Type.Icon}" Text="&#xE930;" Foreground="{DynamicResource Ok}"
+                                   AutomationProperties.Name="Ready"
+                                   Visibility="{Binding IsReady, Converter={StaticResource Vis}}" />
+                        <TextBlock Style="{StaticResource Type.Icon}" Text="&#xE7BA;" Foreground="{DynamicResource Caution}"
+                                   AutomationProperties.Name="Warning"
+                                   Visibility="{Binding IsReady, Converter={StaticResource Vis}, ConverterParameter=not}" />
+                    </Grid>
+                    <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" FontSize="12.5"
+                               VerticalAlignment="Center" />
+                </DockPanel>
+            </Grid>
+        </DockPanel>
+
+        <TextBlock Style="{StaticResource Row.Small}" Text="Finish signing in to ChatGPT in your browser."
+                   Visibility="{Binding ShowBrowserHint, Converter={StaticResource Vis}}" />
+
+        <TextBlock Style="{StaticResource Row.Small}" Text="{Binding ErrorText}" Foreground="{DynamicResource Caution}"
+                   Visibility="{Binding HasError, Converter={StaticResource Vis}}" />
+
+        <DockPanel Margin="0,5,0,0" Visibility="{Binding ShowUsage, Converter={StaticResource Vis}}">
+            <TextBlock x:Name="UsageGlyph" DockPanel.Dock="Left" Text="&#xEC4A;" FontSize="12" Margin="0,1,6,0"
+                       VerticalAlignment="Top">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock" BasedOn="{StaticResource Type.Icon}">
+                        <Setter Property="Foreground" Value="{DynamicResource Text.Muted}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding UsageIsLow}" Value="True">
+                                <Setter Property="Foreground" Value="{DynamicResource Caution}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+            <TextBlock Text="{Binding UsageText}" FontSize="11.5" TextWrapping="Wrap">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Foreground" Value="{DynamicResource Text.Muted}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding UsageIsLow}" Value="True">
+                                <Setter Property="Foreground" Value="{DynamicResource Caution}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </DockPanel>
+    </StackPanel>
+</UserControl>

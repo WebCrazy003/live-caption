@@ -1,0 +1,138 @@
+<UserControl x:Class="LocalCaption.App.Interview.Views.ModeChooserView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             AutomationProperties.Name="Choose a mode">
+
+    <!-- SPEC-16 §5.1, Mac ModeChooserView.swift: shown on every launch. Two cards; the one used
+         last is marked and is the default button (Enter). Side by side, stacked below ~560 DIP
+         (the Mac's ViewThatFits). Everything scrolls, so 300 % scaling in a short window still
+         reaches both cards. -->
+
+    <UserControl.Resources>
+        <!-- A card is a whole Button: one tab stop, Space/Enter/access key choose it. -->
+        <Style x:Key="Card" TargetType="Button">
+            <Setter Property="Foreground" Value="{DynamicResource Text}" />
+            <Setter Property="Background" Value="{DynamicResource Bg.Raised}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Line.Strong}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="16" />
+            <Setter Property="MinHeight" Value="170" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="12" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter RecognizesAccessKey="True"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Bg.Hover}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Bg.Pressed}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                                <Setter TargetName="Bd" Property="BorderThickness" Value="2" />
+                            </Trigger>
+                            <!-- Interview mode unavailable (ModeChooserView.InterviewUnavailableReason). -->
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.55" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- The last-used card: brass edge, as the Mac's accent stroke. -->
+        <Style x:Key="Card.Last" TargetType="Button" BasedOn="{StaticResource Card}">
+            <Setter Property="BorderBrush" Value="{DynamicResource Accent.Border}" />
+            <Setter Property="BorderThickness" Value="2" />
+        </Style>
+
+        <Style x:Key="Card.Icon" TargetType="TextBlock" BasedOn="{StaticResource Type.Icon}">
+            <Setter Property="FontSize" Value="28" />
+            <Setter Property="HorizontalAlignment" Value="Left" />
+            <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+        </Style>
+
+        <Style x:Key="Card.Title" TargetType="AccessText">
+            <Setter Property="FontSize" Value="17" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+        </Style>
+
+        <Style x:Key="Card.Detail" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Foreground" Value="{DynamicResource Text.Secondary}" />
+        </Style>
+
+        <Style x:Key="Card.Badge" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="Foreground" Value="{DynamicResource Text.Muted}" />
+            <Setter Property="Margin" Value="0,12,0,0" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Text" Value="Last used" />
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+        <StackPanel x:Name="Body" Margin="16" MaxWidth="640"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Center">
+            <TextBlock Text="What are you doing?" FontSize="20" FontWeight="SemiBold"
+                       FontFamily="{StaticResource Font.Display}" TextWrapping="Wrap"
+                       HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,20" />
+
+            <Grid x:Name="Cards" SizeChanged="OnCardsSizeChanged">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="FirstColumn" Width="*" />
+                    <ColumnDefinition x:Name="GapColumn" Width="16" />
+                    <ColumnDefinition x:Name="SecondColumn" Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition x:Name="GapRow" Height="0" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Button x:Name="CaptionCard" Grid.Column="0" Grid.Row="0" Style="{StaticResource Card}"
+                        Click="OnCaptionChosen" TabIndex="0"
+                        AutomationProperties.Name="Caption only mode">
+                    <DockPanel LastChildFill="False">
+                        <TextBlock DockPanel.Dock="Top" Style="{StaticResource Card.Icon}" Text="&#xE8BD;" />
+                        <AccessText DockPanel.Dock="Top" Style="{StaticResource Card.Title}" Text="_Caption only" />
+                        <TextBlock DockPanel.Dock="Top" Style="{StaticResource Card.Detail}"
+                                   Text="Live captions of the call audio, on this PC. Saved as a transcript. Nothing leaves the device." />
+                        <TextBlock x:Name="CaptionBadge" DockPanel.Dock="Bottom" Style="{StaticResource Card.Badge}"
+                                   Visibility="Collapsed" />
+                    </DockPanel>
+                </Button>
+
+                <Button x:Name="InterviewCard" Grid.Column="2" Grid.Row="0" Style="{StaticResource Card}"
+                        Click="OnInterviewChosen" TabIndex="1"
+                        AutomationProperties.Name="Interview mode">
+                    <DockPanel LastChildFill="False">
+                        <TextBlock DockPanel.Dock="Top" Style="{StaticResource Card.Icon}" Text="&#xE716;" />
+                        <AccessText DockPanel.Dock="Top" Style="{StaticResource Card.Title}" Text="_Interview" />
+                        <TextBlock DockPanel.Dock="Top" Style="{StaticResource Card.Detail}"
+                                   Text="Captions plus an AI coach: prepare with your CV and the job description, then get answers to the interviewer's questions." />
+                        <TextBlock x:Name="InterviewBadge" DockPanel.Dock="Bottom" Style="{StaticResource Card.Badge}"
+                                   Visibility="Collapsed" />
+                    </DockPanel>
+                </Button>
+            </Grid>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

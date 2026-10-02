@@ -133,6 +133,15 @@ public sealed class CodexAppServerEngine : IAnswerEngine, IAsyncDisposable
     /// <inheritdoc />
     public ChannelReader<EngineNotice> Notices => _notices.Reader;
 
+    /// <summary>
+    /// A <c>codex</c> process is up (or launching) now. Reading it never starts one — the host
+    /// asks this before work that would otherwise start Codex in Caption only mode (SPEC-16 §4.1).
+    /// </summary>
+    public bool IsRunning
+    {
+        get { lock (_gate) return !_disposed && (_transport is not null || _launching is not null); }
+    }
+
     // ── IAnswerEngine ───────────────────────────────────────────────────────────────────
 
     /// <inheritdoc />

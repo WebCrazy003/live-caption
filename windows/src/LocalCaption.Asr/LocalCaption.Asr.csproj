@@ -7,9 +7,15 @@
   <ItemGroup>
     <PackageReference Include="Whisper.net" Version="1.9.1" />
     <PackageReference Include="Whisper.net.Runtime" Version="1.9.1" />
-    <!-- §5.2: CUDA is the primary backend on the RTX 3070 and the CPU runtime is the
-         fallback. Both are bundled rather than fetched on demand, so a machine that is
-         known to have the GPU has no first-run failure mode. Windows-only payload. -->
+    <!-- The CPU runtime above needs AVX, AVX2, FMA and F16C on x64. Without this package a PC
+         whose CPU lacks them (pre-2013 Intel, many Pentium/Celeron/Atom parts) cannot load any
+         speech model at all: Whisper.net checks the instructions and throws. With it, the
+         loader picks runtimes/noavx/<rid> on those machines by itself. About 2 MB a platform. -->
+    <PackageReference Include="Whisper.net.Runtime.NoAvx" Version="1.9.1" />
+    <!-- §5.2: CUDA is the fast path on an NVIDIA GPU, and the CPU runtime is what every other
+         PC uses (no GPU is required). Both are bundled rather than fetched on demand. The
+         CUDA natives exist for win-x64 only; build/publish.ps1 drops them from an ARM64
+         build. Windows-only payload. -->
     <PackageReference Include="Whisper.net.Runtime.Cuda.Windows" Version="1.9.1" />
   </ItemGroup>
 

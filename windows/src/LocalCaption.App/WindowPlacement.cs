@@ -1,5 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Interop;
+using System.Windows.Media;
 using LocalCaption.Core.Data;
 
 namespace LocalCaption.App;
@@ -8,11 +10,22 @@ namespace LocalCaption.App;
 /// Remembers where the window was, and refuses to restore it somewhere invisible.
 /// </summary>
 /// <remarks>
-/// <b>SPEC-WINDOWS.md §7.3.</b> The always-on-top and opacity features are cut, so this is
+/// <para><b>SPEC-WINDOWS.md §7.3.</b> The always-on-top and opacity features are cut, so this is
 /// all that is left of window behaviour — but the validation matters: laptops get docked and
 /// undocked constantly, and a frame saved on a second monitor would otherwise restore
-/// off-screen with no way to drag it back. On this machine, with an HDMI monitor and a
-/// remote session that comes and goes, it will fire.
+/// off-screen with no way to drag it back.</para>
+/// <para><b>Position is kept in physical pixels, size in DIPs</b> (SPEC-16, Compatibility
+/// target: several monitors at different scales). The app is per-monitor DPI aware
+/// (app.manifest), so a DIP means a different number of pixels on each monitor and WPF
+/// converts a window's Left/Top with the DPI of whichever monitor the window happens to be
+/// created on — which, before it is shown, is not the one it is being restored to. A saved
+/// DIP position from a 150 % second screen therefore came back on the wrong screen, or off
+/// every screen. Physical screen coordinates name one spot whatever the scales, so the
+/// window is moved there with <c>SetWindowPos</c> before it is first shown, and Windows
+/// rescales it for that monitor. Size stays in DIPs, so it looks the same size anywhere.</para>
+/// <para>A <c>window.x</c>/<c>y</c> written by an older build (DIPs at the system scale) reads
+/// as physical pixels once: identical at 100 %, nearer the top-left otherwise, and still
+/// checked against the monitors like any other value.</para>
 /// </remarks>
 public static class WindowPlacement
 {
@@ -29,28 +42,35 @@ public static class WindowPlacement
         window.Width = Math.Max(MinimumWidth, config.Window.Width);
         window.Height = Math.Max(MinimumHeight, config.Window.Height);
 
-        if (config.Window.X is not { } x || config.Window.Y is not { } y)
-        {
-            window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
-            return;
-        }
-
-        if (!IntersectsAMonitor(x, y, window.Width, window.Height))
+        if (config.Window.X is not { } x || config.Window.Y is not { } y ||
+            double.IsNaN(x) || double.IsNaN(y) || !TitleBarOnAMonitor(x, y))
         {
             window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
             return;
         }
 
         window.WindowStartupLocation = WindowStartupLocation.Manual;
+        // A first guess, right on a single 100 % monitor; corrected below before anything is drawn.
         window.Left = x;
         window.Top = y;
+
+        void Place(object? sender, EventArgs e)
+        {
+            window.SourceInitialized -= Place;
+            var hwnd = new WindowInteropHelper(window).Handle;
+            if (hwnd == IntPtr.Zero) return;
+            SetWindowPos(hwnd, IntPtr.Zero, (int)Math.Round(x), (int)Math.Round(y), 0, 0,
+                         NoSize | NoZOrder | NoActivate);
+        }
+        window.SourceInitialized += Place;
     }
 
     public static void Save(Window window, Config config)
     {
         // Restore bounds, not the maximised frame — reopening maximised at the size of a
         // monitor that is no longer attached is the bug this avoids.
-        var bounds = window.WindowState == WindowState.Normal
+        var normal = window.WindowState == WindowState.Normal;
+        var bounds = normal
             ? new Rect(window.Left, window.Top, window.Width, window.Height)
             : window.RestoreBounds;
 
@@ -58,32 +78,47 @@ public static class WindowPlacement
 
         config.Window.Width = bounds.Width;
         config.Window.Height = bounds.Height;
-        config.Window.X = bounds.X;
-        config.Window.Y = bounds.Y;
+
+        // The position in physical pixels: exact from the window itself while it is normal;
+        // while maximised or minimised, the restore position in this window's DIPs scaled by
+        // its current DPI — the restore spot is on the monitor it is maximised on.
+        var hwnd = new WindowInteropHelper(window).Handle;
+        if (normal && hwnd != IntPtr.Zero && GetWindowRect(hwnd, out var rect))
+        {
+            config.Window.X = rect.Left;
+            config.Window.Y = rect.Top;
+            return;
+        }
+
+        var dpi = VisualTreeHelper.GetDpi(window);
+        config.Window.X = Math.Round(bounds.X * dpi.DpiScaleX);
+        config.Window.Y = Math.Round(bounds.Y * dpi.DpiScaleY);
     }
 
-    /// <summary>At least a corner of the frame has to land on a connected display.</summary>
-    private static bool IntersectsAMonitor(double x, double y, double width, double height)
+    /// <summary>
+    /// Whether the left part of the title bar at physical (x, y) lands on a connected display —
+    /// the part that has to be there for the window to be dragged back.
+    /// </summary>
+    /// <remarks>
+    /// Asked of the OS rather than of the virtual-screen rectangle: that is a bounding box
+    /// over every monitor, so an L-shaped or mixed-height arrangement leaves gaps inside it
+    /// that no display covers. "The nearest monitor" is deliberately not good enough.
+    /// </remarks>
+    private static bool TitleBarOnAMonitor(double x, double y)
     {
-        var rect = new Rect(x, y, Math.Max(1, width), Math.Max(1, height));
-        var virtualScreen = new Rect(SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
-                                     SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight);
-        if (!virtualScreen.IntersectsWith(rect)) return false;
-
-        // The virtual screen is a bounding box over every monitor, so an L-shaped
-        // arrangement leaves gaps inside it that no display covers. Ask the OS which
-        // monitor the frame lands on, and treat "the nearest one" as not good enough.
-        var native = new NativeRect
+        var strip = new NativeRect
         {
-            Left = (int)rect.Left,
-            Top = (int)rect.Top,
-            Right = (int)rect.Right,
-            Bottom = (int)rect.Bottom,
+            Left = (int)Math.Round(x),
+            Top = (int)Math.Round(y),
+            Right = (int)Math.Round(x) + 160,
+            Bottom = (int)Math.Round(y) + 32,
         };
-        return MonitorFromRect(ref native, MonitorDefaultToNull) != IntPtr.Zero;
+        try { return MonitorFromRect(ref strip, MonitorDefaultToNull) != IntPtr.Zero; }
+        catch (Exception) { return false; }
     }
 
     private const uint MonitorDefaultToNull = 0;
+    private const uint NoSize = 0x0001, NoZOrder = 0x0004, NoActivate = 0x0010;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NativeRect
@@ -93,4 +128,12 @@ public static class WindowPlacement
 
     [DllImport("user32.dll")]
     private static extern IntPtr MonitorFromRect(ref NativeRect rect, uint flags);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowRect(IntPtr window, out NativeRect rect);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(IntPtr window, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
 }

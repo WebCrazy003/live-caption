@@ -1,0 +1,94 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:local="clr-namespace:LocalCaption.App.Interview.Settings">
+
+    <!-- The same look as SettingsWindow.xaml's own pages (its Field / Group / Page styles are
+         window resources, out of reach from a UserControl, so they are repeated here). -->
+
+    <local:SettingEqualsConverter x:Key="Equals" />
+    <local:SettingVisibilityConverter x:Key="Visible" />
+
+    <Style x:Key="Settings.Page" TargetType="StackPanel">
+        <Setter Property="MaxWidth" Value="560" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+    </Style>
+
+    <Style x:Key="Settings.Field" TargetType="TextBlock">
+        <Setter Property="Margin" Value="0,14,0,5" />
+        <Setter Property="Foreground" Value="{DynamicResource Text.Secondary}" />
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <Style x:Key="Settings.Group" TargetType="TextBlock" BasedOn="{StaticResource Type.Caps}">
+        <Setter Property="Margin" Value="0,26,0,2" />
+    </Style>
+
+    <Style x:Key="Settings.Warning" TargetType="TextBlock" BasedOn="{StaticResource Type.Note}">
+        <Setter Property="Foreground" Value="{DynamicResource Caution}" />
+    </Style>
+
+    <!-- A multi-line box that shows its scroll bar: the app's TextBox template hides both. -->
+    <Style x:Key="Settings.MultiLine" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+        <Setter Property="AcceptsReturn" Value="True" />
+        <Setter Property="AcceptsTab" Value="False" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="VerticalContentAlignment" Value="Top" />
+        <Setter Property="Padding" Value="8,6" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TextBox">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4">
+                        <Grid>
+                            <TextBlock x:Name="Placeholder" Margin="{TemplateBinding Padding}" Padding="2,0,0,0"
+                                       VerticalAlignment="Top" IsHitTestVisible="False" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource Text.Faint}" Visibility="Collapsed"
+                                       Text="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}" />
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                                          Focusable="False" HorizontalScrollBarVisibility="Disabled"
+                                          VerticalScrollBarVisibility="Auto" />
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="Text" Value="">
+                            <Setter TargetName="Placeholder" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Text.Muted}" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Plus usage: a thin track and fill. A ProgressBar, so screen readers get the value. -->
+    <Style x:Key="Settings.UsageBar" TargetType="ProgressBar">
+        <Setter Property="Height" Value="6" />
+        <Setter Property="Minimum" Value="0" />
+        <Setter Property="Maximum" Value="100" />
+        <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+        <Setter Property="Background" Value="{DynamicResource Line.Strong}" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ProgressBar">
+                    <Grid SnapsToDevicePixels="True">
+                        <Border x:Name="PART_Track" CornerRadius="3" Background="{TemplateBinding Background}" />
+                        <Border x:Name="PART_Indicator" CornerRadius="3" HorizontalAlignment="Left"
+                                Background="{TemplateBinding Foreground}" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

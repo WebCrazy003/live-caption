@@ -144,6 +144,20 @@ public sealed class CodexEngineTests : IDisposable
     }
 
     [Fact]
+    public async Task IsRunningOnlyAfterSomethingStartedItAndNotAfterShutdown()
+    {
+        var e = Engine(s => Healthy(s));
+        Assert.False(e.IsRunning);          // constructing and reading never start codex
+        Assert.Equal(0, ServerCount);
+        await e.StartThreadAsync(Cfg);
+        Assert.True(e.IsRunning);
+        await e.ShutdownAsync();
+        Assert.False(e.IsRunning);
+        await e.DisposeAsync();
+        Assert.False(e.IsRunning);
+    }
+
+    [Fact]
     public async Task ToolItemTripsTheGuard()
     {
         var e = Engine(s => Healthy(s, _ =>

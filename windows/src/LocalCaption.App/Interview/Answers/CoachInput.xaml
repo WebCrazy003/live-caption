@@ -1,0 +1,22 @@
+<UserControl x:Class="LocalCaption.App.Interview.Answers.CoachInput"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Focusable="False">
+
+    <!-- Type to the coach (SPEC-16 §5.4): one line at first, growing to six as the text wraps,
+         then it scrolls. Enter and Ctrl+Enter send; Shift+Enter adds a line. -->
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <TextBox x:Name="Box" Grid.Column="0" Style="{DynamicResource Answers.InputBox}"
+                 MinLines="1" MaxLines="6" Tag="Type to the coach…"
+                 ToolTip="Enter sends · Shift+Enter adds a line"
+                 AutomationProperties.Name="Type to the coach"
+                 PreviewKeyDown="OnPreviewKey" TextChanged="OnTextChanged" />
+        <Button x:Name="SendButton" Grid.Column="1" Margin="6,0,0,0" VerticalAlignment="Bottom"
+                Tag="&#xE724;" Click="OnSend" IsEnabled="False"
+                ToolTip="Send" AutomationProperties.Name="Send" />
+    </Grid>
+</UserControl>

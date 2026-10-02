@@ -8,9 +8,12 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
 using System.Windows.Threading;
+using LocalCaption.App.Interview;
+using LocalCaption.App.Interview.Answers;
 using LocalCaption.Asr;
 using LocalCaption.Core.Data;
 using LocalCaption.Core.Transcripts;
+using LocalCaption.Interview;
 using LocalCaption.Session;
 
 namespace LocalCaption.App;
@@ -36,6 +39,11 @@ public partial class MainWindow : ChromeWindow
 
     private readonly AppEnvironment _env;
     private readonly SessionController _controller;
+    // Null when Interview mode could not be set up at launch (App.OnStartup): the app runs in
+    // Caption only mode and every interview entry point says why (_interviewUnavailable).
+    private readonly InterviewServices? _services;
+    private readonly InterviewController? _interview;
+    private readonly string? _interviewUnavailable;
     private readonly ShortcutManager _shortcuts;
     private readonly DispatcherTimer _meter;
     private bool _refreshQueued;
@@ -50,11 +58,16 @@ public partial class MainWindow : ChromeWindow
     private readonly ClickThrough _clickThrough;
     private DateTime _viewClosedAt;
 
-    public MainWindow(AppEnvironment env)
+    /// <param name="services">Interview mode's services, or null when they failed to start.</param>
+    /// <param name="interviewUnavailable">Why <paramref name="services"/> is null, shown on every interview entry point.</param>
+    public MainWindow(AppEnvironment env, InterviewServices? services, string? interviewUnavailable = null)
     {
         InitializeComponent();
 
         _env = env;
+        _services = services;
+        _interview = services?.Controller;
+        _interviewUnavailable = services is null ? interviewUnavailable ?? "it could not be started" : null;
         _controller = new SessionController(env);
         _controller.Changed += OnControllerChanged;
         _controller.Copied += () => Dispatcher.BeginInvoke(() => Flash("✓ COPIED"));
@@ -97,6 +110,7 @@ public partial class MainWindow : ChromeWindow
         _saveSoon = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
         _saveSoon.Tick += (_, _) => { _saveSoon.Stop(); Save(); };
 
+        SetUpInterview();
         WindowPlacement.Restore(this, env.Config);
         ApplySettings();
         FillSortOptions();
@@ -123,8 +137,15 @@ public partial class MainWindow : ChromeWindow
 
     private async void OnStart(object sender, RoutedEventArgs e)
     {
+        // Interview mode (Mac ActiveSessionView.startSession): a finished interview gives way to
+        // a new one, the session is named from the interview details, and the interview is told
+        // which capture it belongs to — which also opens the coach's thread in the background.
+        var interview = IsInterviewMode ? _interview : null;
+        if (interview is { IsFinished: true }) interview.ResetForNewInterview();
         Captions.Reset();
-        await _controller.StartAsync();
+        await _controller.StartAsync(interview?.SessionName(DateTimeOffset.Now));
+        if (interview is not null && IsInterviewMode && _controller.Phase == SessionPhase.Recording)
+            interview.RecordingStarted(_controller.CaptureId, _controller.StartedAt);
     }
 
     private async void OnPauseResume(object sender, RoutedEventArgs e)
@@ -133,10 +154,49 @@ public partial class MainWindow : ChromeWindow
         else await _controller.ResumeAsync();
     }
 
+    /// <summary>Stop — "End interview" in Interview mode (Mac <c>ActiveSessionView.stopSession</c>).</summary>
     private async void OnStop(object sender, RoutedEventArgs e)
     {
+        if (!await EndSessionAsync() || _interview is not { } interview) return;
+
+        // The interview links itself to the saved session (and lets a streaming answer finish,
+        // ≤ 30 s), then asks: summarize, a follow-up, or not now. Nothing is sent by itself.
+        // Start, Change mode and Open in Interview Panel wait for that (_endingInterview).
+        var transcript = _controller.CommittedText;
+        var savedId = _controller.SavedSessionId;
+        var record = interview.Record;
+        _endingInterview = true;
+        RefreshInterviewState();
+        try { await interview.SessionSavedAsync(savedId, transcript); }
+        finally
+        {
+            _endingInterview = false;
+            RefreshInterviewState();
+        }
+        UpdateStage();
+
+        // The wait can be long; ask only about the interview just ended, still on screen.
+        if (!IsVisible || !IsInterviewMode || _controller.Phase != SessionPhase.Saved ||
+            _controller.SavedSessionId != savedId || !ReferenceEquals(interview.Record, record) ||
+            record?.SessionId != savedId)
+            return;
+        _clickThrough.Set(false);      // a dialog nobody can click is no dialog
+        EndInterviewDialog.ShowAndRun(this, interview, transcript);
+    }
+
+    /// <summary>
+    /// The normal save, with the session renamed first in Interview mode (the details may have
+    /// been corrected during the call). True when it ended an interview, which still has to be
+    /// told the session it was saved as.
+    /// </summary>
+    private async Task<bool> EndSessionAsync()
+    {
+        var interview = IsInterviewMode ? _interview : null;
+        if (interview?.SessionName(_controller.StartedAt) is { } name) _controller.Rename(name);
         await _controller.StopAsync();
         RefreshSessions();
+        _sessions?.Reload();
+        return interview is not null && _controller.Phase == SessionPhase.Saved && interview.Record is not null;
     }
 
     private void OnCopy(object sender, RoutedEventArgs e) => _controller.CopyLastN();
@@ -150,16 +210,35 @@ public partial class MainWindow : ChromeWindow
 
     private void OnJump(object sender, RoutedEventArgs e) => Captions.JumpToLatest();
 
-    private async void OnSettings(object sender, RoutedEventArgs e)
+    private void OnSettings(object sender, RoutedEventArgs e) => OpenSettings();
+
+    /// <param name="page">The page to open on (its label); null: the one used last.</param>
+    private async void OpenSettings(string? page = null)
     {
         var asr = _env.Config.Asr;
         var engineBefore = (asr.InterimModel, asr.FinalModel, asr.Backend, asr.Threads, asr.Vocabulary, asr.FinalBeamSize);
 
         _clickThrough.Set(false);
-        var settings = new SettingsWindow(_env, _controller, _shortcuts, _sender) { Owner = this };
+        // Built before the hotkeys let go, so Settings → Asking can show why one was refused.
+        var settings = new SettingsWindow(_env, _controller, _shortcuts, _sender, _services, page) { Owner = this };
         _shortcuts.Suspend();
-        var saved = settings.ShowDialog() == true;
-        _shortcuts.Load(_env.Config.Shortcuts);
+        // The Ask / Screenshot keys too, so the recorder in Settings → Asking can hear them.
+        _settingsOpen = true;
+        UpdateHotkeys();
+        bool saved;
+        try { saved = settings.ShowDialog() == true; }
+        finally
+        {
+            _settingsOpen = false;
+            _shortcuts.Load(_env.Config.Shortcuts);
+            // Skills load at once, whether or not Settings is saved. A failure here must not
+            // take the caption settings below (or the app) with it.
+            try { AfterInterviewSettings(); }
+            catch (Exception ex)
+            {
+                InterviewPlatformLog.Write("app", $"refreshing the interview after Settings failed: {ex}");
+            }
+        }
         if (!saved) return;
         if (_sender.Apply() is { } problem) Flash(problem, ok: false);
 
@@ -497,9 +576,12 @@ public partial class MainWindow : ChromeWindow
         BookmarkButton.ToolTip = With("Bookmark this moment in the transcript", ShortcutAction.Bookmark);
         ViewButton.ToolTip = "Text size and see-through";
 
-        StartButton.ToolTip = With("Start a new session", ShortcutAction.Start);
+        StartButton.ToolTip = _skillsBlockStart
+            ? "Load your 4 skills in Settings → Interview → Skills first"
+            : With("Start a new session", ShortcutAction.Start);
         PauseButton.ToolTip = With("Pause or resume", ShortcutAction.PauseResume);
-        StopButton.ToolTip = With("Stop and save the transcript", ShortcutAction.Stop);
+        StopButton.ToolTip = With(IsInterviewMode ? "End the interview and save the transcript" : "Stop and save the transcript",
+                                  ShortcutAction.Stop);
         CopyButton.ToolTip = With($"Copy the last {_env.Config.Clipboard.RecentSentences} sentences", ShortcutAction.CopyLastN);
         CopyAllButton.ToolTip = With("Copy the whole transcript so far", ShortcutAction.CopyAll);
         JumpButton.ToolTip = With("Jump to the latest caption", ShortcutAction.JumpLatest);
@@ -689,15 +771,23 @@ public partial class MainWindow : ChromeWindow
 
     private void StepFont(int by) => SetFont(_env.Config.Caption.FontSize + by);
 
-    /// <summary>One way in for the slider and for the Ctrl+= / Ctrl+- shortcuts, so they agree.</summary>
+    /// <summary>The Mac's text-size range (specs/SPEC-16 C9), so a Mac config is never clamped.</summary>
+    private const int MinFontSize = 10, MaxFontSize = 48;
+
+    /// <summary>
+    /// One way in for the slider, the Ctrl+= / Ctrl+- shortcuts and the interview header's −/+,
+    /// so they agree. Applies to the captions and to the interview's answers.
+    /// </summary>
     private void SetFont(int size)
     {
         var caption = _env.Config.Caption;
-        size = Math.Clamp(size, 12, 32);
+        size = Math.Clamp(size, MinFontSize, MaxFontSize);
         if (size == caption.FontSize) return;
 
         caption.FontSize = size;
         Captions.FontSize = size;
+        InterviewLayout.AnswerFontSize = size;
+        Replay.AnswerFontSize = size;
         FontValue.Text = $"{size} pt";
 
         var syncing = _syncing;
@@ -858,7 +948,19 @@ public partial class MainWindow : ChromeWindow
 
     private void OnSearchChanged(object sender, RoutedEventArgs e) => RefreshSessions();
 
-    private void OnOpenTranscript(object sender, MouseButtonEventArgs e) => OpenSelected();
+    /// <summary>
+    /// Double-click a session: open it in the Sessions window (specs/SPEC-16 §5.6). The context
+    /// menu's "Open transcript" still writes and opens the <c>.txt</c> — the export path.
+    /// </summary>
+    private void OnSessionDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        // The row under the pointer — not a double-click on the scroll bar or the empty space.
+        if (e.OriginalSource is not DependencyObject source ||
+            ItemsControl.ContainerFromElement(SessionList, source) is not ListBoxItem { DataContext: SessionRow row } ||
+            row.Record.Id is not { } id) return;
+        OpenSessions(id);
+        e.Handled = true;
+    }
 
     private void OnOpenSelected(object sender, RoutedEventArgs e) => OpenSelected();
 
@@ -1179,13 +1281,7 @@ public partial class MainWindow : ChromeWindow
                 ? Visibility.Visible
                 : Visibility.Collapsed;
 
-        StartButton.IsEnabled = phase is SessionPhase.Ready or SessionPhase.Saved or SessionPhase.Failed &&
-                                orchestrator.ModelReady && !_controller.HasUnsavedSession;
-        PauseButton.IsEnabled = phase is SessionPhase.Recording or SessionPhase.Paused;
-        PauseButton.Content = phase == SessionPhase.Paused ? "Resume" : "Pause";
-        PauseButton.Tag = phase == SessionPhase.Paused ? "\uE768" : "\uE769";
-        StopButton.IsEnabled = phase is SessionPhase.Recording or SessionPhase.Paused ||
-                               (phase == SessionPhase.Failed && _controller.HasUnsavedSession);
+        RefreshTransport();
         CopyButton.IsEnabled = _controller.HasTranscript;
         CopyAllButton.IsEnabled = _controller.HasTranscript;
         QuestionButton.IsEnabled = SendButton.IsEnabled = _controller.HasTranscript || orchestrator.Hypothesis.Length > 0;
@@ -1199,6 +1295,7 @@ public partial class MainWindow : ChromeWindow
 
         ShowPhase(phase);
         ShowSpeed(orchestrator);
+        RefreshInterviewState();
 
         // §7.1's states, in the order they matter. A save failure outranks everything — it is
         // the only one where the user still has to do something to keep the transcript.
@@ -1410,7 +1507,9 @@ public partial class MainWindow : ChromeWindow
                 return true;
 
             case ShortcutAction.CopyLastN:
-                // §7.5: with a selection, Ctrl+C is an ordinary copy of it.
+                // §7.5: with a selection, Ctrl+C is an ordinary copy of it — including one in
+                // the interview's read-only text (what was sent, the replay's transcript).
+                if (IsActive && Keyboard.FocusedElement is TextBox { SelectionLength: > 0 }) return false;
                 if (IsActive && Captions.SelectionLength > 0) Captions.Copy();
                 else OnCopy(this, nothing);
                 return true;
@@ -1426,7 +1525,7 @@ public partial class MainWindow : ChromeWindow
             case ShortcutAction.ToggleSidebar: OnToggleSidebar(this, nothing); return true;
             case ShortcutAction.ToggleTheme: OnToggleTheme(this, nothing); return true;
             case ShortcutAction.TogglePin: OnTogglePin(this, nothing); return true;
-            case ShortcutAction.Settings: OnSettings(this, nothing); return true;
+            case ShortcutAction.Settings: OpenSettings(); return true;
 
             case ShortcutAction.FocusSearch:
                 // The box may be hidden with the sidebar; a search key should still find it.
@@ -1454,7 +1553,12 @@ public partial class MainWindow : ChromeWindow
             if (answer == ConfirmDialog.Closing.SaveAndClose)
             {
                 e.Cancel = true;
-                await _controller.StopAsync();
+                // Saved as End interview saves it, so the interview is linked to the session.
+                // Its first part (link, mark, persist) runs before the first await; a streaming
+                // answer is not waited for — codex stops with the app and the launch sweep
+                // marks the answer "app closed".
+                if (await EndSessionAsync() && _interview is { } interview)
+                    _ = interview.SessionSavedAsync(_controller.SavedSessionId, _controller.CommittedText);
                 Close();
                 return;
             }

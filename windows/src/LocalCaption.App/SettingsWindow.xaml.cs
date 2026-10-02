@@ -1,13 +1,17 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using LocalCaption.App.Interview;
+using LocalCaption.App.Interview.Settings;
 using LocalCaption.Asr;
 using LocalCaption.Audio;
 using LocalCaption.Core.Data;
+using LocalCaption.Core.Interview;
 using LocalCaption.Session;
 
 namespace LocalCaption.App;
@@ -55,9 +59,13 @@ public partial class SettingsWindow : ChromeWindow
     private ShortcutRow? _recording;
     private IReadOnlyList<SystemInfo.Section> _system = [];
     private bool _loading = true;
+    private readonly InterviewSettingsModel? _interviewModel;
 
+    /// <param name="interview">Interview mode's services: adds the Interview, Asking, Prompts and Codex pages.</param>
+    /// <param name="page">The page to open on (its label); null: the page used last.</param>
     public SettingsWindow(AppEnvironment env, SessionController? controller = null,
-                          ShortcutManager? shortcuts = null, AnswerSender? sender = null)
+                          ShortcutManager? shortcuts = null, AnswerSender? sender = null,
+                          InterviewServices? interview = null, string? page = null)
     {
         InitializeComponent();
         _env = env;
@@ -77,18 +85,52 @@ public partial class SettingsWindow : ChromeWindow
             if (DialogResult != true) ThemeManager.Apply(_themeBefore);
         };
 
-        var pages = new[]
+        var pages = new List<PageItem>
         {
-            new PageItem("Audio", "\uE767", PageAudio),
-            new PageItem("Speech", "\uE720", PageSpeech),
-            new PageItem("Captions", "\uE8D2", PageCaptions),
-            new PageItem("Send", "\uE724", PageSend),
-            new PageItem("Appearance", "\uE790", PageAppearance),
-            new PageItem("Shortcuts", "\uE765", PageShortcuts),
-            new PageItem("System", "\uE946", PageSystem),
+            new("Audio", "\uE767", PageAudio),
+            new("Speech", "\uE720", PageSpeech),
+            new("Captions", "\uE8D2", PageCaptions),
+            new("Send", "\uE724", PageSend),
+            new("Appearance", "\uE790", PageAppearance),
+            new("Shortcuts", "\uE765", PageShortcuts),
         };
+
+        // SPEC-16 §5.7: Interview mode's pages. They edit a copy of config.interview (Save /
+        // Cancel, like every other page); skills and Codex sign-in act at once. Opening them
+        // never starts Codex in Caption only mode (§9.1) — only its buttons do.
+        if (interview is not null)
+        {
+            _interviewModel = new InterviewSettingsModel(
+                InterviewSettingsModel.CopyOf(env.Config.Interview), interview.Library, interview.Codex)
+            {
+                StartCodexOnOpen = env.Config.Interview.IsInterviewMode,
+                CodexRunning = () => interview.Engine.IsRunning,
+                AskRegistrationError = interview.AskUnavailableReason,
+                ScreenshotRegistrationError = interview.ScreenshotUnavailableReason,
+            };
+            var interviewPages = new PageItem[]
+            {
+                new("Interview", "\uE716", new InterviewSettingsPage(_interviewModel)),   // People
+                new("Asking", "\uE897", new AskingSettingsPage(_interviewModel)),         // Help
+                new("Prompts", "\uE8BD", new PromptsSettingsPage(_interviewModel)),       // Message
+                new("Codex", "\uE8D7", new CodexSettingsPage(_interviewModel)),           // Permissions
+            };
+            foreach (var item in interviewPages)
+            {
+                item.Panel.Visibility = Visibility.Collapsed;      // OnPageChanged shows the selected one
+                PagesHost.Children.Add(item.Panel);
+            }
+            pages.AddRange(interviewPages);
+            Closed += (_, _) => _interviewModel.Dispose();      // unsubscribes from Codex and the library
+        }
+
+        pages.Add(new("System", "\uE946", PageSystem));
         Pages.ItemsSource = pages;
-        Pages.SelectedIndex = 0;
+
+        // Reopens on the page used last (§5.7), or on the one asked for.
+        var wanted = page ?? env.Config.Ui.SettingsPage;
+        var index = pages.FindIndex(p => string.Equals(p.Label, wanted, StringComparison.Ordinal));
+        Pages.SelectedIndex = index >= 0 ? index : 0;
     }
 
     private void OnPageChanged(object sender, SelectionChangedEventArgs e)
@@ -96,6 +138,10 @@ public partial class SettingsWindow : ChromeWindow
         CancelRecording();
         foreach (var page in Pages.Items.OfType<PageItem>())
             page.Panel.Visibility = ReferenceEquals(page, Pages.SelectedItem) ? Visibility.Visible : Visibility.Collapsed;
+
+        // Per-machine UI state, kept in memory and written with the next config save — a
+        // Cancel still reopens on this page.
+        if (Pages.SelectedItem is PageItem shown) _env.Config.Ui.SettingsPage = shown.Label;
 
         // Read only when someone looks: it is cheap, but it is also a snapshot, and one
         // taken when the window opened would show the speed of a session not yet started.
@@ -136,6 +182,18 @@ public partial class SettingsWindow : ChromeWindow
         ModeProcess.IsChecked = process && !auto;
         ModeEndpoint.IsChecked = !process && !auto;
 
+        // Windows 10: no process loopback, so the choice is the device or nothing. Saying why
+        // beats a radio button that quietly records everything anyway.
+        if (!ProcessLoopbackCapture.IsSupported)
+        {
+            ModeProcess.IsEnabled = false;
+            ProcessPicker.IsEnabled = false;
+            ModeProcess.ToolTip = ProcessPicker.ToolTip = "Capturing a single app needs Windows 11.";
+            ToolTipService.SetShowOnDisabled(ModeProcess, true);
+            ToolTipService.SetShowOnDisabled(ProcessPicker, true);
+            ModeEndpoint.IsChecked = true;
+        }
+
         var models = ModelCatalog.All.Select(m => m.Name).ToList();
         InterimModel.ItemsSource = models;
         InterimModel.SelectedItem = models.Contains(config.Asr.InterimModel) ? config.Asr.InterimModel : models[0];
@@ -148,10 +206,14 @@ public partial class SettingsWindow : ChromeWindow
 
         Backend.ItemsSource = new[] { "auto", "cuda", "cpu" };
         Backend.SelectedItem = config.Asr.Backend;
+        // Three different situations, and only one of them is something to fix.
         BackendNote.Text = BackendProbe.HasCudaRuntime()
             ? "A CUDA runtime was found. 'auto' will use the GPU."
-            : "No CUDA runtime was found, so 'auto' will run on the CPU — much slower. " +
-              "See BENCH-RESULTS.md for what that costs.";
+            : BackendProbe.HasNvidiaDriver() && RuntimeInformation.ProcessArchitecture == Architecture.X64
+                ? "This PC has an NVIDIA GPU but no CUDA runtime was found, so 'auto' will run on the CPU — " +
+                  "much slower. See BENCH-RESULTS.md for what that costs."
+                : "This PC has no NVIDIA GPU, so speech recognition runs on the CPU. 'auto' picks models " +
+                  "the CPU can keep up with.";
 
         FontSizeSlider.Value = config.Caption.FontSize;
         AutoScroll.IsChecked = config.Caption.AutoScroll;
@@ -229,6 +291,9 @@ public partial class SettingsWindow : ChromeWindow
 
         foreach (var row in _rows)
             row.Slot.Set(config.Shortcuts, new Config.Shortcut(row.Keys, row.Global.IsChecked == true));
+
+        // Every interview key these pages edit; mode and engine are left alone.
+        _interviewModel?.ApplyTo(config.Interview);
 
         _env.Update(config);
         DialogResult = true;
@@ -433,7 +498,8 @@ public partial class SettingsWindow : ChromeWindow
         var gesture = Gesture.Parse(row.Keys);
         var recording = _recording == row;
 
-        row.Recorder.Content = recording ? "Press keys…" : gesture?.ToString() ?? "—";
+        // The keycaps of this keyboard; row.Keys keeps the spelling config stores.
+        row.Recorder.Content = recording ? "Press keys…" : gesture?.Label ?? "—";
         row.Recorder.SetResourceReference(StyleProperty, recording ? "Button.Accent" : typeof(Button));
 
         // Windows will not register a bare key system-wide, and should not: a global Space
@@ -489,7 +555,7 @@ public partial class SettingsWindow : ChromeWindow
             previous.Keys = "";
             Show(previous);
         }
-        ShowShortcutNote(previous is null ? null : $"{text} was moved here from “{previous.Slot.Label}”, which now has no shortcut.");
+        ShowShortcutNote(previous is null ? null : $"{gesture.Label} was moved here from “{previous.Slot.Label}”, which now has no shortcut.");
 
         row.Keys = text;
         CancelRecording();

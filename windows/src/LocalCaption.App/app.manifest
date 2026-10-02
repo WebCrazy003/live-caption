@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Local Caption's application manifest (SPEC-16, "Compatibility target").
+
+  DPI: per-monitor v2, with plain per-monitor and system awareness as fallbacks for any loader
+  that does not understand the newer element. Without this WPF runs system-DPI aware, and on a
+  second monitor at another scale Windows bitmap-stretches the whole window (blurry text) and
+  hands Win32 calls logical coordinates that no longer match the physical ones MonitorFromRect,
+  SetWindowPos and a region screenshot work in. WindowPlacement and ClickThrough place windows
+  in physical pixels on the strength of this setting.
+
+  supportedOS: Windows 10 and 11 share one GUID. Declaring it is what makes version checks and
+  a few APIs (and the Program Compatibility Assistant) treat the app as written for them.
+
+  longPathAware: transcripts can live in a user-chosen folder; paths past 260 characters work
+  wherever the machine has long paths enabled. .NET already handles long paths itself; this is
+  for the native libraries that open files (whisper.cpp reads the model by path).
+-->
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <assemblyIdentity version="1.0.0.0" name="LocalCaption.app" />
+
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
+    <security>
+      <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <!-- Windows 10 and Windows 11 -->
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+    </application>
+  </compatibility>
+
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+      <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2, PerMonitor</dpiAwareness>
+      <longPathAware xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">true</longPathAware>
+    </windowsSettings>
+  </application>
+
+  <!-- Common Controls v6, so any native dialog or message box gets the current look. -->
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0"
+                        processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*" />
+    </dependentAssembly>
+  </dependency>
+</assembly>

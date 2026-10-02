@@ -91,19 +91,102 @@ public readonly record struct Gesture(ModifierKeys Modifiers, Key Key)
     /// <summary>A bare key (or Shift+key) is typing, and belongs to a focused text box.</summary>
     public bool IsTyping => (Modifiers & ~ModifierKeys.Shift) == 0 && !IsFunctionKey;
 
-    public override string ToString()
+    /// <summary>
+    /// The spelling config stores. Names the <i>key</i> — a virtual key, by its US keycap — so
+    /// the same file means the same physical key on any layout. Not for showing to people:
+    /// see <see cref="Label"/>.
+    /// </summary>
+    public override string ToString() => Join(FriendlyName(Key) ?? Key.ToString());
+
+    private static string? FriendlyName(Key key) => Array.Find(Friendly, f => f.Key == key).Name;
+
+    /// <summary>
+    /// The gesture as the keycaps on <i>this</i> keyboard read, for tooltips and Settings.
+    /// </summary>
+    /// <remarks>
+    /// Shortcuts are matched and registered by virtual key, never by character, so they work
+    /// on every layout — but the punctuation keys' names are the US keycaps. On a German
+    /// keyboard the key config calls <c>=</c> (VK_OEM_PLUS) is the one printed <c>+</c>; on a
+    /// French one <c>.</c> (VK_OEM_PERIOD) is the <c>;</c> key. Showing "Ctrl+=" to someone
+    /// with no such key is a shortcut they cannot find, so the label asks the active layout
+    /// what the key types. Letters, digits and named keys are the same everywhere and keep
+    /// their names.
+    /// </remarks>
+    public string Label => Join(LayoutName(Key) ?? FriendlyName(Key) ?? Key.ToString());
+
+    private string Join(string key)
     {
-        var parts = new List<string>(4);
+        var parts = new List<string>(5);
         if (Modifiers.HasFlag(ModifierKeys.Control)) parts.Add("Ctrl");
         if (Modifiers.HasFlag(ModifierKeys.Alt)) parts.Add("Alt");
         if (Modifiers.HasFlag(ModifierKeys.Shift)) parts.Add("Shift");
         if (Modifiers.HasFlag(ModifierKeys.Windows)) parts.Add("Win");
-
-        var key = Key;
-        var friendly = Array.Find(Friendly, f => f.Key == key);
-        parts.Add(friendly.Name ?? Key.ToString());
+        parts.Add(key);
         return string.Join("+", parts);
     }
+
+    /// <summary>What an OEM (punctuation) key types unshifted on the active layout, or null.</summary>
+    private static string? LayoutName(Key key)
+    {
+        if (key is not (Key.OemPeriod or Key.OemComma or Key.OemPlus or Key.OemMinus or Key.Oem1 or Key.Oem2
+                        or Key.Oem3 or Key.Oem4 or Key.Oem5 or Key.Oem6 or Key.Oem7 or Key.Oem8 or Key.Oem102))
+            return null;
+        try
+        {
+            var mapped = MapVirtualKey((uint)KeyInterop.VirtualKeyFromKey(key), MapVkToChar);
+            var character = (char)(mapped & 0xFFFF);            // the top bit only marks a dead key
+            return character == 0 || char.IsControl(character) ? null : char.ToUpperInvariant(character).ToString();
+        }
+        catch (Exception) { return null; }
+    }
+
+    /// <summary>
+    /// Whether this is Ctrl+Alt(+Shift)+key and the active layout types a character for it.
+    /// </summary>
+    /// <remarks>
+    /// AltGr <i>is</i> Ctrl+Alt to Windows. On German, French, Polish, Nordic and many other
+    /// layouts AltGr+E is €, AltGr+Q is @, AltGr+A is ą — so a global Ctrl+Alt+E would take €
+    /// away from every app on the machine, and a window shortcut on it would fire while
+    /// someone types in the search box. On US English this is always false.
+    /// </remarks>
+    public bool TypesWithAltGr
+    {
+        get
+        {
+            const ModifierKeys altGr = ModifierKeys.Control | ModifierKeys.Alt;
+            if ((Modifiers & altGr) != altGr || Modifiers.HasFlag(ModifierKeys.Windows)) return false;
+            try
+            {
+                var state = new byte[256];
+                state[0x11] = state[0x12] = 0x80;                 // VK_CONTROL, VK_MENU
+                state[0xA2] = state[0xA5] = 0x80;                 // VK_LCONTROL, VK_RMENU — what AltGr sends
+                if (Modifiers.HasFlag(ModifierKeys.Shift)) state[0x10] = state[0xA0] = 0x80;
+
+                var layout = GetKeyboardLayout(0);
+                var vk = (uint)KeyInterop.VirtualKeyFromKey(Key);
+                var buffer = new char[8];
+                // Flag 4: leave the keyboard's dead-key state alone (Windows 10 1607+).
+                var count = ToUnicodeEx(vk, MapVirtualKeyEx(vk, 0, layout), state, buffer, buffer.Length, 4, layout);
+                return count < 0 || (count > 0 && !char.IsControl(buffer[0]));
+            }
+            catch (Exception) { return false; }
+        }
+    }
+
+    private const uint MapVkToChar = 2;      // MAPVK_VK_TO_CHAR
+
+    [DllImport("user32.dll", EntryPoint = "MapVirtualKeyW")]
+    private static extern uint MapVirtualKey(uint code, uint mapType);
+
+    [DllImport("user32.dll", EntryPoint = "MapVirtualKeyExW")]
+    private static extern uint MapVirtualKeyEx(uint code, uint mapType, IntPtr layout);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetKeyboardLayout(uint thread);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int ToUnicodeEx(uint virtualKey, uint scanCode, byte[] keyState,
+        [Out, MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 4)] char[] buffer, int bufferSize, uint flags, IntPtr layout);
 
     public static Gesture? Parse(string? text)
     {
@@ -223,19 +306,21 @@ public sealed class ShortcutManager : IDisposable
     public static string Describe(Config.ShortcutsGroup shortcuts, ShortcutAction action)
     {
         var slot = ShortcutSlot.All.First(s => s.Action == action);
-        return Gesture.Parse(slot.Get(shortcuts).Keys)?.ToString() ?? "";
+        return Gesture.Parse(slot.Get(shortcuts).Keys)?.Label ?? "";
     }
 
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (Gesture.From(e) is not { } gesture) return;
-        if (!_local.TryGetValue(gesture, out var action)) return;
+        if (Gesture.From(e) is not { } pressed) return;
+        if (!_local.TryGetValue(pressed, out var action) &&
+            !(NumpadTwin(pressed) is { } twin && _local.TryGetValue(twin, out action))) return;
+        var gesture = pressed;
 
         // Someone typing a space into the search box is not asking to pause the recording,
         // and Ctrl+C in a text box is a copy. A read-only box (the captions) types nothing,
-        // so it does not count.
+        // so it does not count. Nor does AltGr+key on a layout where that types € or @.
         if (Keyboard.FocusedElement is TextBoxBase { IsReadOnly: false } &&
-            (gesture.IsTyping || IsEditingKey(gesture))) return;
+            (gesture.IsTyping || IsEditingKey(gesture) || gesture.TypesWithAltGr)) return;
 
         // A drop-down owns the keyboard while it has focus: Space and the arrows drive it.
         // Buttons deliberately do not get the same courtesy — Space has always meant pause
@@ -246,6 +331,23 @@ public sealed class ShortcutManager : IDisposable
 
         if (_run(action)) e.Handled = true;
     }
+
+    /// <summary>
+    /// The main-keyboard key a numeric-keypad key stands in for: keypad + and − for the
+    /// <c>=</c> and <c>-</c> keys of the text-size shortcuts.
+    /// </summary>
+    /// <remarks>
+    /// Those defaults are VK_OEM_PLUS and VK_OEM_MINUS — matched by key, so they work on any
+    /// layout that <i>has</i> those keys. French AZERTY has no VK_OEM_MINUS key at all (its
+    /// "-" is on the 6), so Ctrl+- could never be pressed there. The keypad's + and − are the
+    /// same keys on every layout, and every full-size keyboard has them.
+    /// </remarks>
+    private static Gesture? NumpadTwin(Gesture gesture) => gesture.Key switch
+    {
+        Key.Add => gesture with { Key = Key.OemPlus },
+        Key.Subtract => gesture with { Key = Key.OemMinus },
+        _ => null,
+    };
 
     private static bool IsEditingKey(Gesture gesture) =>
         gesture.Modifiers == ModifierKeys.Control &&
@@ -274,6 +376,15 @@ public sealed class ShortcutManager : IDisposable
         if (gesture.Modifiers.HasFlag(ModifierKeys.Shift)) modifiers |= 0x4;
         if (gesture.Modifiers.HasFlag(ModifierKeys.Windows)) modifiers |= 0x8;
 
+        // A global Ctrl+Alt+key that types a character with AltGr on this layout would take that
+        // character away from every app on the PC. Keep it to this window and say why.
+        if (gesture.TypesWithAltGr)
+        {
+            _local[gesture] = action;
+            _failures[action] = $"{gesture.Label} types a character with AltGr on this keyboard layout, so it only works while Local Caption is focused.";
+            return;
+        }
+
         var virtualKey = (uint)KeyInterop.VirtualKeyFromKey(gesture.Key);
         if (RegisterHotKey(_source.Handle, id, modifiers, virtualKey))
         {
@@ -283,7 +394,7 @@ public sealed class ShortcutManager : IDisposable
 
         // Keep it working inside the window at least, and say why it is not global.
         _local[gesture] = action;
-        _failures[action] = $"{gesture} is already taken by Windows or another app, so it only works while Local Caption is focused.";
+        _failures[action] = $"{gesture.Label} is already taken by Windows or another app, so it only works while Local Caption is focused.";
     }
 
     private void Unregister()

@@ -1,0 +1,115 @@
+<UserControl x:Class="LocalCaption.App.Interview.Answers.AnswersPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Focusable="False" MinWidth="180">
+
+    <!-- The Answers panel (SPEC-16 §5.4; Mac InterviewPanel.swift): profiles header, status
+         line, the cards, the screenshot tray and the Ask bar. Everything is driven from
+         AnswersPanel.xaml.cs; nothing here binds to the controller directly. -->
+    <Grid x:Name="Root">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- ── Header: Interview · Intro / Tech / Behavioral (a menu when narrow) · Live coding · Stop -->
+        <Grid x:Name="HeaderGrid" Grid.Row="0" Margin="0,0,0,6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel x:Name="HeaderLeft" Grid.Column="0" Orientation="Horizontal" ClipToBounds="True">
+                <TextBlock x:Name="TitleText" Text="Interview" FontSize="14" FontWeight="SemiBold"
+                           VerticalAlignment="Center" Margin="0,0,10,0"
+                           FontFamily="{DynamicResource Font.Display}" Foreground="{DynamicResource Text}" />
+                <StackPanel x:Name="ProfileButtons" Orientation="Horizontal" VerticalAlignment="Center" />
+                <Button x:Name="ProfileMenuButton" MinHeight="24" Padding="8,0" FontSize="11.5"
+                        VerticalAlignment="Center" Click="OnProfileMenu" Visibility="Collapsed"
+                        AutomationProperties.Name="Profile">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock x:Name="ProfileMenuText" Text="Profile" VerticalAlignment="Center" />
+                        <TextBlock Text="&#xE70D;" FontFamily="{DynamicResource Font.Icon}" FontSize="8"
+                                   VerticalAlignment="Center" Margin="6,1,0,0" />
+                    </StackPanel>
+                </Button>
+                <ToggleButton x:Name="LiveCodingFull" Style="{StaticResource Toggle.Chip}" Tag="&#xE943;"
+                              Content="Live coding" Margin="6,0,0,0" VerticalAlignment="Center"
+                              Click="OnLiveCoding" AutomationProperties.Name="Live coding" />
+                <ToggleButton x:Name="LiveCodingIcon" Style="{StaticResource Toggle.Chip}" Tag="&#xE943;"
+                              Margin="6,0,0,0" VerticalAlignment="Center" Visibility="Collapsed"
+                              Click="OnLiveCoding" AutomationProperties.Name="Live coding" />
+            </StackPanel>
+            <Button x:Name="StopButton" Grid.Column="1" Style="{StaticResource Button.Ghost}" Tag="&#xE71A;"
+                    Click="OnStop" Visibility="Collapsed" Margin="4,0,0,0"
+                    ToolTip="Stop this answer" AutomationProperties.Name="Stop" />
+        </Grid>
+
+        <!-- ── The orange status line, and the one-time model notice (SPEC-16 §9.4) -->
+        <StackPanel Grid.Row="1">
+            <TextBlock x:Name="StatusText" FontSize="11.5" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                       LineStackingStrategy="BlockLineHeight" LineHeight="16" MaxHeight="32"
+                       Margin="0,0,0,4" Visibility="Collapsed" Foreground="{DynamicResource Caution}" />
+            <TextBlock x:Name="ModelNoticeText" FontSize="11.5" TextWrapping="Wrap"
+                       Margin="0,0,0,4" Visibility="Collapsed" Foreground="{DynamicResource Caution}" />
+        </StackPanel>
+
+        <!-- ── Cards: newest last and expanded; follows the newest while it streams -->
+        <ScrollViewer x:Name="CardScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled" Focusable="False">
+            <StackPanel Margin="0,0,4,4">
+                <TextBlock x:Name="EmptyHint" FontSize="12.5" TextWrapping="Wrap" Margin="0,12,0,12"
+                           Foreground="{DynamicResource Text.Muted}" />
+                <StackPanel x:Name="CardList" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Row="3" Height="1" Margin="0,6,0,6" Background="{DynamicResource Line}" />
+
+        <!-- ── Screenshot tray: what the next Ask or Send takes -->
+        <StackPanel x:Name="TrayPanel" Grid.Row="4" Margin="0,0,0,8" Visibility="Collapsed">
+            <DockPanel Margin="0,0,0,4">
+                <Button x:Name="ClearTrayButton" DockPanel.Dock="Right" Style="{DynamicResource Answers.LinkButton}"
+                        Content="Clear" Click="OnClearTray" />
+                <TextBlock DockPanel.Dock="Left" Text="&#xE91B;" FontFamily="{DynamicResource Font.Icon}" FontSize="11"
+                           VerticalAlignment="Center" Margin="0,1,6,0" Foreground="{DynamicResource Text.Muted}" />
+                <TextBlock x:Name="TrayText" FontSize="11.5" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource Text.Muted}" />
+            </DockPanel>
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Focusable="False">
+                <StackPanel x:Name="Thumbs" Orientation="Horizontal" Margin="0,0,0,2" />
+            </ScrollViewer>
+        </StackPanel>
+
+        <!-- ── Bottom bar, three densities: Ask F8 + camera + coach box → icon Ask → coach box in a popup -->
+        <Grid x:Name="BottomBar" Grid.Row="5">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Button x:Name="AskFull" Grid.Column="0" Style="{StaticResource Button.Accent}" Tag="&#xE897;"
+                    VerticalAlignment="Bottom" Click="OnAsk" AutomationProperties.Name="Ask" />
+            <Button x:Name="AskIcon" Grid.Column="0" Style="{StaticResource Button.Accent}" Tag="&#xE897;"
+                    VerticalAlignment="Bottom" Click="OnAsk" Visibility="Collapsed" Padding="10,0"
+                    AutomationProperties.Name="Ask" />
+            <Button x:Name="CameraButton" Grid.Column="1" Tag="&#xE722;" Margin="8,0,0,0" Padding="10,0"
+                    VerticalAlignment="Bottom" Click="OnScreenshot" AutomationProperties.Name="Screenshot" />
+            <ContentControl x:Name="InputHost" Grid.Column="2" Margin="8,0,0,0" Focusable="False"
+                            VerticalAlignment="Bottom" HorizontalContentAlignment="Stretch" />
+            <Button x:Name="KeyboardButton" Grid.Column="3" Tag="&#xE765;" Margin="8,0,0,0" Padding="10,0"
+                    VerticalAlignment="Bottom" Click="OnKeyboard" Visibility="Collapsed"
+                    ToolTip="Type to the coach" AutomationProperties.Name="Type to the coach" />
+            <Popup x:Name="TypePopup" PlacementTarget="{Binding ElementName=KeyboardButton}" Placement="Top"
+                   StaysOpen="False" AllowsTransparency="True" Opened="OnTypePopupOpened" Closed="OnTypePopupClosed">
+                <Border Style="{DynamicResource Answers.PopupSurface}" Width="340" KeyDown="OnTypePopupKey">
+                    <ContentControl x:Name="PopupInputHost" Focusable="False" HorizontalContentAlignment="Stretch" />
+                </Border>
+            </Popup>
+        </Grid>
+    </Grid>
+</UserControl>

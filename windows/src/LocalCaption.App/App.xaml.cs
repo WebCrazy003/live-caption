@@ -2,7 +2,10 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows;
+using System.Windows.Threading;
+using LocalCaption.App.Interview;
 using LocalCaption.Core.Transcripts;
+using LocalCaption.Interview;
 using LocalCaption.Session;
 using Velopack;
 
@@ -51,6 +54,8 @@ public partial class App : Application
 
     private Mutex? _instance;
     private AppEnvironment? _env;
+    private InterviewServices? _interview;
+    private bool _reportingError;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -72,6 +77,10 @@ public partial class App : Application
 
         base.OnStartup(e);
 
+        // A bug in one handler should cost that action, not the recording in progress.
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+
         _env = new AppEnvironment();
 
         // Before the first window, including the message boxes below: a dialog that opens in
@@ -89,10 +98,63 @@ public partial class App : Application
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
         OfferRecovery(_env);
 
-        MainWindow = new MainWindow(_env);
+        // After recovery, so a recovered capture's interview is already linked when the
+        // controller reads the last interview for its prefill. Starts no Codex (SPEC-16 §4.1).
+        // Runs at every launch, Caption only included — so if it fails (the CV / skill library
+        // can't be read, the hotkey window can't be made…) the app still starts, in Caption only
+        // mode, and every interview entry point is disabled with the reason.
+        string? interviewUnavailable = null;
+        try { _interview = new InterviewServices(_env); }
+        catch (Exception ex)
+        {
+            _interview = null;
+            interviewUnavailable = ex.Message.Trim() is { Length: > 0 } message ? message : ex.GetType().Name;
+            InterviewPlatformLog.Write("app", $"Interview mode is unavailable: {ex}");
+        }
+
+        MainWindow = new MainWindow(_env, _interview, interviewUnavailable);
         ShutdownMode = ShutdownMode.OnMainWindowClose;
         MainWindow.Show();
     }
+
+    /// <summary>
+    /// An exception escaped a UI-thread handler. Log it, tell the user briefly, and carry on —
+    /// unless it is one the process cannot be trusted to survive.
+    /// </summary>
+    private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+    {
+        // Trace, where the interview log goes too (InterviewLog writes to it).
+        var ex = e.Exception;
+        Trace.TraceError($"Unhandled exception on the UI thread: {ex}");
+        if (IsFatal(ex)) return;      // not handled: the app ends, as it would have
+        e.Handled = true;
+
+        // One box at a time: an exception thrown again from layout or a timer while the box is
+        // up would otherwise stack boxes until the user gives up.
+        if (_reportingError) return;
+        _reportingError = true;
+        try
+        {
+            MessageBox.Show($"Something went wrong, but Local Caption is still running.\n\n{ex.GetType().Name}: {ex.Message}",
+                            "Local Caption", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        catch (Exception)
+        {
+            // No box (shutting down, no dispatcher): it is logged.
+        }
+        finally { _reportingError = false; }
+    }
+
+    /// <summary>A faulted task nobody awaited: log it and mark it observed.</summary>
+    private static void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        Trace.TraceError($"Unobserved task exception: {e.Exception}");
+        e.SetObserved();
+    }
+
+    private static bool IsFatal(Exception ex) =>
+        ex is OutOfMemoryException or AccessViolationException or InvalidProgramException or BadImageFormatException
+            or System.Runtime.InteropServices.SEHException;
 
     /// <summary>
     /// §9.4: journals that outlived their session. Offer them before a new session starts,
@@ -166,6 +228,8 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        // Hotkeys off and codex stopped before the store closes under the controller.
+        _interview?.Dispose();
         _env?.Dispose();
         _instance?.Dispose();
         base.OnExit(e);

@@ -79,6 +79,54 @@ public sealed class ConfigShellTests : IDisposable
     }
 
     [Fact]
+    public void Interview_layout_and_window_state_round_trip_in_the_ui_group()
+    {
+        var config = new Config();
+        config.Ui.InterviewAnswerShareStacked = 0.45;
+        config.Ui.InterviewCaptionShareWide = 0.7;
+        config.Ui.InterviewCaptionsHidden = true;
+        config.Ui.SessionsWindow = new Config.WindowBounds { X = -1200, Y = 40.5, Width = 1010, Height = 655 };
+        config.Ui.SettingsPage = "Codex";
+        config.Write(ConfigPath);
+
+        var (reloaded, repaired) = Config.LoadOrRepair(ConfigPath);
+
+        Assert.False(repaired);
+        Assert.True(config == reloaded, "write→read must be the identity for the new ui keys");
+        Assert.Equal(-1200, reloaded.Ui.SessionsWindow!.X);
+
+        // Per-machine state lives in "ui", never in the shared "interview" group (SPEC-16 §5.3).
+        using var document = JsonDocument.Parse(File.ReadAllText(ConfigPath));
+        var ui = document.RootElement.GetProperty("ui");
+        Assert.True(ui.GetProperty("interview_captions_hidden").GetBoolean());
+        Assert.Equal(1010, ui.GetProperty("sessions_window").GetProperty("width").GetDouble());
+        Assert.False(document.RootElement.GetProperty("interview").TryGetProperty("interview_captions_hidden", out _));
+
+        // Alphabetical, as every group (diffs cleanly against the Mac's sorted keys).
+        var names = ui.EnumerateObject().Select(p => p.Name).ToList();
+        Assert.Equal(names.OrderBy(n => n, StringComparer.Ordinal).ToList(), names);
+    }
+
+    [Fact]
+    public void Interview_layout_defaults_and_no_sessions_window_until_one_is_saved()
+    {
+        File.WriteAllText(ConfigPath, """{ "schema_version": 2, "ui": { "theme": "dark" } }""");
+
+        var (config, repaired) = Config.LoadOrRepair(ConfigPath);
+
+        Assert.False(repaired);
+        Assert.Equal(0.6, config.Ui.InterviewAnswerShareStacked);
+        Assert.Equal(0.58, config.Ui.InterviewCaptionShareWide);
+        Assert.False(config.Ui.InterviewCaptionsHidden);
+        Assert.Null(config.Ui.SessionsWindow);
+        Assert.Equal("", config.Ui.SettingsPage);
+
+        config.Write(ConfigPath);
+        using var document = JsonDocument.Parse(File.ReadAllText(ConfigPath));
+        Assert.False(document.RootElement.GetProperty("ui").TryGetProperty("sessions_window", out _));
+    }
+
+    [Fact]
     public void The_reserved_always_on_top_key_is_left_alone()
     {
         // §7.3 keeps window.always_on_top = true for macOS interchange. The pin is a separate

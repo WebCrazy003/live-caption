@@ -173,6 +173,53 @@ public sealed class InterviewStoreTests : IDisposable
     }
 
     [Fact]
+    public void InterviewsForASessionAreAllOfThemNewestFirst()
+    {
+        var session = _store.Insert(new SessionRecord { SessionName = "S", CreatedAt = "2026-10-02T09:00:00Z" });
+        var other = _store.Insert(new SessionRecord { SessionName = "T", CreatedAt = "2026-10-02T10:00:00Z" });
+        var older = Sample();
+        older.CreatedAt = "2026-10-01T09:00:00Z";
+        older.SessionId = session.Id;
+        var newer = Sample();
+        newer.SessionId = session.Id;
+        var elsewhere = Sample();
+        elsewhere.SessionId = other.Id;
+        var unlinked = Sample();
+        foreach (var r in new[] { older, newer, elsewhere, unlinked }) _store.SaveInterview(r);
+
+        var both = _store.Interviews(session.Id!.Value);
+        Assert.Equal([newer.Id, older.Id], both.Select(i => i.Id));
+        Assert.Equal(Json(newer), Json(both[0]));                  // whole records, turns included
+        Assert.Empty(_store.Interviews(other.Id!.Value + 100));
+    }
+
+    [Fact]
+    public void ListingsCarryTheListColumnsOfLinkedInterviewsOnly()
+    {
+        var session = _store.Insert(new SessionRecord { SessionName = "S", CreatedAt = "2026-10-02T09:00:00Z" });
+        var older = Sample();
+        older.CreatedAt = "2026-10-01T09:00:00Z";
+        older.SessionId = session.Id;
+        var newer = Sample();
+        newer.SessionId = session.Id;
+        newer.Setup.Candidate = null;
+        newer.Setup.Company = "";
+        newer.Setup.Step = null;
+        newer.Setup.CvTitle = null;
+        newer.Setup.JdTextInline = null;
+        var unlinked = Sample();
+        foreach (var r in new[] { older, newer, unlinked }) _store.SaveInterview(r);
+
+        var listings = _store.InterviewListings();
+
+        Assert.Equal(2, listings.Count);                            // the unlinked one is left out
+        Assert.Equal(new InterviewListing(session.Id!.Value, null, "", null, "Senior iOS", null, null), listings[0]);
+        Assert.Equal(new InterviewListing(session.Id.Value, "Jane", "Acme", 2, "Senior iOS", "Jane CV", "JD text"), listings[1]);
+        // Newest first, as Interview(sessionId) picks.
+        Assert.Equal(_store.Interview(session.Id.Value)?.Setup.Candidate, listings[0].Candidate);
+    }
+
+    [Fact]
     public void SaveIsOneTransaction()
     {
         var r = Sample();

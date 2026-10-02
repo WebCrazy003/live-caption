@@ -1,6 +1,6 @@
 # SPEC-16 — Windows parity: what macOS has that Windows does not
 
-**Status:** 🟡 Resumed — Windows-only pieces are being drafted on the Mac (compile-checked, not yet run); see *Progress* and [docs/WINDOWS-STATUS.md](../docs/WINDOWS-STATUS.md) · **Written:** 2026-10-02, against `main` at `6608d48` (the merge of
+**Status:** 🟡 Drafted — every piece is written and compiles; nothing Windows-only has run yet. Next: the smoke test on a Windows PC; see *Progress* and [docs/WINDOWS-STATUS.md](../docs/WINDOWS-STATUS.md) · **Written:** 2026-10-02, against `main` at `6608d48` (the merge of
 `windows/stage-b`) · **Depends on:** [SPEC-WINDOWS.md](../SPEC-WINDOWS.md) (the port, B0–B6 done),
 [SPEC-11](SPEC-11-interview-assist.md)–[15](SPEC-15-interview-ui-results.md) (Interview Assist on macOS)
 
@@ -28,10 +28,11 @@ it can be looked at as it is made. Testing is local on the G15 only — no remot
 | P1 Kit port + shared vectors (hotkey, ask, prompts, codex, records, library) | ✅ done (`3f4c36f`, `7d42846`) | `LocalCaption.Core.Interview`, `Data/InterviewStore.cs`; 75 new shared vector cases |
 | P2 Codex engine, CV/skill library, PDF text | ✅ done (`369bc84`) | new `LocalCaption.Interview` project (net10.0) |
 | Interview flow logic (§5.2–§5.5 without the screens) | ✅ done | `LocalCaption.Interview/InterviewController`, `InterviewRecovery` |
-| P2 Win32: global hotkeys (§4.2), region screenshot (§4.3), clipboard images (§4.4) | ⬜ on the G15 | implement the controller's `IScreenCapture` / `IClipboardImages` |
-| P3 WPF screens (§5.1–§5.7) | ⬜ on the G15 | bind to `InterviewController`, `CodexService`, `InterviewLibrary` |
+| P2 Win32: global hotkeys (§4.2), region screenshot (§4.3), clipboard images (§4.4) | 🟡 drafted on the Mac, compiles; not yet run | `LocalCaption.App/Interview/Platform`; pure rules tested in `LocalCaption.Interview` |
+| P3 WPF screens (§5.1–§5.7) | 🟡 drafted and wired on the Mac, compiles; not yet run | `LocalCaption.App/Interview/{Views,Answers,Sessions,Settings}`, `MainWindow.Interview.cs` |
+| Compatibility (any Windows 10 1809+/11, x64 + ARM64, no NVIDIA required, mixed DPI, any layout) | 🟡 done on the Mac, not yet run | app manifest, ARM64 publish, Visual C++ runtime in the installer, Windows 10 capture fallback, keyboard labels |
 | P4 caption-side C1–C12 | C10 ✅ (`7d42846`); C7 is the Settings input limits (the segmenter already enforces the Mac's own); rest ⬜ on the G15 | |
-| P5 acceptance (§11) | ⬜ on the G15 | |
+| P5 acceptance (§11) | ⬜ on a Windows PC | smoke-test checklist in [docs/WINDOWS-STATUS.md](../docs/WINDOWS-STATUS.md) |
 
 Verified on the Mac at each step: `dotnet build LocalCaption.slnx -p:EnableWindowsTargeting=true`
 clean; Core, Asr and Interview suites green; the macOS Kit suite green on the shared vectors.
