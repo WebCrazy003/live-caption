@@ -1,6 +1,6 @@
 # SPEC-16 — Windows parity: what macOS has that Windows does not
 
-**Status:** ⬜ Not started · **Written:** 2026-10-02, against `main` at `6608d48` (the merge of
+**Status:** 🟡 In progress — everything that can be built and verified on the Mac is done or under way; Windows-only work remains (see *Progress*) · **Written:** 2026-10-02, against `main` at `6608d48` (the merge of
 `windows/stage-b`) · **Depends on:** [SPEC-WINDOWS.md](../SPEC-WINDOWS.md) (the port, B0–B6 done),
 [SPEC-11](SPEC-11-interview-assist.md)–[15](SPEC-15-interview-ui-results.md) (Interview Assist on macOS)
 
@@ -13,6 +13,28 @@
 > **The Mac code is the reference, not SPEC-11..15.** Those specs were written first and the
 > code has moved on (§9 lists where). Where this spec and an older spec disagree, this one
 > describes what the Mac actually does today.
+
+---
+
+## Progress (2026-10-02)
+
+Owner decision: everything that can be built **and verified** on the Mac is done there; what only
+runs on Windows (Win32 hotkeys, screen capture, clipboard, WPF screens) is built on the G15, where
+it can be looked at as it is made. Testing is local on the G15 only — no remote (Jump Desktop) runs.
+
+| Stage | State | Where it lives |
+|---|---|---|
+| P0 shared DB, captions in DB, config keys, auto-copy fix, `.gitattributes` | ✅ done (`4f20c7e`) | Core `Store`, `TranscriptFileReader`, `SessionFiles`; Session save/recover |
+| P1 Kit port + shared vectors (hotkey, ask, prompts, codex, records, library) | ✅ done (`3f4c36f`, `7d42846`) | `LocalCaption.Core.Interview`, `Data/InterviewStore.cs`; 75 new shared vector cases |
+| P2 Codex engine, CV/skill library, PDF text | ✅ done (`369bc84`) | new `LocalCaption.Interview` project (net10.0) |
+| Interview flow logic (§5.2–§5.5 without the screens) | 🟡 in progress on the Mac | `LocalCaption.Interview/InterviewController` |
+| P2 Win32: global hotkeys (§4.2), region screenshot (§4.3), clipboard images (§4.4) | ⬜ on the G15 | implement the controller's `IScreenCapture` / `IClipboardImages` |
+| P3 WPF screens (§5.1–§5.7) | ⬜ on the G15 | bind to `InterviewController`, `CodexService`, `InterviewLibrary` |
+| P4 caption-side C1–C12 | C10 ✅ (`7d42846`); C7 is the Settings input limits (the segmenter already enforces the Mac's own); rest ⬜ on the G15 | |
+| P5 acceptance (§11) | ⬜ on the G15 | |
+
+Verified on the Mac at each step: `dotnet build LocalCaption.slnx -p:EnableWindowsTargeting=true`
+clean; Core, Asr and Interview suites green; the macOS Kit suite green on the shared vectors.
 
 ---
 
@@ -74,29 +96,29 @@ SPEC-11 §SQLite's claim that the file "is readable by either build" is false to
 
 **Fix (Windows-side only; the Mac does not change):**
 
-- [ ] Windows keeps the GRDB bookkeeping table as the source of truth. On open:
+- [x] Windows keeps the GRDB bookkeeping table as the source of truth. On open:
       `CREATE TABLE IF NOT EXISTS grdb_migrations (identifier TEXT NOT NULL PRIMARY KEY)`.
-- [ ] Migrations are identified by the **Mac's identifiers**, in order:
+- [x] Migrations are identified by the **Mac's identifiers**, in order:
       `v1_sessions`, `v2_interview`, `v3_interview_store`, `v4_segments_and_details`.
-- [ ] A migration is "applied" if its identifier is in `grdb_migrations` **or** the legacy
+- [x] A migration is "applied" if its identifier is in `grdb_migrations` **or** the legacy
       `user_version` says so (Windows DBs created before this change: 1 → v1, 2 → v2, 3 → v3).
-- [ ] Each migration step is **idempotent** — probe `sqlite_master` / `pragma_table_info`
+- [x] Each migration step is **idempotent** — probe `sqlite_master` / `pragma_table_info`
       before every `CREATE`/`ALTER` — and each runs **in its own transaction** together with the
       `INSERT INTO grdb_migrations` row for its identifier.
-- [ ] After migrating, also set `PRAGMA user_version = 4` (harmless to the Mac, keeps old
+- [x] After migrating, also set `PRAGMA user_version = 4` (harmless to the Mac, keeps old
       Windows logic meaningful).
-- [ ] Unknown identifiers in `grdb_migrations` (a newer Mac build) are ignored, not an error;
+- [x] Unknown identifiers in `grdb_migrations` (a newer Mac build) are ignored, not an error;
       unknown columns are tolerated (`SELECT` names columns explicitly).
-- [ ] Fix SPEC-11 §SQLite and SPEC-WINDOWS §9.3 wording to describe this.
+- [x] Fix SPEC-11 §SQLite and SPEC-WINDOWS §9.3 wording to describe this.
 
 ### 2.2 Schema v4 — `v4_segments_and_details`
 
-- [ ] `session_segments(session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+- [x] `session_segments(session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
       n INTEGER NOT NULL, text TEXT NOT NULL, t_start_ms INTEGER NOT NULL, t_end_ms INTEGER NOT NULL,
       created_at TEXT NOT NULL, PRIMARY KEY(session_id, n))` — exactly the Mac DDL
       (`Kit/Store.swift:48-63`).
-- [ ] `interviews` gains `candidate_name TEXT`, `company TEXT`, `interview_step INTEGER`.
-- [ ] `PRAGMA foreign_keys = ON` (already), WAL (already).
+- [x] `interviews` gains `candidate_name TEXT`, `company TEXT`, `interview_step INTEGER`.
+- [x] `PRAGMA foreign_keys = ON` (already), WAL (already).
 
 ### 2.3 Captions live in the database (SPEC.md §12.3, as on Mac since `4923b22`)
 
@@ -107,25 +129,25 @@ the save as failed → then write the `.txt`/`.json` export, whose failure is on
 Windows today does the reverse and swallows DB errors (`Win: Session/SessionController.cs:517-570`,
 `AppEnvironment.cs:96-124`).
 
-- [ ] Port `Store.insert(_:segments:)`, `segments(sessionId)`, `segmentCount`,
+- [x] Port `Store.insert(_:segments:)`, `segments(sessionId)`, `segmentCount`,
       `setTranscriptFile`, and `all(mode:)` (optional mode filter, already partly there).
-- [ ] Save and recovery follow the Mac order above. A failed DB write keeps the journal.
-- [ ] Port `TranscriptFileReader` (`.json` sidecar first, else `.txt` lines with `[HH:MM:SS]`
+- [x] Save and recovery follow the Mac order above. A failed DB write keeps the journal.
+- [x] Port `TranscriptFileReader` (`.json` sidecar first, else `.txt` lines with `[HH:MM:SS]`
       prefixes) and `Store.importTranscriptFiles`: **once at launch**, sessions with no segments
       get them from their files.
-- [ ] Session list "Refresh → clear rows whose `.txt` is missing" (`Win: MainWindow.xaml.cs:918-949`)
+- [x] Session list "Refresh → clear rows whose `.txt` is missing" (`Win: MainWindow.xaml.cs:918-949`)
       must change: a missing export file is no longer data loss. Only offer to clear rows that have
       **neither** segments **nor** a file.
-- [ ] Update the `Store.cs` doc comment ("Transcript text never lives in SQLite") and SPEC-WINDOWS §9.3.
+- [x] Update the `Store.cs` doc comment ("Transcript text never lives in SQLite") and SPEC-WINDOWS §9.3.
 
 ### 2.4 Config keys
 
-- [ ] `Config.InterviewGroup` gains `screenshot_hotkey` (default `"F9"`) and `panel_layout`
+- [x] `Config.InterviewGroup` gains `screenshot_hotkey` (default `"F9"`) and `panel_layout`
       (`automatic` | `side_by_side` | `stacked`, default `automatic`, unknown → default via the
       existing `Known(...)` fallback).
-- [ ] Add helpers matching Kit: `ClampedSendSentences` (1–20), `ClampedMaxWords` (50–2000),
+- [x] Add helpers matching Kit: `ClampedSendSentences` (1–20), `ClampedMaxWords` (50–2000),
       `AskMode`, `EffectiveModel` (`""` → `RecommendedModel` = `"gpt-6-luna"`).
-- [ ] Extend vectors: `testdata/config/interview-group-defaults.json` gains
+- [x] Extend vectors: `testdata/config/interview-group-defaults.json` gains
       `interview.screenshot_hotkey: "F9"` and `interview.panel_layout: "automatic"`;
       `interview-unknown-enum-falls-back.json` gains a `panel_layout` case. (Both suites must
       still pass — the Mac already behaves this way.)
@@ -138,17 +160,18 @@ button". But `OnFinalized` passes the current hypothesis, which is usually empty
 so **with Auto-copy off Windows still writes the last N sentences to the clipboard after most
 finals.** That undermines the clipboard-privacy position of SPEC-WINDOWS §12.1.
 
-- [ ] Split into `CopyLastNManual()` (always copies) and `AutoCopyLastN(string interim)`
+- [x] Split into `CopyLastNManual()` (always copies) and `AutoCopyLastN(string interim)`
       (returns unless `clipboard.auto_update`), as the Mac does (`LC/Session/SessionController.swift:57-64`).
 - [ ] Unit test: Auto-copy off → no clipboard write on `OnSpeechEnded` or `OnFinalized`; manual
-      copy still works.
+      copy still works. *(Windows: `LocalCaption.Session` is `net10.0-windows` and has no test
+      project yet — add it on the G15.)*
 
 ### 2.6 Repo hygiene
 
-- [ ] Add `.gitattributes`: `* text=auto`, and `*.cs`, `*.swift`, `testdata/** text eol=lf`.
+- [x] Add `.gitattributes`: `* text=auto`, and `*.cs`, `*.swift`, `testdata/** text eol=lf`.
       The interview prompt templates are golden-tested byte for byte; a CRLF checkout on Windows
       (`core.autocrlf=true`) would put `\r\n` into C# raw strings and fail every prompt vector.
-- [ ] Update `testdata/README.md`: list `ask/`, `codex/`, `hotkey/`, `interview-prompt/` and the
+- [x] Update `testdata/README.md`: list `ask/`, `codex/`, `hotkey/`, `interview-prompt/` and the
       Mac suites that assert them (`InterviewConformanceTests.swift`, `CodexRPCTests.swift`).
 
 **P0 acceptance:** a Mac `localcaption.db` copied to Windows opens, lists every session with its
@@ -176,23 +199,23 @@ All of this is plain logic: build and test it **on the Mac**. New namespace
 | `TimeFormat.Day` (`yyyy-MM-dd`, local) | `TimeFormat.swift` | — |
 | `SessionRecord.IsInterview`, mode constants | `SessionRecord.swift` | — |
 
-- [ ] `ConformanceTests` (or a new `InterviewConformanceTests.cs` / `CodexRpcTests.cs`) asserts
+- [x] `ConformanceTests` (or a new `InterviewConformanceTests.cs` / `CodexRpcTests.cs`) asserts
       `hotkey/`, `ask/`, `interview-prompt/`, all four `codex/` files.
-- [ ] Port the non-vector Mac tests too: request line is single-line JSON, tool guard, version
+- [x] Port the non-vector Mac tests too: request line is single-line JSON, tool guard, version
       gate, usage lowest window (`CodexRPCTests.swift:56,147,186,195`); record round-trip,
       session name, interrupted turns fail on relaunch, `QaMarkdown`, slugs, index repair,
       front matter/partition, summary keeps last 15 000 words (`InterviewKitTests.swift`).
-- [ ] Prompt templates contain non-ASCII (– —): source files are UTF-8, LF (§2.6).
+- [x] Prompt templates contain non-ASCII (– —): source files are UTF-8, LF (§2.6).
 
 ### 3.1 New shared vectors (add to `testdata/`, assert in **both** suites)
 
 SPEC-11 calls these shared, but nothing pins them, and some have no exact .NET equivalent:
 
-- [ ] `testdata/library/slug.json` — `LibrarySlug.Make`: diacritics (`é`→`e`), case, full-width
+- [x] `testdata/library/slug.json` — `LibrarySlug.Make`: diacritics (`é`→`e`), case, full-width
       folding, collisions (`-2`, `-3`), empty → `item`. (.NET: `Normalize(FormKD)` + drop
       `NonSpacingMark` + lower-invariant + `[a-z0-9-]`; the vectors decide.)
-- [ ] `testdata/records/session-name.json`, `qa-markdown.json`.
-- [ ] `testdata/library/skill-files.json` — front matter, partition order, hidden files.
+- [x] `testdata/records/session-name.json`, `qa-markdown.json`.
+- [x] `testdata/library/skill-files.json` — front matter, partition order, hidden files.
 
 **P1 acceptance:** every `testdata/` folder is asserted by both suites with no
 platform-conditional expectations (SPEC-WINDOWS §21.3).
@@ -201,39 +224,39 @@ platform-conditional expectations (SPEC-WINDOWS §21.3).
 
 ## 4. W-P2 — Windows platform services
 
-### 4.1 Codex process (`LocalCaption.Interview` project, net10.0-windows)
+### 4.1 Codex process (`LocalCaption.Interview` project, `net10.0` — runs and is tested on the Mac)
 
 Behaviour matches Mac `CodexProcess.swift` / `CodexAppServerEngine.swift` / `CodexService.swift`:
 
-- [ ] **Locate** `codex`, first one ≥ 0.159.3 wins (older ones skipped; if only old ones →
+- [x] **Locate** `codex`, first one ≥ 0.159.3 wins (older ones skipped; if only old ones →
       "too old", else "not installed"): `interview.codex_path` → `%APPDATA%\npm\codex.cmd` →
       `%LOCALAPPDATA%\Programs\…` / Volta / Scoop shims → `where codex`. Each candidate:
       `--version` with a 5 s timeout, parsed by `CodexRpc.Version`.
-- [ ] **Spawn without `cmd.exe /c`.** The npm shim `codex.cmd` mangles the quoting of
+- [x] **Spawn without `cmd.exe /c`.** The npm shim `codex.cmd` mangles the quoting of
       `-c mcp_servers={}` and leaves orphans. Resolve the shim to the package's native
       `codex.exe` under `node_modules\@openai\codex\…` (preferred) or `node <entry>.js`; fall back
       to `cmd.exe /c` only if neither resolves, and log it.
-- [ ] Put the child in a **Job Object** with kill-on-close so it dies with the app (fixes the
+- [x] Put the child in a **Job Object** with kill-on-close so it dies with the app (fixes the
       Mac's never-called `shutdown()`).
-- [ ] Environment: user env + `CODEX_HOME=<Root>\interview\codex-home`. Working directory
+- [x] Environment: user env + `CODEX_HOME=<Root>\interview\codex-home`. Working directory
       `<Root>\interview\workspace`, emptied before launch and before every `thread/start` /
       `thread/resume` (anything found is logged as an error).
-- [ ] stderr → `interview\codex.log`, rotated at 5 MB to `codex.log.1`.
-- [ ] Newline-delimited JSON over stdio; UTF-8 **without BOM**; `\n` line terminator.
-- [ ] Lazy start; `initialize` (`clientInfo{name:"localcaption", title:"LocalCaption", version}`,
+- [x] stderr → `interview\codex.log`, rotated at 5 MB to `codex.log.1`.
+- [x] Newline-delimited JSON over stdio; UTF-8 **without BOM**; `\n` line terminator.
+- [x] Lazy start; `initialize` (`clientInfo{name:"localcaption", title:"LocalCaption", version}`,
       `capabilities.experimentalApi:true`) then `initialized`; re-resume known threads after a
       restart; 2 unexpected exits → permanent `crashed`.
-- [ ] Request timeout 15 s; server→client requests answered with `DeclineResponse` and logged
+- [x] Request timeout 15 s; server→client requests answered with `DeclineResponse` and logged
       as a lockdown breach.
-- [ ] One turn at a time (`busy`); watchdog `slow` at 30 s, interrupt + `timeout` at 120 s;
+- [x] One turn at a time (`busy`); watchdog `slow` at 30 s, interrupt + `timeout` at 120 s;
       interrupt waits ≤ 2 s for the turn id; tool-call guard on `item/started` types outside
       `AllowedItemTypes` → interrupt + `blockedTool`.
-- [ ] Failure mapping, model resolution (`configured if listed → gpt-6-luna → isDefault →
+- [x] Failure mapping, model resolution (`configured if listed → gpt-6-luna → isDefault →
       configured`), usage (low < 20 %), sign-in (`account/login/start` → open `authUrl` in the
       default browser → wait for `account/login/completed`; Cancel), sign-out (`account/logout`)
       — all as Mac §"Codex engine", error and status strings identical except install hints:
       "Install it with npm: npm install -g @openai/codex" / "npm update -g @openai/codex".
-- [ ] **[DECISION, owner 2026-10-02] Caption only mode never uses Codex.** Unlike the Mac
+- [x] **[DECISION, owner 2026-10-02] Caption only mode never uses Codex.** Unlike the Mac
       (where opening Settings → Codex starts the process even in Caption only mode), Windows
       starts it only in Interview mode or when the user presses **Check again** / **Sign in…**
       in Settings → Codex.
@@ -276,13 +299,13 @@ Same rules as Mac `ClipboardImages.swift`:
 
 ### 4.5 Documents and skills
 
-- [ ] `DocumentText`: `.pdf` via **UglyToad.PdfPig** (page text, trimmed, pages joined by a
+- [x] `DocumentText`: `.pdf` via **PdfPig** (NuGet id `PdfPig`) (page text, trimmed, pages joined by a
       blank line; no text at all → "This PDF is a scanned image; paste the text instead.");
       `.md .markdown .txt .text` as UTF-8, falling back to Windows-1252; CRLF/CR → LF; trim. Any
       other extension → "“.ext” files aren't supported…". No `.docx` (decided).
-- [ ] Library on disk exactly as Mac: `interview\library\index.json`,
+- [x] Library on disk exactly as Mac: `interview\library\index.json`,
       `documents\<slug>\{original.<ext>, text.txt}`, `skills\<slot>\SKILL.md` + reference files.
-- [ ] Skill slots `discovery-cv`, `discovery-jd`, `apply-instruction`, `live-coding-design`:
+- [x] Skill slots `discovery-cv`, `discovery-jd`, `apply-instruction`, `live-coding-design`:
       load a folder with `SKILL.md` or a single `.md`; replaced content removed; folder renamed to
       the slot; ignored files reported.
 

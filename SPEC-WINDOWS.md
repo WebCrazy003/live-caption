@@ -864,9 +864,11 @@ Windows-only additions, appended (not renumbered):
 
 ### 9.3 SQLite
 
-`%LOCALAPPDATA%\LocalCaption\localcaption.db`, WAL, **identical DDL** to `Store.swift`
-(`sessions` table + `idx_sessions_created`). Migrations on `PRAGMA user_version`.
-Transcript text never stored in the database.
+`%LOCALAPPDATA%\LocalCaption\localcaption.db`, WAL, **identical DDL** to `Store.swift`.
+Migrations are recorded by name in GRDB's `grdb_migrations` table, exactly as macOS records
+them, so one file opens in either build ([specs/SPEC-16 §2.1](specs/SPEC-16-windows-parity.md)).
+Since `v4_segments_and_details` the caption text lives in `session_segments` and the
+`.txt`/`.json` files are an export (SPEC.md §12.3).
 
 ### 9.4 Crash-recovery journal — get fsync right
 

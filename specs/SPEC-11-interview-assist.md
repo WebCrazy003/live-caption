@@ -247,8 +247,11 @@ import format for those folders.
 
 ### SQLite
 
-Two migrations on the existing `localcaption.db`; the Windows `Store` applies the same DDL
-(`user_version` 2 and 3) so a database file is readable by either build.
+Migrations on the existing `localcaption.db`, recorded by name in GRDB's `grdb_migrations`
+table (macOS never sets `user_version`). The Windows `Store` applies the same DDL and keeps the
+same `grdb_migrations` rows under the same names, so a database file is readable by either build
+([SPEC-16 §2.1](SPEC-16-windows-parity.md)). `v4_segments_and_details` (captions in
+`session_segments`, plus interviewee/company/step) follows these two.
 
 - **`v2_interview`** — `sessions` gains `mode TEXT NOT NULL DEFAULT 'caption'` and
   `interview_dir TEXT NULL` (the latter unused since v3; the link is `interviews.session_id`).
