@@ -142,7 +142,10 @@ struct InterviewPanel: View {
                     .help("Type to the coach")
                     .popover(isPresented: $showingTypeBox) { typeField.frame(width: 320).padding() }
             } else {
-                typeField.frame(minWidth: d == .full ? 260 : 200)
+                // A fixed ideal width: otherwise the field's ideal width is its whole text, so a
+                // long message made ViewThatFits fall back to the popover layout and never wrap.
+                let width: CGFloat = d == .full ? 260 : 200
+                typeField.frame(minWidth: width, idealWidth: width, maxWidth: .infinity)
             }
         }
     }
@@ -207,7 +210,12 @@ struct InterviewPanel: View {
         HStack(alignment: .bottom, spacing: 6) {
             TextField("Type to the coach…", text: $draft, axis: .vertical)
                 .lineLimit(1...6)
-                .textFieldStyle(.roundedBorder)
+                // `.roundedBorder` never wraps on macOS; the plain style does, so draw the border.
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 7).padding(.vertical, 4)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.35)))
+                .frame(maxWidth: .infinity)
                 .onSubmit(sendDraft)
                 .help("Return sends · Option-Return adds a line")
             Button(action: sendDraft) { Image(systemName: "paperplane.fill") }
