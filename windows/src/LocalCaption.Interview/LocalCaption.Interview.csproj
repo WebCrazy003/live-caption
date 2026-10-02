@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- SPEC-16 §4.1: the Codex answer engine. Plain net10.0 (not -windows) so it builds and its
+       tests run on the Mac against the real codex; the Windows-only parts (Job Object, npm shim
+       resolution) are guarded by OperatingSystem.IsWindows(). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="LocalCaption.Interview.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LocalCaption.Core\LocalCaption.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="PdfPig" Version="0.1.16" />
+  </ItemGroup>
+
+</Project>

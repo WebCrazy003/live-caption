@@ -44,9 +44,12 @@ public static class InterviewConfig
             TryParseAnswerLength(interview.AnswerLength, out var length) ? length : Interview.AnswerLength.Medium;
 
         /// <summary>The model to request: the configured one, or <see cref="RecommendedModel"/> when empty.</summary>
-        public string EffectiveModel =>
-            interview.Model.Length == 0 ? RecommendedModel : interview.Model;
+        public string EffectiveModel => InterviewConfig.EffectiveModel(interview.Model);
     }
+
+    /// <summary>The model to request for a configured <c>model</c>: itself, or <see cref="RecommendedModel"/> when empty.</summary>
+    public static string EffectiveModel(string configured) =>
+        configured.Length == 0 ? RecommendedModel : configured;
 
     /// <summary>
     /// The config spelling of an answer length — <c>short</c>, <c>medium</c>, <c>long</c>, exactly

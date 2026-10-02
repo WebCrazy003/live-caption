@@ -1,5 +1,4 @@
 using System.IO;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using LocalCaption.Asr;
 using LocalCaption.Core;
@@ -91,11 +90,8 @@ public static class SystemInfo
 
     private static string Lower(AsrBackend backend) => backend.ToString().ToLowerInvariant();
 
-    public static string Version() =>
-        Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-            ?.InformationalVersion.Split('+')[0]
-        ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString(3)
-        ?? "unknown";
+    /// <summary>The app's version (<see cref="AppInfo.Version"/>).</summary>
+    public static string Version() => AppInfo.Version();
 
     private static string Processor()
     {
