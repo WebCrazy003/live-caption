@@ -154,6 +154,11 @@
       }
     },
     {
+      "build": "logout",
+      "args": {},
+      "expect": null
+    },
+    {
       "build": "decline",
       "args": {
         "id": "srv-1",

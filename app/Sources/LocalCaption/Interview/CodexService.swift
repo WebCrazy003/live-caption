@@ -61,6 +61,18 @@ final class CodexService: ObservableObject {
         }
     }
 
+    /// Settings → Codex → Sign out. Leaves the engine running, signed out.
+    func signOut() async {
+        signInError = nil
+        do {
+            try await engine.logout()
+            usage = nil; usageUpdatedAt = nil
+        } catch {
+            signInError = "Couldn't sign out: \(error.localizedDescription)"
+        }
+        await refresh()
+    }
+
     func cancelSignIn() async {
         guard let t = signIn else { return }
         signIn = nil

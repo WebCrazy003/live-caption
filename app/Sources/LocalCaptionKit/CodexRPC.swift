@@ -103,6 +103,8 @@ public enum CodexRPC {
     public static let modelListParams: JSONValue = .object(["includeHidden": false])
     public static let loginStartParams: JSONValue = .object(["type": "chatgpt"])
     public static func loginCancelParams(loginId: String) -> JSONValue { .object(["loginId": .string(loginId)]) }
+    /// `account/logout` takes `params: null` (0.159.3 schema).
+    public static let logoutParams: JSONValue = .null
 
     /// The answer to a server→client request: always "no", in the shape each method expects
     /// (0.159.3 schema). With approvals `never` none should arrive; one that does is a lockdown

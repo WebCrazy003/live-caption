@@ -126,7 +126,7 @@ final class InterviewResultsTests: XCTestCase {
         await interview.ensureThread()
         engine.holdIf = { _ in true }
         let turn = Task { await interview.sendTyped("left hanging") }
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await waitUntilOnMain { interview.isStreaming }
         XCTAssertEqual(try saved(interview).turns.last?.status, .streaming)
 
         env.sweepInterviews()     // as on the next launch

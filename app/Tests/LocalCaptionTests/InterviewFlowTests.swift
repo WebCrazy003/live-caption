@@ -71,6 +71,7 @@ final class InterviewFlowTests: XCTestCase {
         }
         func archiveThread(id: String) async { lock.withLock { _archived.append(id) } }
         func startLogin() async throws -> LoginTicket { throw EngineError.other("n/a") }
+        func logout() async throws {}
         func cancelLogin(_ ticket: LoginTicket) async {}
         func shutdown() async { lock.withLock { shutdowns += 1 } }
     }

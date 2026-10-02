@@ -43,10 +43,11 @@ final class CodexRPCTests: XCTestCase {
             case "model_list": built = CodexRPC.modelListParams
             case "login_start": built = CodexRPC.loginStartParams
             case "login_cancel": built = CodexRPC.loginCancelParams(loginId: s("login_id"))
+            case "logout": built = CodexRPC.logoutParams
             case "decline": built = CodexRPC.declineResponse(id: a["id"] ?? .null, method: s("method"))
             default: XCTFail("unknown builder \(String(describing: c["build"]))"); continue
             }
-            XCTAssertEqual(built, c["expect"], "requests.json: \(c["build"]?.stringValue ?? "?")")
+            XCTAssertEqual(built, c["expect"] ?? .null, "requests.json: \(c["build"]?.stringValue ?? "?")")
         }
         let args = try XCTUnwrap(load("requests.json")["launch_arguments"]?.arrayValue).compactMap(\.stringValue)
         XCTAssertEqual(CodexRPC.launchArguments, args, "launch arguments (S0.8 lockdown)")

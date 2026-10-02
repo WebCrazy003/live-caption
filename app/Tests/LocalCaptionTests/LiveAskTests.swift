@@ -109,7 +109,7 @@ final class LiveAskTests: XCTestCase {
         engine.holdIf = { $0.contains("first question") }
         transcript = ([], "first question", 1000)
         let first = Task { await interview.ask() }
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await waitUntilOnMain { interview.isStreaming }
         XCTAssertTrue(interview.isStreaming)
 
         transcript = ([], "second question", 2000)
@@ -128,7 +128,7 @@ final class LiveAskTests: XCTestCase {
         engine.holdIf = { $0.contains("one") && !$0.contains("two") }
         transcript = ([], "one", 1000)
         let first = Task { await interview.ask() }
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await waitUntilOnMain { interview.isStreaming }
 
         transcript = ([], "two", 2000); await interview.ask()
         transcript = ([], "three", 3000); await interview.ask()

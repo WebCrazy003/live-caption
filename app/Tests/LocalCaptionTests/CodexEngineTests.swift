@@ -166,7 +166,7 @@ final class CodexEngineTests: XCTestCase {
         let thread = try await e.startThread(cfg)
         let stream = e.send(threadId: thread, input: [.text("Q")], effort: "low")
         let task = Task { try await self.collect(stream) }
-        try await Task.sleep(nanoseconds: 200_000_000)
+        await waitUntil { self.servers.first?.sent("turn/start").isEmpty == false }
         servers[0].crash()
         let events = try await task.value
         XCTAssertEqual(events.last, .failed(.crashed, partial: ""))
@@ -183,7 +183,7 @@ final class CodexEngineTests: XCTestCase {
         let e = engine { self.healthy($0) }
         _ = try await e.startThread(cfg)
         servers[0].push(#"{"id":"srv-1","method":"item/commandExecution/requestApproval","params":{}}"#)
-        try await Task.sleep(nanoseconds: 200_000_000)
+        await waitUntil { self.servers[0].sent.contains { $0["id"] == "srv-1" } }
         let reply = servers[0].sent.first { $0["id"] == "srv-1" }
         XCTAssertEqual(reply?["result"]?["decision"], "decline")
     }
@@ -193,7 +193,7 @@ final class CodexEngineTests: XCTestCase {
         let thread = try await e.startThread(cfg)
         let first = e.send(threadId: thread, input: [.text("A")], effort: "low")
         let firstTask = Task { try await self.collect(first) }
-        try await Task.sleep(nanoseconds: 200_000_000)
+        await waitUntil { self.servers.first?.sent("turn/start").isEmpty == false }
         let second = try await collect(e.send(threadId: thread, input: [.text("B")], effort: "low"))
         XCTAssertEqual(second, [.failed(.busy, partial: "")])
         await e.interrupt(threadId: thread)
@@ -212,6 +212,32 @@ final class CodexEngineTests: XCTestCase {
         let thread = try await e.startThread(cfg)
         let events = try await collect(e.send(threadId: thread, input: [.text("Q")], effort: "low"))
         XCTAssertEqual(events, [.started(turnId: "u1"), .slow, .failed(.timeout, partial: "")])
+    }
+
+    func testSignOutSendsLogoutAndReportsSignedOut() async throws {
+        let signedIn = LockedValue(true)
+        let e = engine { s in
+            self.healthy(s)
+            let base = s.script
+            s.script = { m, id, p in
+                switch m {
+                case "account/logout":
+                    signedIn.set(false)
+                    return [FakeServer.reply(id, .object([:]))]
+                case "account/read" where !signedIn.get():
+                    return [FakeServer.reply(id, .object(["account": .null, "requiresOpenaiAuth": true]))]
+                default:
+                    return base(m, id, p)
+                }
+            }
+        }
+        let before = await e.status()
+        XCTAssertEqual(before, .ready(email: "me@example.com", plan: "plus"))
+        try await e.logout()
+        let after = await e.status()
+        XCTAssertEqual(after, .signedOut)
+        let logout = try XCTUnwrap(servers.first?.sent("account/logout").first)
+        XCTAssertEqual(logout["params"], .null, "account/logout takes params: null")
     }
 
     func testMissingCodexIsReportedNotHung() async throws {

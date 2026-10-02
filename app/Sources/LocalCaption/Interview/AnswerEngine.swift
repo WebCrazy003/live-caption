@@ -16,6 +16,8 @@ protocol AnswerEngine: AnyObject, Sendable {
     func archiveThread(id: String) async
     func startLogin() async throws -> LoginTicket
     func cancelLogin(_ ticket: LoginTicket) async
+    /// Sign this engine's Codex home out of ChatGPT.
+    func logout() async throws
     /// Usage updates and login completion, while the engine runs.
     var notices: AsyncStream<EngineNotice> { get }
     func shutdown() async

@@ -11,6 +11,8 @@ struct InterviewSettingsSections: View {
     let page: Page
     @EnvironmentObject var env: AppEnvironment
     @ObservedObject var codex: CodexService
+    @State private var confirmingSignOut = false
+    @State private var signingOut = false
     @State private var skillError: String?
     @State private var skillNotice: String?
 
@@ -35,7 +37,24 @@ struct InterviewSettingsSections: View {
             LabeledContent("Codex path") {
                 TextField("Auto-detect", text: cfg.codexPath).multilineTextAlignment(.trailing)
             }
-            Button("Check again") { Task { await codex.refresh() } }.disabled(codex.checking)
+            HStack {
+                Button("Check again") { Task { await codex.refresh() } }.disabled(codex.checking || signingOut)
+                Spacer()
+                if codex.isReady {
+                    Button("Sign out…", role: .destructive) { confirmingSignOut = true }
+                        .disabled(signingOut)
+                        .help("Sign LocalCaption out of your ChatGPT account")
+                }
+                if signingOut { ProgressView().controlSize(.small) }
+            }
+            .confirmationDialog("Sign out of ChatGPT in LocalCaption?", isPresented: $confirmingSignOut) {
+                Button("Sign out", role: .destructive) {
+                    Task { signingOut = true; await codex.signOut(); signingOut = false }
+                }
+            } message: {
+                Text("Interview mode stops working until you sign in again. This signs out LocalCaption only — "
+                     + "the Codex app in your terminal or editor stays signed in. Any answer being written is cut off.")
+            }
         } header: {
             Text("Codex")
         } footer: {

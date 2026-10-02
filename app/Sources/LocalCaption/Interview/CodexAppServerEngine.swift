@@ -163,6 +163,13 @@ actor CodexAppServerEngine: AnswerEngine {
         return LoginTicket(loginId: id, authURL: url)
     }
 
+    /// Signs out LocalCaption's own Codex home (`interview/codex-home`) only — the user's Codex CLI
+    /// and editor sign-ins live elsewhere and are untouched.
+    func logout() async throws {
+        try await ensureStarted()
+        _ = try await request("account/logout", CodexRPC.logoutParams)
+    }
+
     func cancelLogin(_ ticket: LoginTicket) async {
         _ = try? await request("account/login/cancel", CodexRPC.loginCancelParams(loginId: ticket.loginId))
     }

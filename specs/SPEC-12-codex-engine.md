@@ -172,6 +172,9 @@ safe:
       `{loginId, authUrl}`; open `authUrl` in the default browser; wait for the
       `account/login/completed` notification; refresh with `account/read`. Cancel →
       `account/login/cancel {loginId}`. Signed-out check: `account/read` → `account: null`.
+- [ ] **Sign out** (Settings → Codex, owner 2026-10-02): `account/logout` with `params: null`, after
+      a confirmation; then `account/read` reports signed out. It signs out LocalCaption's own
+      `CODEX_HOME` only — the user's Codex CLI / editor sign-ins are separate and untouched.
 - [ ] Fallback (if in-app sign-in isn't available): Settings shows the exact command to run, with
       a Copy button: `CODEX_HOME="<path>" codex login`.
 
