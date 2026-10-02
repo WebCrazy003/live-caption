@@ -258,7 +258,7 @@ Mac hides itself and runs `screencapture -i`. Windows has no equivalent command,
       window **without activating it** (the meeting app keeps focus).
 - [ ] Capture with `BitBlt`/`Graphics.CopyFromScreen` from the frozen frame; encode PNG.
 - [ ] The image always goes into the tray, regardless of the clipboard setting.
-- [ ] No permission needed on Windows. Must work over Jump Desktop (verify, §10 W-I3).
+- [ ] No permission needed on Windows. Verified on the G15 itself, at its own keyboard and screen.
 
 ### 4.4 Clipboard images
 
@@ -524,7 +524,7 @@ sort is no longer fixed).
 |---|---|---|
 | W-I1 | Codex's read-only sandbox behaves differently on Windows | the lockdown already rests on disabled features + the tool guard + empty cwd; run the `codex/events` tool-guard case live and a prompt that asks it to read a file |
 | W-I2 | Laptop Fn-lock: F8/F9 send media keys | show the Fn hint in the recorder; test on the G15 keyboard |
-| W-I3 | Global hotkeys and the region overlay over Jump Desktop | test both from the remote client; if the hotkey doesn't reach the host, the on-screen Ask button is the fallback |
+| W-I3 | Global hotkeys and the region overlay | **[DECISION, owner 2026-10-02] tested locally on the G15 only — no remote (Jump Desktop) testing.** If remote use is wanted later, the on-screen Ask button is the fallback |
 | W-I4 | `codex.cmd` shim resolution across npm / Volta / Scoop | test each locator path; log which one won |
 | W-I5 | Slug folding differs between Foundation and .NET | the §3.1 vectors decide |
 | W-I6 | Hotkey clash with Windows `shortcuts` (copy/send last question default to F8/F9) | **[DECISION, owner 2026-10-02] not handled** — the user sets hotkeys manually. No defaults change, no clash detection beyond the existing "unavailable" state; the Ask button still works |
@@ -537,7 +537,7 @@ sort is no longer fixed).
    and setting intact; moved back, the same. Both suites green from the same `testdata/`.
 2. Caption only mode: no `codex` process, no clipboard read, no network beyond the model
    download (network monitor, SPEC-WINDOWS §17.13). Auto-copy off → clipboard untouched.
-3. Interview mode end to end over Jump Desktop: choose mode → acknowledge notice → load four
+3. Interview mode end to end, run locally on the G15: choose mode → acknowledge notice → load four
    skills → prepare (CV upload, JD paste, profile) → Start → F8 during a Zoom call streams an answer
    with first words < 3 s → F9 region screenshot attaches → Coach input sends → switch to Tech and
    run Live coding → End interview → Summarize → follow-up → open it again from the Sessions window

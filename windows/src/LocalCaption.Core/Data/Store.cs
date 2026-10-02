@@ -1,14 +1,19 @@
+using LocalCaption.Core.Transcripts;
 using Microsoft.Data.Sqlite;
 
 namespace LocalCaption.Core.Data;
 
 /// <summary>A row in the <c>sessions</c> table (SPEC.md §12.3).</summary>
 /// <remarks>
-/// Metadata only. Transcript <i>text</i> never lives in SQLite — it is written to a
-/// <c>.txt</c> file, and this row merely points at it.
+/// The caption text lives in <c>session_segments</c> (macOS <c>v4_segments_and_details</c>,
+/// specs/SPEC-16 §2.3). <see cref="TranscriptFile"/> points at the <c>.txt</c> export, which
+/// may be missing — or a path on the other platform — without anything being lost.
 /// </remarks>
 public sealed record SessionRecord
 {
+    public const string CaptionMode = "caption";
+    public const string InterviewMode = "interview";
+
     public long? Id { get; set; }
     public string SessionName { get; set; } = "";
     /// <summary>ISO-8601 UTC string.</summary>
@@ -17,8 +22,10 @@ public sealed record SessionRecord
     public int DurationSeconds { get; set; }
     public string? TranscriptFile { get; set; }
     /// <summary><c>caption</c> | <c>interview</c> (specs/SPEC-11 §SQLite).</summary>
-    public string Mode { get; set; } = "caption";
+    public string Mode { get; set; } = CaptionMode;
     public string? InterviewDir { get; set; }
+
+    public bool IsInterview => Mode == InterviewMode;
 }
 
 /// <summary>Sort options for the session list (SPEC.md §10 / SPEC-06).</summary>
@@ -30,19 +37,25 @@ public enum SessionSort
 }
 
 /// <summary>
-/// SQLite session-metadata store (SPEC.md §12.3, SPEC-WINDOWS.md §9.3). WAL mode, with the
-/// DDL kept identical to the macOS <c>Store.swift</c> so a database file is readable by
-/// either build.
+/// SQLite session store (SPEC.md §12.3, SPEC-WINDOWS.md §9.3). WAL mode, foreign keys on,
+/// and the DDL identical to the macOS <c>Store.swift</c>.
 /// </summary>
 /// <remarks>
-/// macOS uses GRDB's <c>DatabaseMigrator</c>, which keeps its own bookkeeping table. §9.3
-/// specifies <c>PRAGMA user_version</c> here instead — the same versioning idea without the
-/// dependency. Both converge on the same schema; <c>user_version</c> is the authority for
-/// which migrations have run on Windows.
+/// <para><b>One file, both builds (specs/SPEC-16 §2.1).</b> macOS migrates with GRDB's
+/// <c>DatabaseMigrator</c>, which records each applied migration by name in
+/// <c>grdb_migrations</c> and never touches <c>PRAGMA user_version</c>. This store keeps the
+/// same bookkeeping under the same names, so a database written by either build opens in
+/// the other: a migration runs here only if its identifier is missing, and every step probes
+/// the schema first, so files from older Windows builds (which recorded progress in
+/// <c>user_version</c> alone) are completed rather than re-created.</para>
+/// <para><c>user_version</c> is still set, to the number of migrations, for anything that
+/// reads it; it is no longer consulted.</para>
 /// </remarks>
-public sealed class Store : IDisposable
+public sealed partial class Store : IDisposable
 {
-    private const int SchemaVersion = 3;
+    /// <summary>The macOS migration identifiers, in order. Never rename one.</summary>
+    public static readonly IReadOnlyList<string> MigrationIds =
+        ["v1_sessions", "v2_interview", "v3_interview_store", "v4_segments_and_details"];
 
     private readonly SqliteConnection _connection;
 
@@ -66,93 +79,133 @@ public sealed class Store : IDisposable
 
     private void Migrate()
     {
-        var current = Convert.ToInt32(Scalar("PRAGMA user_version") ?? 0);
-        if (current >= SchemaVersion) return;
+        Execute("CREATE TABLE IF NOT EXISTS grdb_migrations (identifier TEXT NOT NULL PRIMARY KEY)");
+        var applied = new HashSet<string>(Strings("SELECT identifier FROM grdb_migrations"));
 
-        if (current < 1)
+        // Identifiers from a newer macOS build are left alone: its tables are not ours to touch.
+        foreach (var id in MigrationIds.Where(id => !applied.Contains(id)))
         {
-            // Identical to GRDB's `autoIncrementedPrimaryKey` + column set on macOS.
-            Execute("""
-                CREATE TABLE IF NOT EXISTS sessions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_name TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    ended_at TEXT,
-                    duration_seconds INTEGER NOT NULL DEFAULT 0,
-                    transcript_file TEXT
-                )
-                """);
-            Execute("CREATE INDEX IF NOT EXISTS idx_sessions_created ON sessions(created_at)");
+            InTransaction(() =>
+            {
+                Apply(id);
+                using var record = _connection.CreateCommand();
+                record.CommandText = "INSERT INTO grdb_migrations (identifier) VALUES ($id)";
+                record.Parameters.AddWithValue("$id", id);
+                record.ExecuteNonQuery();
+                return 0;
+            });
         }
 
-        if (current < 2)
-        {
-            // macOS migration `v2_interview` (specs/SPEC-11 §SQLite): same columns, same default.
-            Execute("ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'caption'");
-            Execute("ALTER TABLE sessions ADD COLUMN interview_dir TEXT");
-        }
+        Execute($"PRAGMA user_version = {MigrationIds.Count}");
+    }
 
-        if (current < 3)
+    private void Apply(string id)
+    {
+        switch (id)
         {
-            // macOS migration `v3_interview_store` (specs/SPEC-11 §SQLite): all interview data —
-            // record, turns, CV/JD/summary/transcript text, screenshots — in this database.
-            // Identical DDL, so a database file is readable by either build.
-            Execute("""
-                CREATE TABLE interviews (
-                    id TEXT PRIMARY KEY,
-                    session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
-                    name TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    started_at TEXT,
-                    ended_at TEXT,
-                    capture_session_uuid TEXT,
-                    engine TEXT NOT NULL,
-                    model TEXT NOT NULL,
-                    reasoning_effort TEXT NOT NULL,
-                    thread_id TEXT,
-                    cv_document_id TEXT,
-                    cv_title TEXT,
-                    cv_text TEXT,
-                    jd_text TEXT,
-                    instructions TEXT NOT NULL DEFAULT '',
-                    answer_length TEXT NOT NULL DEFAULT 'medium',
-                    skill_ids TEXT NOT NULL DEFAULT '[]',
-                    legacy_briefing TEXT,
-                    summary_status TEXT NOT NULL DEFAULT 'pending',
-                    summary_text TEXT,
-                    summary_completed_at TEXT,
-                    transcript TEXT
-                );
-                CREATE INDEX idx_interviews_session ON interviews(session_id);
-                CREATE INDEX idx_interviews_capture ON interviews(capture_session_uuid);
-                CREATE TABLE interview_turns (
-                    interview_id TEXT NOT NULL REFERENCES interviews(id) ON DELETE CASCADE,
-                    n INTEGER NOT NULL,
-                    kind TEXT NOT NULL,
-                    question TEXT NOT NULL,
-                    answer TEXT NOT NULL DEFAULT '',
-                    status TEXT NOT NULL,
-                    error TEXT,
-                    audio_from_ms INTEGER,
-                    audio_to_ms INTEGER,
-                    images TEXT NOT NULL DEFAULT '[]',
-                    asked_at TEXT NOT NULL,
-                    ttft_ms INTEGER,
-                    total_ms INTEGER,
-                    PRIMARY KEY (interview_id, n)
-                );
-                CREATE TABLE interview_images (
-                    interview_id TEXT NOT NULL REFERENCES interviews(id) ON DELETE CASCADE,
-                    name TEXT NOT NULL,
-                    turn_n INTEGER,
-                    png BLOB NOT NULL,
-                    created_at TEXT NOT NULL,
-                    PRIMARY KEY (interview_id, name)
-                );
-                """);
-        }
+            case "v1_sessions":
+                // GRDB's `autoIncrementedPrimaryKey` + the same column set.
+                Execute("""
+                    CREATE TABLE IF NOT EXISTS sessions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        session_name TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        ended_at TEXT,
+                        duration_seconds INTEGER NOT NULL DEFAULT 0,
+                        transcript_file TEXT
+                    )
+                    """);
+                Execute("CREATE INDEX IF NOT EXISTS idx_sessions_created ON sessions(created_at)");
+                break;
 
-        Execute($"PRAGMA user_version = {SchemaVersion}");
+            case "v2_interview":
+                // specs/SPEC-11 §SQLite: existing rows become `caption`.
+                AddColumn("sessions", "mode", "TEXT NOT NULL DEFAULT 'caption'");
+                AddColumn("sessions", "interview_dir", "TEXT");
+                break;
+
+            case "v3_interview_store":
+                // All interview data — record, turns, CV/JD/summary/transcript text, screenshots.
+                Execute("""
+                    CREATE TABLE IF NOT EXISTS interviews (
+                        id TEXT PRIMARY KEY,
+                        session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+                        name TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        started_at TEXT,
+                        ended_at TEXT,
+                        capture_session_uuid TEXT,
+                        engine TEXT NOT NULL,
+                        model TEXT NOT NULL,
+                        reasoning_effort TEXT NOT NULL,
+                        thread_id TEXT,
+                        cv_document_id TEXT,
+                        cv_title TEXT,
+                        cv_text TEXT,
+                        jd_text TEXT,
+                        instructions TEXT NOT NULL DEFAULT '',
+                        answer_length TEXT NOT NULL DEFAULT 'medium',
+                        skill_ids TEXT NOT NULL DEFAULT '[]',
+                        legacy_briefing TEXT,
+                        summary_status TEXT NOT NULL DEFAULT 'pending',
+                        summary_text TEXT,
+                        summary_completed_at TEXT,
+                        transcript TEXT
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_interviews_session ON interviews(session_id);
+                    CREATE INDEX IF NOT EXISTS idx_interviews_capture ON interviews(capture_session_uuid);
+                    CREATE TABLE IF NOT EXISTS interview_turns (
+                        interview_id TEXT NOT NULL REFERENCES interviews(id) ON DELETE CASCADE,
+                        n INTEGER NOT NULL,
+                        kind TEXT NOT NULL,
+                        question TEXT NOT NULL,
+                        answer TEXT NOT NULL DEFAULT '',
+                        status TEXT NOT NULL,
+                        error TEXT,
+                        audio_from_ms INTEGER,
+                        audio_to_ms INTEGER,
+                        images TEXT NOT NULL DEFAULT '[]',
+                        asked_at TEXT NOT NULL,
+                        ttft_ms INTEGER,
+                        total_ms INTEGER,
+                        PRIMARY KEY (interview_id, n)
+                    );
+                    CREATE TABLE IF NOT EXISTS interview_images (
+                        interview_id TEXT NOT NULL REFERENCES interviews(id) ON DELETE CASCADE,
+                        name TEXT NOT NULL,
+                        turn_n INTEGER,
+                        png BLOB NOT NULL,
+                        created_at TEXT NOT NULL,
+                        PRIMARY KEY (interview_id, name)
+                    );
+                    """);
+                break;
+
+            case "v4_segments_and_details":
+                // Everything in the database: each session's caption segments, and the
+                // interviewee, company and interview step. The .txt/.json stay as an export.
+                Execute("""
+                    CREATE TABLE IF NOT EXISTS session_segments (
+                        session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                        n INTEGER NOT NULL,
+                        text TEXT NOT NULL,
+                        t_start_ms INTEGER NOT NULL,
+                        t_end_ms INTEGER NOT NULL,
+                        created_at TEXT NOT NULL,
+                        PRIMARY KEY (session_id, n)
+                    )
+                    """);
+                AddColumn("interviews", "candidate_name", "TEXT");
+                AddColumn("interviews", "company", "TEXT");
+                AddColumn("interviews", "interview_step", "INTEGER");
+                break;
+        }
+    }
+
+    private void AddColumn(string table, string column, string definition)
+    {
+        if (Strings($"SELECT name FROM pragma_table_info('{table}')").Contains(column)) return;
+        Execute($"ALTER TABLE {table} ADD COLUMN {column} {definition}");
     }
 
     // ── CRUD ─────────────────────────────────────────────────────────────────────────────
@@ -179,6 +232,131 @@ public sealed class Store : IDisposable
     }
 
     /// <summary>
+    /// Insert a session and its caption segments in one transaction — the save itself; the
+    /// <c>.txt</c>/<c>.json</c> export comes after and is only an export.
+    /// </summary>
+    public SessionRecord Insert(SessionRecord record, IReadOnlyList<TranscriptSegment> segments) =>
+        InTransaction(() =>
+        {
+            var saved = Insert(record);
+            WriteSegments(segments, saved.Id!.Value);
+            return saved;
+        });
+
+    /// <summary>A session's caption segments, in order.</summary>
+    public IReadOnlyList<TranscriptSegment> Segments(long sessionId)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = """
+            SELECT text, t_start_ms, t_end_ms, created_at FROM session_segments
+            WHERE session_id = $id ORDER BY n
+            """;
+        command.Parameters.AddWithValue("$id", sessionId);
+        using var reader = command.ExecuteReader();
+        var segments = new List<TranscriptSegment>();
+        while (reader.Read())
+            segments.Add(new TranscriptSegment
+            {
+                Text = reader.GetString(0),
+                TStartMs = reader.GetInt32(1),
+                TEndMs = reader.GetInt32(2),
+                CreatedAt = reader.GetString(3),
+            });
+        return segments;
+    }
+
+    /// <summary>The ids of every session that has at least one caption segment.</summary>
+    public HashSet<long> SessionIdsWithSegments()
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT DISTINCT session_id FROM session_segments";
+        using var reader = command.ExecuteReader();
+        var ids = new HashSet<long>();
+        while (reader.Read()) ids.Add(reader.GetInt64(0));
+        return ids;
+    }
+
+    public int SegmentCount(long sessionId)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM session_segments WHERE session_id = $id";
+        command.Parameters.AddWithValue("$id", sessionId);
+        return Convert.ToInt32(command.ExecuteScalar());
+    }
+
+    /// <summary>
+    /// Sessions saved before captions moved into the database keep them only in their
+    /// transcript files: copy them in — the <c>.json</c> sidecar's segments, else the
+    /// <c>.txt</c> body line by line. Files are left as they are. A row whose file is missing
+    /// here (deleted, or a path from the other platform) or unreadable is skipped and tried
+    /// again next time, as on macOS. Returns how many were imported.
+    /// </summary>
+    public int ImportTranscriptFiles()
+    {
+        var missing = new List<SessionRecord>();
+        using (var command = _connection.CreateCommand())
+        {
+            command.CommandText = $"""
+                SELECT {Columns} FROM sessions WHERE transcript_file IS NOT NULL
+                AND id NOT IN (SELECT DISTINCT session_id FROM session_segments)
+                """;
+            using var reader = command.ExecuteReader();
+            while (reader.Read()) missing.Add(Read(reader));
+        }
+
+        var imported = 0;
+        foreach (var record in missing)
+        {
+            var segments = TranscriptFileReader.Segments(record.TranscriptFile!, record.CreatedAt);
+            if (segments is not { Count: > 0 }) continue;
+            try
+            {
+                InTransaction(() => { WriteSegments(segments, record.Id!.Value); return 0; });
+                imported++;
+            }
+            catch (SqliteException) { }   // one bad row must not stop the rest
+        }
+        return imported;
+    }
+
+    /// <summary>Point a session at its exported <c>.txt</c>.</summary>
+    public void SetTranscriptFile(long id, string path)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = "UPDATE sessions SET transcript_file = $file WHERE id = $id";
+        command.Parameters.AddWithValue("$file", path);
+        command.Parameters.AddWithValue("$id", id);
+        command.ExecuteNonQuery();
+    }
+
+    private void WriteSegments(IReadOnlyList<TranscriptSegment> segments, long sessionId)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = """
+            INSERT OR REPLACE INTO session_segments (session_id, n, text, t_start_ms, t_end_ms, created_at)
+            VALUES ($id, $n, $text, $start, $end, $created)
+            """;
+        command.Parameters.AddWithValue("$id", sessionId);
+        var n = command.Parameters.Add("$n", SqliteType.Integer);
+        var text = command.Parameters.Add("$text", SqliteType.Text);
+        var start = command.Parameters.Add("$start", SqliteType.Integer);
+        var end = command.Parameters.Add("$end", SqliteType.Integer);
+        var created = command.Parameters.Add("$created", SqliteType.Text);
+        command.Prepare();
+
+        for (var i = 0; i < segments.Count; i++)
+        {
+            var s = segments[i];
+            n.Value = i + 1;
+            text.Value = s.Text;
+            start.Value = s.TStartMs;
+            end.Value = s.TEndMs;
+            created.Value = s.CreatedAt;
+            command.ExecuteNonQuery();
+        }
+    }
+
+    /// <summary>
     /// Rename edits metadata only — it deliberately does NOT rename the transcript file
     /// (SPEC.md §10, C9), so a link from an older export keeps resolving.
     /// </summary>
@@ -192,8 +370,8 @@ public sealed class Store : IDisposable
     }
 
     /// <summary>
-    /// Delete the row only. Removing the transcript file is a separate, confirmed step
-    /// (SPEC-06) — see <see cref="SessionFiles.DeleteTranscript"/>.
+    /// Delete the row and, by cascade, its caption segments. Removing the transcript file is
+    /// a separate, confirmed step (SPEC-06) — see <see cref="SessionFiles.DeleteTranscript"/>.
     /// </summary>
     public void Delete(long id)
     {
@@ -236,7 +414,8 @@ public sealed class Store : IDisposable
     public void SetInterview(long id, string dir)
     {
         using var command = _connection.CreateCommand();
-        command.CommandText = "UPDATE sessions SET mode = 'interview', interview_dir = $dir WHERE id = $id";
+        command.CommandText = "UPDATE sessions SET mode = $mode, interview_dir = $dir WHERE id = $id";
+        command.Parameters.AddWithValue("$mode", SessionRecord.InterviewMode);
         command.Parameters.AddWithValue("$dir", dir);
         command.Parameters.AddWithValue("$id", id);
         command.ExecuteNonQuery();
@@ -284,6 +463,28 @@ public sealed class Store : IDisposable
         using var command = _connection.CreateCommand();
         command.CommandText = sql;
         return command.ExecuteScalar();
+    }
+
+    private List<string> Strings(string sql)
+    {
+        using var command = _connection.CreateCommand();
+        command.CommandText = sql;
+        using var reader = command.ExecuteReader();
+        var values = new List<string>();
+        while (reader.Read()) values.Add(reader.GetString(0));
+        return values;
+    }
+
+    /// <summary>
+    /// Run <paramref name="work"/> atomically. Commands made with <c>CreateCommand</c> inside
+    /// it join the connection's open transaction.
+    /// </summary>
+    internal T InTransaction<T>(Func<T> work)
+    {
+        using var transaction = _connection.BeginTransaction();
+        var result = work();
+        transaction.Commit();
+        return result;
     }
 
     public void Dispose() => _connection.Dispose();

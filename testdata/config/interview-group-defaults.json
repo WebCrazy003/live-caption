@@ -16,11 +16,13 @@
     "interview.answer_length": "medium",
     "interview.custom_instructions": "$default",
     "interview.hotkey": "F8",
+    "interview.screenshot_hotkey": "F9",
     "interview.send_mode": "since_last_ask",
     "interview.send_sentences": 3,
     "interview.max_words": 400,
     "interview.include_clipboard_images": false,
     "interview.clear_clipboard_images_after_send": true,
-    "interview.busy_policy": "interrupt"
+    "interview.busy_policy": "interrupt",
+    "interview.panel_layout": "automatic"
   }
 }

@@ -31,7 +31,22 @@ public sealed class AppEnvironment : IDisposable
             ConfigWasRepaired = repaired;
         }
 
-        Store = store ?? new Store();
+        if (store is null)
+        {
+            Store = new Store();
+            // Sessions saved before captions moved into the database get them copied in from
+            // their transcript files (specs/SPEC-16 §2.3). Off the UI thread and on its own
+            // connection, because a file on an offline network drive can block for seconds.
+            _ = Task.Run(() =>
+            {
+                try { using var importer = new Store(); importer.ImportTranscriptFiles(); }
+                catch (Exception) { }   // the sessions stay listed; only their text is missing
+            });
+        }
+        else
+        {
+            Store = store;
+        }
 
         // §9.4: journals that outlived their session mean the app quit or crashed mid
         // recording. Their captions are on disk and can still become transcripts.
@@ -93,35 +108,33 @@ public sealed class AppEnvironment : IDisposable
         var durationMs = session.Segments.Max(s => s.TEndMs);
         var name = Config.General.SessionNamePrefix + TimeFormat.FileStamp(start) + " (recovered)";
 
+        // A recovery that cannot reach the database keeps its journal, to be retried.
+        SessionRecord saved;
         try
         {
-            var result = TranscriptWriter.Save(transcript, Config.General.TranscriptFolder, name,
-                                               start, end, durationMs / 1000,
-                                               Config.Caption.ShowTimestamps);
-
-            try
+            saved = Store.Insert(new SessionRecord
             {
-                Store.Insert(new SessionRecord
-                {
-                    SessionName = name,
-                    CreatedAt = TimeFormat.Iso(start),
-                    EndedAt = TimeFormat.Iso(end),
-                    DurationSeconds = durationMs / 1000,
-                    TranscriptFile = result.TxtPath,
-                });
-            }
-            catch (Exception) { /* the transcript is saved; the index row is a convenience */ }
-
-            Journal.Remove(session.Path);
-            _pending.RemoveAll(p => p.Path == session.Path);
-            return true;
+                SessionName = name,
+                CreatedAt = TimeFormat.Iso(start),
+                EndedAt = TimeFormat.Iso(end),
+                DurationSeconds = durationMs / 1000,
+            }, session.Segments);
         }
         catch (Exception)
         {
-            // Leave the journal alone. A recovery that cannot be written is one to retry,
-            // not one to throw away.
             return false;
         }
+
+        try
+        {
+            SessionFiles.Export(Store, saved.Id!.Value, transcript, name, start, end, durationMs / 1000,
+                                Config.General.TranscriptFolder, Config.Caption.ShowTimestamps);
+        }
+        catch (Exception) { /* saved; only the export is missing */ }
+
+        Journal.Remove(session.Path);
+        _pending.RemoveAll(p => p.Path == session.Path);
+        return true;
     }
 
     /// <summary>Throw a leftover journal away without saving it.</summary>

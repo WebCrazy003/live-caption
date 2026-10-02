@@ -20,7 +20,7 @@ public readonly record struct TranscriptSaveResult(string TxtPath, string JsonPa
 public static class TranscriptWriter
 {
     /// <summary>Sidecar shape — session metadata plus the full segment list, keys sorted.</summary>
-    private sealed record Sidecar(
+    internal sealed record Sidecar(
         [property: JsonPropertyName("duration_seconds")] int DurationSeconds,
         [property: JsonPropertyName("ended_at")] string EndedAt,
         [property: JsonPropertyName("segments")] IReadOnlyList<TranscriptSegment> Segments,

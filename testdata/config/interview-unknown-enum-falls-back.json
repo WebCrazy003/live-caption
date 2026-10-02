@@ -1,7 +1,7 @@
 {
   "name": "interview-unknown-enum-falls-back",
   "description": "An `interview` enum key holding a string this build does not know (e.g. written by a newer build) falls back to that key's default; it must NOT trip the corrupt→repair path or disturb sibling keys. (A wrong JSON type still repairs, as everywhere else.)",
-  "input": "{ \"schema_version\": 2, \"interview\": { \"hotkey\": \"Ctrl+Shift+Space\", \"send_mode\": \"telepathy\", \"answer_length\": \"verbose\", \"busy_policy\": \"queue\", \"max_words\": 120 } }",
+  "input": "{ \"schema_version\": 2, \"interview\": { \"hotkey\": \"Ctrl+Shift+Space\", \"send_mode\": \"telepathy\", \"answer_length\": \"verbose\", \"busy_policy\": \"queue\", \"max_words\": 120, \"panel_layout\": \"diagonal\", \"screenshot_hotkey\": \"Ctrl+F9\" } }",
   "expect_repaired": false,
   "expect_backup_count": 0,
   "expect": {
@@ -10,6 +10,8 @@
     "interview.answer_length": "$default",
     "interview.busy_policy": "queue",
     "interview.max_words": 120,
-    "interview.mode": "$default"
+    "interview.mode": "$default",
+    "interview.panel_layout": "$default",
+    "interview.screenshot_hotkey": "Ctrl+F9"
   }
 }

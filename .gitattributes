@@ -1,0 +1,8 @@
+# Text files are stored with LF. These must also be LF in the working tree on Windows:
+# the interview prompts are compared byte for byte against testdata/ (specs/SPEC-16 §2.6),
+# and a CRLF checkout (core.autocrlf=true) would put \r into C# raw strings and vectors.
+* text=auto
+*.cs text eol=lf
+*.swift text eol=lf
+*.xaml text eol=lf
+testdata/** text eol=lf

@@ -151,10 +151,16 @@ public sealed record Config
         [JsonPropertyName("max_words")] public int MaxWords { get; set; } = 400;
         [JsonPropertyName("mode")] public string Mode { get; set; } = "caption";
         [JsonPropertyName("model")] public string Model { get; set; } = "";
+
+        /// <summary><c>automatic</c> (by window width) | <c>side_by_side</c> | <c>stacked</c>.</summary>
+        [JsonPropertyName("panel_layout")] public string PanelLayout { get; set; } = "automatic";
         [JsonPropertyName("prep_reasoning_effort")] public string PrepReasoningEffort { get; set; } = "medium";
         [JsonPropertyName("privacy_acknowledged")] public bool PrivacyAcknowledged { get; set; }
 
         [JsonPropertyName("reasoning_effort")] public string ReasoningEffort { get; set; } = "low";
+
+        /// <summary>The area-screenshot hotkey (macOS <c>Hotkey.defaultScreenshotString</c>).</summary>
+        [JsonPropertyName("screenshot_hotkey")] public string ScreenshotHotkey { get; set; } = "F9";
         [JsonPropertyName("send_mode")] public string SendMode { get; set; } = "since_last_ask";
         [JsonPropertyName("send_sentences")] public int SendSentences { get; set; } = 3;
 
@@ -164,6 +170,7 @@ public sealed record Config
             AnswerLength = Known(AnswerLength, "medium", "short", "medium", "long");
             SendMode = Known(SendMode, "since_last_ask", "since_last_ask", "last_sentences");
             BusyPolicy = Known(BusyPolicy, "interrupt", "interrupt", "queue");
+            PanelLayout = Known(PanelLayout, "automatic", "automatic", "side_by_side", "stacked");
         }
 
         private static string Known(string? value, string fallback, params string[] allowed) =>

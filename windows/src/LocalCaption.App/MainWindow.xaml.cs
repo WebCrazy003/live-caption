@@ -906,24 +906,27 @@ public partial class MainWindow : ChromeWindow
     // ── refresh ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Re-read the list, then look for rows whose transcript is no longer on disk.
+    /// Re-read the list, then look for rows that hold nothing: no captions in the database
+    /// and no transcript on disk.
     /// </summary>
     /// <remarks>
-    /// The list is an index; the files are the truth (§7.4). Someone who clears out the
-    /// transcripts folder in Explorer is left with a list of sessions that open nothing, and
-    /// until now found out one "file not found" at a time. This finds them all at once and
-    /// offers to clear them — offers, because a folder on an unplugged drive looks exactly
-    /// the same as a folder that was emptied, and those rows are worth keeping.
+    /// The captions live in the database (specs/SPEC-16 §2.3) and the <c>.txt</c> is only an
+    /// export, so a deleted transcript file is not a lost session — opening it writes a fresh
+    /// one. What is worth clearing is a row with no captions at all and no file to read them
+    /// from. That is offered, not done, because a folder on an unplugged drive looks exactly
+    /// like one that was emptied.
     /// </remarks>
     private void OnRefreshSessions(object sender, RoutedEventArgs e)
     {
         RefreshSessions();
 
         var all = _env.Store.All(SessionSort.CreatedDesc, null);
-        var orphans = all.Where(r => string.IsNullOrEmpty(r.TranscriptFile) || !File.Exists(r.TranscriptFile)).ToList();
+        var withCaptions = _env.Store.SessionIdsWithSegments();
+        var orphans = all.Where(r =>
+            !(r.Id is { } id && withCaptions.Contains(id)) && !SessionFiles.HasExport(r)).ToList();
         if (orphans.Count == 0)
         {
-            Flash(all.Count == 0 ? "✓ NO SESSIONS" : $"✓ ALL {all.Count} TRANSCRIPTS FOUND");
+            Flash(all.Count == 0 ? "✓ NO SESSIONS" : $"✓ ALL {all.Count} SESSIONS HAVE THEIR CAPTIONS");
             return;
         }
 
@@ -931,10 +934,10 @@ public partial class MainWindow : ChromeWindow
         if (orphans.Count > 6) names += $"\n  ·  …and {orphans.Count - 6} more";
         var every = orphans.Count == all.Count && all.Count > 1;
 
-        var clear = ConfirmDialog.Ask(this, "Transcripts not found",
+        var clear = ConfirmDialog.Ask(this, "Sessions with no captions",
             (orphans.Count == 1
-                ? "The transcript for 1 session is no longer on disk:"
-                : $"The transcripts for {orphans.Count} of {all.Count} sessions are no longer on disk:") +
+                ? "1 session has no saved captions and its transcript is no longer on disk:"
+                : $"{orphans.Count} of {all.Count} sessions have no saved captions and their transcripts are no longer on disk:") +
             $"\n\n{names}\n\n" +
             (every ? "That is every session — if the folder is on a drive that is not connected right now, keep them.\n\n" : "") +
             "Clear them from the list? Nothing on disk is touched.",
@@ -1081,6 +1084,11 @@ public partial class MainWindow : ChromeWindow
 
     private SessionRow? Selected() => SessionList.SelectedItem as SessionRow;
 
+    /// <summary>The session's <c>.txt</c>, rewritten from its saved captions if the file is gone.</summary>
+    private string? Export(SessionRecord record) =>
+        SessionFiles.EnsureExport(_env.Store, record, _env.Config.General.TranscriptFolder,
+                                  _env.Config.Caption.ShowTimestamps);
+
     private void OpenSelected()
     {
         var rows = SelectedRows();
@@ -1090,30 +1098,36 @@ public partial class MainWindow : ChromeWindow
             if (rows.Count > 12 && !ConfirmDialog.Ask(this, "Open transcripts",
                     $"Open all {rows.Count} transcripts, each in its own window?", $"Open {rows.Count}")) return;
 
-            var missing = 0;
+            int missing = 0, failed = 0;
             foreach (var each in rows)
             {
-                var file = each.Record.TranscriptFile;
-                if (string.IsNullOrEmpty(file) || !File.Exists(file)) { missing++; continue; }
-                try { Process.Start(new ProcessStartInfo(file) { UseShellExecute = true }); }
-                catch (Exception) { missing++; }
+                try
+                {
+                    if (Export(each.Record) is not { } file) { missing++; continue; }
+                    Process.Start(new ProcessStartInfo(file) { UseShellExecute = true });
+                }
+                catch (Exception) { failed++; }
             }
-            if (missing > 0) Flash($"{missing} of {rows.Count} are no longer on disk — try Refresh", ok: false);
+            if (missing > 0) Flash($"{missing} of {rows.Count} have no captions to open — try Refresh", ok: false);
+            else if (failed > 0) Flash($"{failed} of {rows.Count} could not be opened — check the transcript folder", ok: false);
             return;
         }
 
         if (Selected() is not { } row) return;
-        var path = row.Record.TranscriptFile;
 
-        if (string.IsNullOrEmpty(path))
+        string? path;
+        try { path = Export(row.Record); }
+        catch (Exception ex)
         {
-            Explain(row, "This session has no transcript file recorded against it.");
+            MessageBox.Show(this,
+                $"The transcript could not be written to the transcript folder.\n\n{ex.Message}",
+                "Local Caption", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
-        if (!File.Exists(path))
+        if (path is null)
         {
-            Explain(row, $"That transcript is no longer on disk.\n\n{path}");
+            Explain(row, "This session has no saved captions, and no transcript on disk.");
             return;
         }
 

@@ -55,8 +55,8 @@ public sealed class SessionController : IAsyncDisposable
         Orchestrator = new StreamingOrchestrator();
         Orchestrator.OnFinal = IngestFinalAsync;
         Orchestrator.OnChanged = () => Changed?.Invoke();
-        Orchestrator.OnSpeechEnded = interim => CopyLastN(interim);
-        Orchestrator.OnFinalized = pending => CopyLastN(pending);
+        Orchestrator.OnSpeechEnded = AutoCopyLastN;
+        Orchestrator.OnFinalized = AutoCopyLastN;
         Orchestrator.OnCaptureMustPause = () =>
         {
             _capturePauseRequested = true;
@@ -72,6 +72,8 @@ public sealed class SessionController : IAsyncDisposable
     public string Current { get; private set; } = "";
     public string Elapsed { get; private set; } = "00:00:00";
     public string? SavedTranscriptPath { get; private set; }
+    /// <summary>The <c>sessions</c> row of the last save — the captions live there.</summary>
+    public long? SavedSessionId { get; private set; }
     public string? SaveError { get; private set; }
 
     /// <summary>Raised whenever anything a view would render has changed.</summary>
@@ -129,6 +131,7 @@ public sealed class SessionController : IAsyncDisposable
             _paragraphs.Clear();
             Current = "";
             SavedTranscriptPath = null;
+            SavedSessionId = null;
             SaveError = null;
 
             try
@@ -494,12 +497,16 @@ public sealed class SessionController : IAsyncDisposable
 
     /// <summary>
     /// At an endpoint, copy the latest interim rather than waiting for the final model; the
-    /// final refreshes it once the matching provisional is retired.
+    /// final refreshes it once the matching provisional is retired. Only with Auto-copy on —
+    /// otherwise the clipboard is the user's (SPEC-WINDOWS §12.1, specs/SPEC-16 §2.5).
     /// </summary>
+    private void AutoCopyLastN(string interim)
+    {
+        if (_env.Config.Clipboard.AutoUpdate) CopyLastN(interim);
+    }
+
     private void CopyLastN(string interim)
     {
-        if (!_env.Config.Clipboard.AutoUpdate && interim.Length > 0) return;
-
         var text = Sentences.LastN(CommittedText, interim, _env.Config.Clipboard.RecentSentences);
         if (text.Length == 0) return;
         if (_env.Clipboard?.Invoke(text) == true) Copied?.Invoke();
@@ -508,11 +515,12 @@ public sealed class SessionController : IAsyncDisposable
     // ── save ─────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Write <c>.txt</c> + <c>.json</c> and the database row, then delete the journal.
+    /// Write the database row with its caption segments, then the <c>.txt</c> + <c>.json</c>
+    /// export, and delete the journal — the macOS order (specs/SPEC-16 §2.3).
     /// </summary>
     /// <remarks>
-    /// Returns false on failure <b>and keeps the journal</b>, so a session that could not be
-    /// written is still recoverable on the next launch rather than lost to a full disk.
+    /// The database is the save: if it fails this returns false <b>and keeps the journal</b>,
+    /// so the session is still recoverable on the next launch. A failed export only warns.
     /// </remarks>
     private bool Save()
     {
@@ -525,42 +533,42 @@ public sealed class SessionController : IAsyncDisposable
         var ended = DateTimeOffset.Now;
         var duration = Orchestrator.RecordedMs / 1000;
 
+        SessionRecord saved;
         try
         {
-            var result = TranscriptWriter.Save(_transcript, _env.Config.General.TranscriptFolder,
-                                               SessionName, _startedAt, ended, duration,
-                                               _env.Config.Caption.ShowTimestamps);
-
-            try
+            saved = _env.Store.Insert(new SessionRecord
             {
-                _env.Store.Insert(new SessionRecord
-                {
-                    SessionName = SessionName,
-                    CreatedAt = TimeFormat.Iso(_startedAt),
-                    EndedAt = TimeFormat.Iso(ended),
-                    DurationSeconds = duration,
-                    TranscriptFile = result.TxtPath,
-                });
-            }
-            catch (Exception)
-            {
-                // The transcript is on disk, which is what matters. A missing index row is a
-                // session that will not appear in the list, not a lost interview.
-            }
-
-            _journal?.DeleteFile();
-            _journal?.Dispose();
-            _journal = null;
-
-            SavedTranscriptPath = result.TxtPath;
-            SaveError = null;
-            return true;
+                SessionName = SessionName,
+                CreatedAt = TimeFormat.Iso(_startedAt),
+                EndedAt = TimeFormat.Iso(ended),
+                DurationSeconds = duration,
+            }, _transcript.Segments);
         }
         catch (Exception e)
         {
-            SaveError = $"Could not save the transcript: {e.Message}";
+            SaveError = $"Could not save the session: {e.Message}";
             return false;      // keep the journal — the session stays recoverable
         }
+
+        SavedSessionId = saved.Id;
+        _journal?.DeleteFile();
+        _journal?.Dispose();
+        _journal = null;
+        SaveError = null;
+        SavedTranscriptPath = null;
+
+        try
+        {
+            SavedTranscriptPath = SessionFiles.Export(_env.Store, saved.Id!.Value, _transcript, SessionName,
+                                                      _startedAt, ended, duration,
+                                                      _env.Config.General.TranscriptFolder,
+                                                      _env.Config.Caption.ShowTimestamps);
+        }
+        catch (Exception e)
+        {
+            SaveError = $"Saved, but the transcript file export failed: {e.Message}";
+        }
+        return true;
     }
 
     // ── clock (sample-based, frozen while paused) ────────────────────────────────────────
