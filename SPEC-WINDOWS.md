@@ -1181,6 +1181,10 @@ CUDA/CPU offload decision.
 
 ### 16.8 Deferred: Interview Assist on Windows
 
+> **Now specified in [specs/SPEC-16](specs/SPEC-16-windows-parity.md)** (2026-10-02), together
+> with the database-interop and caption-side gaps. SPEC-16 describes the Mac as built, which has
+> moved past SPEC-11..15.
+
 The macOS Interview Assist feature ([specs/SPEC-11](specs/SPEC-11-interview-assist.md)–15)
 is built Mac-first against a shared contract — its §"Windows compatibility contract" lists
 what must match (config keys, hotkey grammar, `AskSelection`, prompt text, Codex JSON-RPC

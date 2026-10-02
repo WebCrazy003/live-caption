@@ -36,6 +36,7 @@ Legend: ✅ done · 🟢 mostly · 🟡 partial · 🔴 barely · ⬜ not starte
 | 13 | [Interview library & preparation](SPEC-13-interview-prep.md) | 🟢 built | skills/CV/JD library, mode picker, Prepare on one thread |
 | 14 | [Live ask: hotkey, selection, screenshots](SPEC-14-live-ask.md) | 🟢 built | F8 → answer streaming; clipboard images; Answers panel |
 | 15 | [Interview window, results & Settings](SPEC-15-interview-ui-results.md) | 🟢 built | compact layout, end summary, history, Settings → Interview |
+| 16 | [Windows parity: what macOS has that Windows does not](SPEC-16-windows-parity.md) | ⬜ not started | DB interop + v4 segments, Interview mode on Windows, caption-side gaps |
 
 **Built:** the Python **spike** (`../spike/`) that proved the ASR architecture, the
 **minimal app** (`../minimal/`) vertical slice, and the **full app** (`../app/`, Phases 1–5).
