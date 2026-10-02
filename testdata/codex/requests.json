@@ -86,6 +86,31 @@
       }
     },
     {
+      "build": "turn_start",
+      "args": {
+        "thread_id": "thr",
+        "effort": "medium",
+        "model": "gpt-6.1-sol",
+        "input": [
+          {
+            "type": "text",
+            "text": "Q"
+          }
+        ]
+      },
+      "expect": {
+        "threadId": "thr",
+        "effort": "medium",
+        "model": "gpt-6.1-sol",
+        "input": [
+          {
+            "type": "text",
+            "text": "Q"
+          }
+        ]
+      }
+    },
+    {
       "build": "turn_interrupt",
       "args": {
         "thread_id": "thr",

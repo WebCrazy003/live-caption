@@ -10,7 +10,8 @@ protocol AnswerEngine: AnyObject, Sendable {
     func startThread(_ cfg: ThreadConfig) async throws -> String
     func resumeThread(id: String, _ cfg: ThreadConfig) async throws
     /// One turn. Effort is per turn: Codex only accepts it on `turn/start`, and it persists.
-    func send(threadId: String, input: [CodexRPC.Input], effort: String) -> AsyncThrowingStream<AnswerEvent, Error>
+    /// `model` (when non-nil) switches the thread's model from this turn on.
+    func send(threadId: String, input: [CodexRPC.Input], effort: String, model: String?) -> AsyncThrowingStream<AnswerEvent, Error>
     func interrupt(threadId: String) async
     func archiveThread(id: String) async
     func startLogin() async throws -> LoginTicket

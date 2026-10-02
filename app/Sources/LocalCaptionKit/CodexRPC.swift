@@ -76,8 +76,9 @@ public enum CodexRPC {
     }
 
     /// `turn/start`. `effort` goes on every turn: Codex persists a turn's effort to later turns.
-    public static func turnStartParams(threadId: String, input: [Input], effort: String) -> JSONValue {
-        .object([
+    /// `model`, when given, switches the thread's model from this turn on (the picker changed).
+    public static func turnStartParams(threadId: String, input: [Input], effort: String, model: String? = nil) -> JSONValue {
+        var params: [String: JSONValue] = [
             "threadId": .string(threadId),
             "input": .array(input.map {
                 switch $0 {
@@ -86,7 +87,9 @@ public enum CodexRPC {
                 }
             }),
             "effort": .string(effort),
-        ])
+        ]
+        if let model { params["model"] = .string(model) }
+        return .object(params)
     }
 
     public static func turnInterruptParams(threadId: String, turnId: String) -> JSONValue {

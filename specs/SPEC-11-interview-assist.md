@@ -133,7 +133,6 @@ a string this build doesn't know falls back to that key's default (no repair); a
 | `prep_reasoning_effort` | string | `"medium"` | For skill steps and the summary (not time-critical). |
 | `answer_length` | `"short"` \| `"medium"` \| `"long"` | `"medium"` | 2–3 / 4–6 / 8–10 spoken sentences. |
 | `custom_instructions` | string | `""` | Global answer instructions, prefilled into every new interview's setup. |
-| `quick_prompts` | `[{label, text}]` | 3 defaults | Buttons on the Answers panel ([SPEC-14 §Answers panel](SPEC-14-live-ask.md#answers-panel)). |
 | `hotkey` | string | `"F8"` | Grammar below. |
 | `send_mode` | `"since_last_ask"` \| `"last_sentences"` | `"since_last_ask"` | [SPEC-14 §What gets sent](SPEC-14-live-ask.md#what-gets-sent). |
 | `send_sentences` | int | `3` | For `last_sentences`. Clamp 1…20. |
@@ -142,9 +141,8 @@ a string this build doesn't know falls back to that key's default (no repair); a
 | `clear_clipboard_images_after_send` | bool | `true` | Remove those images from the clipboard once sent. |
 | `busy_policy` | `"interrupt"` \| `"queue"` | `"interrupt"` | What an Ask does while an answer is still streaming. |
 
-**Default `quick_prompts`:** `Shorter` → "Make that answer shorter — two sentences I can say.",
-`Example` → "Give me one concrete example from my CV that supports that answer.",
-`Simpler` → "Say that again in simpler, more natural spoken English."
+`quick_prompts` was removed on 2026-10-02 (owner: not needed), as were `show_key_points` and
+`summarize_on_end`; an old `config.json` holding them loads fine — unknown keys are ignored.
 
 ### Hotkey string grammar (shared)
 
@@ -368,7 +366,7 @@ machines before the feature is ported. Windows-specific risks to verify on the G
 | 1 ✅ | **11** (this) | Kit: config group, hotkey parser, `AskSelection`, `InterviewPrompt`, records, vectors; DB migration | `swift test` green incl. new vectors |
 | 2 ✅ | [12](SPEC-12-codex-engine.md) | `CodexAppServerEngine`: process, JSON-RPC, lockdown, streaming, models, usage, sign-in | Engine passes its scripted fake-server tests + a live smoke run |
 | 3 ✅ | [13](SPEC-13-interview-prep.md) | Library, mode picker, CV upload, manual skill steps (rebuilt 2026-10-02) | Skill steps on one thread |
-| 4 ✅ | [14](SPEC-14-live-ask.md) | Hotkey, selection, clipboard images, Answers panel, typed/quick prompts | F8 during a real call → answer streaming |
+| 4 ✅ | [14](SPEC-14-live-ask.md) | Hotkey, selection, screenshots, Answers panel, typed prompts | F8 during a real call → answer streaming |
 | 5 ✅ | [15](SPEC-15-interview-ui-results.md) | Compact layout, end-of-interview summary, history, Settings (usage) | Full acceptance below |
 
 Step 1 can start before S0 finishes (it is engine-independent). Steps 2–5 wait for S0.
@@ -416,5 +414,6 @@ Step 1 can start before S0 finishes (it is engine-independent). Steps 2–5 wait
 2. ✅ **Key points in Interview mode** — moot: the Key points feature (SPEC-10) was removed on
    2026-10-02, and `show_key_points` with it.
 3. **Custom prompts interpretation** — this spec reads "custom prompts" as (a) global + per-interview
-   instructions, (b) saved quick-prompt buttons, (c) a typed-message box. Confirm.
+   instructions, (b) saved quick-prompt buttons, (c) a typed-message box. → Owner, 2026-10-02:
+   no quick-prompt buttons; keep custom instructions and the typed box.
 4. ✅ **Answer language** — English only. Confirmed by the user 2026-10-02.

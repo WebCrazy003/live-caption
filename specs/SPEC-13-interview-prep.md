@@ -12,6 +12,9 @@ layout, records), SPEC-12 (engine)
 
 ## Change log
 
+- **2026-10-02, latest (owner):** the four parts are configuration only; one **Start preparation**
+  button runs them in order. Model and effort are chosen in the panel before starting. The
+  quick-prompt buttons are removed.
 - **2026-10-02, later (owner):** the preparation panel is four numbered parts — ① Discovery CV
   (includes the CV upload), ② Discovery JD (paste), ③ Apply instruction (one of three modes),
   ④ Live coding & design (optional, a checkbox). The four skill `.md` files are loaded in
@@ -79,26 +82,34 @@ dashes, ` (2)` → `-2` on collision — mirrored on Windows.
 Right of the captions in Interview mode (layout rules in SPEC-15). Top to bottom:
 
 1. **Header** — "Interview", the **profile buttons** *Intro · Tech · Behavioral* (each runs
-   `/apply-instruction <profile>`; the active one is highlighted; usable before and during the
-   interview), **Live coding** (runs `/live-coding-design`; enabled once Tech is active, shown as
-   active until another profile is applied), Setup toggle, Stop (while streaming).
+   `/apply-instruction <profile>` at once and updates ③ — for switching mid-interview), **Live
+   coding** (runs `/live-coding-design`; enabled once Tech is active), Setup toggle, Stop
+   (while streaming).
 2. **Preparation** (expanded before Start, collapsed once recording; the toggle reopens it):
    - Codex status / sign-in / Plus usage (`CodexStatusRow`).
    - If any of the four skills is missing: a banner naming them, with a link to Settings.
    - **① Discovery CV** — CV picker (uploaded CVs) + **Upload CV…** (`.pdf`/`.md`/`.txt`, added and
-     selected) + **Run Discovery CV** (enabled when a CV is selected).
-   - **② Discovery JD** — paste box + **Run Discovery JD** (enabled when it has text).
-   - **③ Apply instruction** — three mode buttons *Intro · Tech · Behavioral*; choosing one applies
-     it (`/apply-instruction intro|tech|cultural`); the active one is marked.
-   - **④ Live coding & design (optional)** — a checkbox, enabled once Tech is active. Ticking runs
-     `/live-coding-design`; unticking re-applies the current profile (which, per the skill,
-     replaces the live-coding activation).
-   - Each part shows ✓ once done; ① and ② can be run again.
+     selected).
+   - **② Discovery JD** — paste box.
+   - **③ Apply instruction** — a segmented choice *Intro · Tech · Behavioral* (chosen here, applied
+     by Start preparation as `/apply-instruction intro|tech|cultural`).
+   - **④ Live coding & design (optional)** — a checkbox; needs the Tech mode.
+   - **Model, Preparation effort, Answer effort** pickers — the same keys as Settings
+     (`interview.model`, `prep_reasoning_effort`, `reasoning_effort`).
+   - **Start preparation** runs ① → ② → ③ → ④ (if ticked) as skill turns, in order, with a spinner
+     on the running part and ✓ on finished ones. Disabled until the skills are loaded and ①, ②, ③
+     are set (the reason is shown); live coding without Tech is refused. A step that doesn't
+     complete stops the run: the part is marked, and **Continue** resumes from that step (or
+     **Start over** reruns everything). When every planned step has completed with the chosen
+     mode and live-coding state, the panel shows **Prepared** and the button reads **Prepare
+     again**. The parts are locked while it runs.
    - **Start over** (until recording starts) discards the preparation.
+   - The model can be changed at any time: the next turn sends it in `turn/start.model` (Codex
+     keeps it for later turns), and the record's `model` follows.
    - In Interview mode **Start is disabled until all four skills are loaded** (tooltip says why).
-3. **Conversation** — one card per turn (skill steps, asks, typed, quick, regenerate; SPEC-14).
+3. **Conversation** — one card per turn (skill steps, asks, typed, regenerate; SPEC-14).
    Skill cards are collapsed except the newest.
-4. **Bottom bar** — Ask, quick prompts, "Type to the coach…" (SPEC-14).
+4. **Bottom bar** — Ask, "Type to the coach…" with Send (SPEC-14).
 
 ### Settings → Interview → Skills
 

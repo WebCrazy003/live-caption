@@ -60,6 +60,11 @@ struct SessionListView: View {
         .onChange(of: filter) { reload() }
         .onReceive(NotificationCenter.default.publisher(for: .newSession)) { _ in reload() }
         .onReceive(NotificationCenter.default.publisher(for: .sessionsChanged)) { _ in reload() }
+        // ⌫ on the selected session, and the viewer's Delete… button, open the same confirmation.
+        .onDeleteCommand { if let id = selection { deleteTarget = sessions.first { $0.id == id } } }
+        .onReceive(NotificationCenter.default.publisher(for: .requestDeleteSession)) { note in
+            if let id = note.object as? Int64 { deleteTarget = sessions.first { $0.id == id } }
+        }
         .sheet(item: $renameTarget) { rec in renameSheet(rec) }
         .confirmationDialog("Delete “\(deleteTarget?.sessionName ?? "")”?",
                             isPresented: Binding(get: { deleteTarget != nil },

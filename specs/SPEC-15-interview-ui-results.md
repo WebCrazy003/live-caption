@@ -37,11 +37,10 @@ width of the caption area:
 Extend the existing transport-bar pattern (`BarDensity` + `ViewThatFits` in
 `ActiveSessionView.swift`) to the Answers bottom bar and the header. Densities, roomiest first:
 
-1. **Full** — labelled Ask (`Ask  F8`), labelled quick prompts, text field.
-2. **Quick prompts in a menu** — quick prompts move into a `⋯` menu.
-3. **Icon actions** — Ask, Stop, Copy, Regenerate become icon-only.
-4. **Icon everything** — transport and answers bars icon-only; the text field collapses to a
-   *keyboard* button that opens a popover with the field.
+1. **Full** — labelled Ask (`Ask  F8`) beside the type box with Send.
+2. **Icon Ask** — Ask becomes icon-only.
+3. **Icon everything** — transport and answers bars icon-only; the type box collapses to a
+   *keyboard* button that opens a popover with it.
 
 Every control that loses its text keeps its **tooltip** and **accessibility label** (same rule as
 today's transport bar). No control is ever clipped or hidden without an alternative.
@@ -111,7 +110,9 @@ from the sessions list (owner, 2026-10-02: "restores transcript / AI Q&A history
       when `mode = 'interview'`). Caption sessions show the transcript as before.
 - [ ] Opening a past session never disturbs the live one: the session and interview controllers
       belong to `AppEnvironment`, not to the session screen.
-- [ ] **Delete** (SPEC-06 confirm flow) offers, checked by default: *"Also delete the interview
+- [ ] **Delete** — from the session's context menu, the **⌫** key on the selected session, or the
+      **Delete…** button in the session view's header — all open the same confirmation (SPEC-06),
+      which offers, checked by default: *"Also delete the interview
       data (CV text, Q&A, screenshots)"* → deletes the interview's rows and archives the Codex
       thread (SPEC-12).
 - [ ] **Crash recovery:** `interview.json` stores `capture_session_uuid` (the journal session id).
@@ -131,7 +132,7 @@ A new section in `SettingsView`, mirroring the existing sections. All keys are S
 | **Hotkey** | Record shortcut, Reset to F8, Mac F-key hint, registration status. |
 | **Sending** | Send mode (*Everything since my last ask* / *Last N sentences* + stepper); max words; when busy (*Interrupt and answer the new question* / *Queue it*). |
 | **Screenshots** | Include clipboard images (off by default, with a one-line privacy note); remove them from the clipboard after sending. |
-| **Prompts** | Custom instructions (multi-line, prefilled into each new interview); quick prompts editor (add, remove, reorder; label + text). |
+| **Prompts** | Custom instructions (multi-line; appended to the coach's base instructions). |
 | **Library** | *Open library…* (SPEC-13). |
 | **Privacy** | What Interview mode sends to OpenAI, and *Show the notice again*. |
 

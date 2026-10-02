@@ -40,10 +40,14 @@ final class InterviewController: ObservableObject {
 
     enum ThreadState: Equatable { case none, opening, open, failed(String) }
 
-    /// The setup form (SPEC-13 §Interview panel).
+    /// The preparation form (SPEC-13 §Preparation): what Start preparation will run.
     struct Draft: Equatable {
         var cvId: String?
         var jobDescription = ""
+        /// ③ — chosen here, applied by Start preparation.
+        var profile: Profile?
+        /// ④ — optional.
+        var liveCoding = false
     }
 
     @Published var draft: Draft
@@ -83,6 +87,8 @@ final class InterviewController: ObservableObject {
         if let last = (try? env.store.allInterviews())?.first {
             let ids = Set(last.setup.documentIds)
             d.cvId = lib.documents(of: .cv).first { ids.contains($0.id) }?.id
+            d.profile = last.activeProfile.flatMap(Profile.init(rawValue:))
+            d.liveCoding = last.liveCodingActive
         }
         if d.cvId == nil { d.cvId = lib.documents(of: .cv).last?.id }
         return d
@@ -223,15 +229,64 @@ final class InterviewController: ObservableObject {
         (record?.setup.skillIds.contains(skill.id) ?? true) ? nil : skill.id
     }
 
-    /// Part ④ checkbox: on runs `/live-coding-design`; off re-applies the current profile, which
-    /// (per the apply-instruction skill) replaces the live-coding activation.
-    func setLiveCoding(_ on: Bool) async {
-        if on {
-            guard !liveCodingActive else { return }
-            await run(.liveCoding)
-        } else if liveCodingActive, let profile = activeProfile {
-            await run(.applyInstruction, profile: profile)
+    // MARK: Start preparation (owner, 2026-10-02)
+
+    @Published private(set) var preparing = false
+    /// The step Start preparation stopped at, so Continue can resume there.
+    @Published private(set) var preparationFailedAt: Step?
+
+    /// What Start preparation runs, in order: ① ② ③ and, when ticked, ④.
+    var preparationPlan: [(step: Step, profile: Profile?)] {
+        var plan: [(Step, Profile?)] = [(.discoveryCV, nil), (.discoveryJD, nil), (.applyInstruction, draft.profile)]
+        if draft.liveCoding { plan.append((.liveCoding, nil)) }
+        return plan
+    }
+
+    /// Why Start preparation can't run yet, or nil when it can.
+    var preparationBlocker: String? {
+        if !allSkillsLoaded { return "Load the 4 skills in Settings → Interview → Skills" }
+        if draft.cvId == nil { return "Choose or upload a CV (①)" }
+        if draft.jobDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Paste the job description (②)" }
+        if draft.profile == nil { return "Choose a mode (③)" }
+        if draft.liveCoding && draft.profile != .tech { return "Live coding needs the Tech mode (③)" }
+        return nil
+    }
+
+    /// Every planned step has completed on this thread, with the chosen mode and live-coding state.
+    var isPrepared: Bool {
+        isDone(.discoveryCV) && isDone(.discoveryJD) && activeProfile == draft.profile
+            && draft.profile != nil && liveCodingActive == draft.liveCoding
+    }
+
+    /// Run the plan in order; stop at the first step that doesn't complete. `resume` continues
+    /// from the failed step instead of starting over.
+    func startPreparation(resume: Bool = false) async {
+        guard preparationBlocker == nil, !preparing else { return }
+        preparing = true
+        defer { preparing = false }
+        var plan = preparationPlan
+        if resume, let failed = preparationFailedAt, let i = plan.firstIndex(where: { $0.step == failed }) {
+            plan = Array(plan[i...])
         }
+        preparationFailedAt = nil
+        for (step, profile) in plan {
+            let before = turns.count
+            await run(step, profile: profile)
+            let turn = turns.count > before ? turns.last : nil
+            guard turn?.status == .completed else {
+                preparationFailedAt = step
+                status = "\(step.title) didn't finish" + (turn?.error.map { ": \($0)" } ?? ".")
+                return
+            }
+        }
+        status = nil
+    }
+
+    /// Which part Start preparation is running now (for the panel's progress marks).
+    var runningStep: Step? {
+        guard isStreaming, let q = turns.last?.question, turns.last?.kind == .skill,
+              let name = InterviewRecord.skillName(q) else { return nil }
+        return Step(rawValue: name)
     }
 
     /// History and wrap-up: the CV and JD this interview used.
@@ -314,7 +369,8 @@ final class InterviewController: ObservableObject {
 
         let message = InterviewPrompt.summary(transcript: transcript)
         for await event in streamEvents(engine.send(threadId: thread, input: [.text(message)],
-                                                    effort: env.config.interview.prepReasoningEffort)) {
+                                                    effort: env.config.interview.prepReasoningEffort,
+                                                    model: modelSwitch())) {
             switch event {
             case .delta(let d): summaryText += d
             case .completed(let full):
@@ -390,7 +446,8 @@ final class InterviewController: ObservableObject {
         let input: [CodexRPC.Input] = [.text(text)] + files.map { .localImage(path: $0.path) }
         var final: InterviewRecord.TurnStatus = .failed
         for await event in streamEvents(engine.send(threadId: thread, input: input,
-                                                    effort: effort ?? env.config.interview.reasoningEffort)) {
+                                                    effort: effort ?? env.config.interview.reasoningEffort,
+                                                    model: modelSwitch())) {
             switch event {
             case .delta(let d):
                 update(n) { t in
@@ -530,9 +587,6 @@ final class InterviewController: ObservableObject {
                              images: pending.images, onAccepted: pending.onAccepted))
     }
 
-    func sendQuick(_ prompt: Config.Interview.QuickPrompt) async {
-        await submit(Request(kind: .quick, text: prompt.text, question: prompt.label))
-    }
 
     /// A different answer to the latest question (latest card only).
     func regenerate() async {
@@ -580,6 +634,15 @@ final class InterviewController: ObservableObject {
     func stopStreaming() async {
         guard let thread = record?.threadId, isStreaming else { return }
         await engine.interrupt(threadId: thread)
+    }
+
+    /// The model picker changed since the thread started → send the new model with this turn
+    /// (Codex keeps it for later turns). Nil when unchanged.
+    private func modelSwitch() -> String? {
+        let wanted = codex.resolvedModel(env.config.interview.model)
+        guard let current = record?.model, wanted != current else { return nil }
+        record?.model = wanted
+        return wanted
     }
 
     /// Short-lived PNG files for Codex's `localImage` input; deleted when the turn ends.

@@ -123,14 +123,6 @@ public sealed record Config
         [JsonPropertyName("prep_reasoning_effort")] public string PrepReasoningEffort { get; set; } = "medium";
         [JsonPropertyName("privacy_acknowledged")] public bool PrivacyAcknowledged { get; set; }
 
-        [JsonPropertyName("quick_prompts")]
-        public EquatableList<QuickPrompt> QuickPrompts { get; set; } =
-        [
-            new() { Label = "Shorter", Text = "Make that answer shorter — two sentences I can say." },
-            new() { Label = "Example", Text = "Give me one concrete example from my CV that supports that answer." },
-            new() { Label = "Simpler", Text = "Say that again in simpler, more natural spoken English." },
-        ];
-
         [JsonPropertyName("reasoning_effort")] public string ReasoningEffort { get; set; } = "low";
         [JsonPropertyName("send_mode")] public string SendMode { get; set; } = "since_last_ask";
         [JsonPropertyName("send_sentences")] public int SendSentences { get; set; } = 3;
@@ -145,28 +137,6 @@ public sealed record Config
 
         private static string Known(string? value, string fallback, params string[] allowed) =>
             value is not null && Array.IndexOf(allowed, value) >= 0 ? value : fallback;
-    }
-
-    /// <summary>
-    /// A list with value equality, so a record holding one still compares by contents (a
-    /// plain <see cref="List{T}"/> compares by reference and breaks write→read identity).
-    /// </summary>
-    public sealed class EquatableList<T> : List<T>, IEquatable<EquatableList<T>>
-    {
-        public bool Equals(EquatableList<T>? other) => other is not null && this.SequenceEqual(other);
-        public override bool Equals(object? obj) => Equals(obj as EquatableList<T>);
-        public override int GetHashCode()
-        {
-            var hash = new HashCode();
-            foreach (var item in this) hash.Add(item);
-            return hash.ToHashCode();
-        }
-    }
-
-    public sealed record QuickPrompt
-    {
-        [JsonPropertyName("label")] public string Label { get; set; } = "";
-        [JsonPropertyName("text")] public string Text { get; set; } = "";
     }
 
     /// <summary>

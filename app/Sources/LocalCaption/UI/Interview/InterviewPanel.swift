@@ -74,7 +74,7 @@ struct InterviewPanel: View {
         if compact {
             Menu {
                 ForEach(InterviewController.Profile.allCases) { p in
-                    Button(p.label) { Task { await interview.run(.applyInstruction, profile: p) } }
+                    Button(p.label) { Task { interview.draft.profile = p; await interview.run(.applyInstruction, profile: p) } }
                 }
             } label: { Text(interview.activeProfile?.label ?? "Profile") }
             .menuStyle(.borderlessButton).fixedSize()
@@ -83,7 +83,7 @@ struct InterviewPanel: View {
             HStack(spacing: 2) {
                 ForEach(InterviewController.Profile.allCases) { p in
                     let active = interview.activeProfile == p
-                    Button(p.label) { Task { await interview.run(.applyInstruction, profile: p) } }
+                    Button(p.label) { Task { interview.draft.profile = p; await interview.run(.applyInstruction, profile: p) } }
                         .buttonStyle(.bordered)
                         .tint(active ? .accentColor : nil)
                         .fontWeight(active ? .semibold : .regular)
@@ -99,7 +99,7 @@ struct InterviewPanel: View {
         let blocked = interview.blocker(.liveCoding)
         let active = interview.liveCodingActive
         let icon = active ? "chevron.left.forwardslash.chevron.right" : "curlybraces"
-        return Button { Task { await interview.run(.liveCoding) } } label: {
+        return Button { Task { interview.draft.liveCoding = true; await interview.run(.liveCoding) } } label: {
             if compact { Image(systemName: icon) } else { Label("Live coding", systemImage: icon) }
         }
         .buttonStyle(.bordered).controlSize(.small)
@@ -138,8 +138,10 @@ struct InterviewPanel: View {
 
     // MARK: Bottom bar (shrinks to icons as the panel narrows — SPEC-15 §Buttons shrink to icons)
 
-    private enum Density: Int, CaseIterable { case full, promptsInMenu, iconActions, iconEverything }
+    private enum Density: Int, CaseIterable { case full, iconAsk, iconEverything }
 
+    /// Ask and the type-to-coach box (with Send) on one row; narrower, Ask loses its label, then
+    /// the box folds into a keyboard button.
     private var bottomBar: some View {
         ViewThatFits(in: .horizontal) {
             ForEach(Density.allCases, id: \.self) { barRow($0) }
@@ -147,29 +149,16 @@ struct InterviewPanel: View {
     }
 
     private func barRow(_ d: Density) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                askButton(iconOnly: d.rawValue >= Density.iconActions.rawValue)
-                if d == .full {
-                    ForEach(env.config.interview.quickPrompts, id: \.self) { qp in
-                        Button(qp.label) { Task { await interview.sendQuick(qp) } }
-                            .help(qp.text)
-                    }
-                } else {
-                    Menu {
-                        ForEach(env.config.interview.quickPrompts, id: \.self) { qp in
-                            Button(qp.label) { Task { await interview.sendQuick(qp) } }
-                        }
-                    } label: { Image(systemName: "ellipsis.bubble") }
-                    .menuStyle(.borderlessButton).fixedSize().help("Quick prompts")
-                }
-                if d == .iconEverything {
-                    Button { showingTypeBox.toggle() } label: { Image(systemName: "keyboard") }
-                        .help("Type to the coach")
-                        .popover(isPresented: $showingTypeBox) { typeField.frame(width: 320).padding() }
-                }
+        HStack(alignment: .bottom, spacing: 8) {
+            askButton(iconOnly: d != .full)
+            if d == .iconEverything {
+                Spacer()
+                Button { showingTypeBox.toggle() } label: { Image(systemName: "keyboard") }
+                    .help("Type to the coach")
+                    .popover(isPresented: $showingTypeBox) { typeField.frame(width: 320).padding() }
+            } else {
+                typeField.frame(minWidth: d == .full ? 260 : 200)
             }
-            if d != .iconEverything { typeField }
         }
     }
 

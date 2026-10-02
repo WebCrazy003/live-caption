@@ -33,4 +33,6 @@ struct LocalCaptionApp: App {
 extension Notification.Name {
     static let newSession = Notification.Name("LocalCaption.newSession")
     static let sessionsChanged = Notification.Name("LocalCaption.sessionsChanged")
+    /// Ask the session list to confirm deleting a session (object: the session id).
+    static let requestDeleteSession = Notification.Name("LocalCaption.requestDeleteSession")
 }

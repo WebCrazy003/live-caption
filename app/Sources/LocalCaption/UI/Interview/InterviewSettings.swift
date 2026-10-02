@@ -208,46 +208,9 @@ struct InterviewSettingsSections: View {
                     .font(.callout).frame(minHeight: 70).border(.quaternary)
                 Text("Prefilled into each new interview's setup.").font(.caption).foregroundStyle(.secondary)
             }
-            ForEach(env.config.interview.quickPrompts.indices, id: \.self) { i in
-                HStack(alignment: .top) {
-                    VStack(spacing: 4) {
-                        TextField("Label", text: quickPrompt(i).label)
-                        TextField("Prompt", text: quickPrompt(i).text, axis: .vertical).lineLimit(1...3)
-                    }
-                    VStack(spacing: 2) {
-                        Button { move(i, by: -1) } label: { Image(systemName: "chevron.up") }.disabled(i == 0)
-                        Button { move(i, by: 1) } label: { Image(systemName: "chevron.down") }
-                            .disabled(i == env.config.interview.quickPrompts.count - 1)
-                    }
-                    .buttonStyle(.borderless)
-                    Button(role: .destructive) { env.config.interview.quickPrompts.remove(at: i) } label: { Image(systemName: "minus.circle") }
-                        .buttonStyle(.borderless)
-                }
-            }
-            HStack {
-                Button { env.config.interview.quickPrompts.append(.init(label: "New", text: "")) } label: {
-                    Label("Add quick prompt", systemImage: "plus")
-                }
-                Spacer()
-                Button("Restore defaults") { env.config.interview.quickPrompts = Config.Interview.defaultQuickPrompts }
-            }
-            .buttonStyle(.borderless)
         } header: {
             Text("Prompts")
         }
-    }
-
-    private func quickPrompt(_ i: Int) -> Binding<Config.Interview.QuickPrompt> {
-        Binding(get: { env.config.interview.quickPrompts.indices.contains(i) ? env.config.interview.quickPrompts[i] : .init(label: "", text: "") },
-                set: { if env.config.interview.quickPrompts.indices.contains(i) { env.config.interview.quickPrompts[i] = $0 } })
-    }
-
-    private func move(_ i: Int, by delta: Int) {
-        var list = env.config.interview.quickPrompts
-        let j = i + delta
-        guard list.indices.contains(i), list.indices.contains(j) else { return }
-        list.swapAt(i, j)
-        env.config.interview.quickPrompts = list
     }
 
     // MARK: After + privacy

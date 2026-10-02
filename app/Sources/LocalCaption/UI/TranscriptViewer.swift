@@ -54,6 +54,10 @@ struct TranscriptViewer: View {
             }
             Spacer()
             Label("Read-only", systemImage: "lock").font(.caption).foregroundStyle(.secondary)
+            Button(role: .destructive) {
+                NotificationCenter.default.post(name: .requestDeleteSession, object: rec.id)
+            } label: { Label("Delete…", systemImage: "trash") }
+            .help("Delete this session")
             if let path = rec.transcriptFile {
                 Button {
                     NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])

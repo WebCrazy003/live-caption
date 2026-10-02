@@ -248,20 +248,8 @@ public struct Config: Codable, Equatable {
         }
         public enum BusyPolicy: String, Codable, CaseIterable, Sendable { case interrupt, queue }
 
-        public struct QuickPrompt: Codable, Equatable, Hashable, Sendable {
-            public var label: String
-            public var text: String
-            public init(label: String, text: String) { self.label = label; self.text = text }
-        }
-
         /// The S0-recommended model, used when `model` is empty (SPEC-12 §S0).
         public static let recommendedModel = "gpt-6-luna"
-
-        public static let defaultQuickPrompts: [QuickPrompt] = [
-            QuickPrompt(label: "Shorter", text: "Make that answer shorter — two sentences I can say."),
-            QuickPrompt(label: "Example", text: "Give me one concrete example from my CV that supports that answer."),
-            QuickPrompt(label: "Simpler", text: "Say that again in simpler, more natural spoken English."),
-        ]
 
         public var mode: Mode
         public var privacyAcknowledged: Bool
@@ -272,7 +260,6 @@ public struct Config: Codable, Equatable {
         public var prepReasoningEffort: String
         public var answerLength: AnswerLength
         public var customInstructions: String
-        public var quickPrompts: [QuickPrompt]
         public var hotkey: String
         public var sendMode: SendMode
         public var sendSentences: Int
@@ -290,7 +277,6 @@ public struct Config: Codable, Equatable {
                     prepReasoningEffort: String = "medium",
                     answerLength: AnswerLength = .medium,
                     customInstructions: String = "",
-                    quickPrompts: [QuickPrompt] = Interview.defaultQuickPrompts,
                     hotkey: String = Hotkey.defaultString,
                     sendMode: SendMode = .sinceLastAsk,
                     sendSentences: Int = 3,
@@ -302,7 +288,7 @@ public struct Config: Codable, Equatable {
             self.engine = engine; self.codexPath = codexPath; self.model = model
             self.reasoningEffort = reasoningEffort; self.prepReasoningEffort = prepReasoningEffort
             self.answerLength = answerLength; self.customInstructions = customInstructions
-            self.quickPrompts = quickPrompts; self.hotkey = hotkey
+            self.hotkey = hotkey
             self.sendMode = sendMode; self.sendSentences = sendSentences; self.maxWords = maxWords
             self.includeClipboardImages = includeClipboardImages
             self.clearClipboardImagesAfterSend = clearClipboardImagesAfterSend
@@ -322,7 +308,6 @@ public struct Config: Codable, Equatable {
             case prepReasoningEffort = "prep_reasoning_effort"
             case answerLength = "answer_length"
             case customInstructions = "custom_instructions"
-            case quickPrompts = "quick_prompts"
             case hotkey
             case sendMode = "send_mode"
             case sendSentences = "send_sentences"
@@ -350,7 +335,6 @@ public struct Config: Codable, Equatable {
             prepReasoningEffort = try c.decodeIfPresent(String.self, forKey: .prepReasoningEffort) ?? x.prepReasoningEffort
             answerLength = try value(.answerLength, x.answerLength)
             customInstructions = try c.decodeIfPresent(String.self, forKey: .customInstructions) ?? x.customInstructions
-            quickPrompts = try c.decodeIfPresent([QuickPrompt].self, forKey: .quickPrompts) ?? x.quickPrompts
             hotkey = try c.decodeIfPresent(String.self, forKey: .hotkey) ?? x.hotkey
             sendMode = try value(.sendMode, x.sendMode)
             sendSentences = try c.decodeIfPresent(Int.self, forKey: .sendSentences) ?? x.sendSentences

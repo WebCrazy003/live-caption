@@ -3,14 +3,14 @@ import AppKit
 import UniformTypeIdentifiers
 import LocalCaptionKit
 
-/// The preparation panel (SPEC-13 §Preparation): four parts, each run by hand —
-/// ① Discovery CV (with the CV upload), ② Discovery JD (pasted), ③ Apply instruction (one of three
-/// profiles), ④ Live coding & design (optional, a checkbox). The four skills themselves are
-/// loaded in Settings → Skills.
+/// The preparation panel (SPEC-13 §Preparation): set up the four parts — ① CV, ② JD, ③ mode,
+/// ④ optional live coding — pick the model and effort, then **Start preparation** runs the skills
+/// in that order. The four skills themselves are loaded in Settings → Interview → Skills.
 struct InterviewSetupSection: View {
     @ObservedObject var interview: InterviewController
     @ObservedObject var codex: CodexService
     @ObservedObject var library: InterviewLibrary
+    @EnvironmentObject var env: AppEnvironment
     @State private var uploadError: String?
     @State private var confirmingStartOver = false
 
@@ -29,7 +29,6 @@ struct InterviewSetupSection: View {
                     Button("Upload CV…") { uploadCV() }
                 }
                 if let uploadError { Text(uploadError).font(.caption).foregroundStyle(.orange) }
-                runRow(.discoveryCV)
             }
 
             part(2, "Discovery JD", step: .discoveryJD) {
@@ -42,43 +41,27 @@ struct InterviewSetupSection: View {
                         }
                     }
                     .border(.quaternary)
-                runRow(.discoveryJD)
             }
 
             part(3, "Apply instruction", step: .applyInstruction) {
-                HStack(spacing: 6) {
-                    ForEach(InterviewController.Profile.allCases) { p in
-                        let active = interview.activeProfile == p
-                        Button { Task { await interview.run(.applyInstruction, profile: p) } } label: {
-                            Label(p.label, systemImage: active ? "largecircle.fill.circle" : "circle")
-                        }
-                        .buttonStyle(.bordered).tint(active ? .accentColor : nil)
-                        .disabled(interview.blocker(.applyInstruction) != nil || busy)
-                        .help("/apply-instruction \(p.rawValue)")
-                    }
-                    Spacer()
-                    if running("/apply-instruction") { ProgressView().controlSize(.small) }
+                Picker("Mode", selection: $interview.draft.profile) {
+                    ForEach(InterviewController.Profile.allCases) { Text($0.label).tag(Optional($0)) }
                 }
-                Text("Choosing a mode applies it. You can switch modes during the interview from the header.")
+                .pickerStyle(.segmented).labelsHidden()
+                Text(interview.draft.profile == nil ? "Choose the mode for this interview."
+                     : "Applied by Start preparation. During the interview you can switch modes from the header.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
             part(4, "Live coding & design (optional)", step: .liveCoding) {
-                HStack {
-                    Toggle("Use live coding & system design answers", isOn: Binding(
-                        get: { interview.liveCodingActive },
-                        set: { on in Task { await interview.setLiveCoding(on) } }))
-                        .toggleStyle(.checkbox)
-                        .disabled(interview.blocker(.liveCoding) != nil || busy)
-                    Spacer()
-                    if running("/live-coding-design") { ProgressView().controlSize(.small) }
-                }
-                if let b = interview.blocker(.liveCoding), interview.skill(for: .liveCoding) != nil {
-                    Text(b).font(.caption).foregroundStyle(.secondary)
-                }
+                Toggle("Use live coding & system design answers (needs the Tech mode)", isOn: $interview.draft.liveCoding)
+                    .toggleStyle(.checkbox)
             }
 
-            if interview.record != nil, interview.record?.startedAt == nil {
+            modelRow
+            startRow
+
+            if interview.record != nil, interview.record?.startedAt == nil, !interview.preparing {
                 HStack {
                     Spacer()
                     Button("Start over") { confirmingStartOver = true }.buttonStyle(.link)
@@ -91,15 +74,77 @@ struct InterviewSetupSection: View {
                 Task { await interview.discardUnstarted(); interview.resetForNewInterview() }
             }
         } message: {
-            Text("The steps you've run so far are deleted. Your uploaded CVs and skills stay.")
+            Text("The steps run so far are deleted. Your uploaded CVs and skills stay.")
         }
     }
 
-    private var busy: Bool { interview.isStreaming }
+    // MARK: Model + Start preparation
 
-    private func running(_ prefix: String) -> Bool {
-        busy && interview.turns.last?.question.hasPrefix(prefix) == true
+    private var modelRow: some View {
+        let cfg = $env.config.interview
+        let model = env.config.interview.effectiveModel
+        return VStack(alignment: .leading, spacing: 6) {
+            Picker("Model", selection: cfg.model) {
+                Text("Recommended (\(Config.Interview.recommendedModel))").tag("")
+                ForEach(codex.models) { Text($0.displayName).tag($0.id) }
+                if !env.config.interview.model.isEmpty, !codex.models.contains(where: { $0.id == env.config.interview.model }) {
+                    Text(env.config.interview.model).tag(env.config.interview.model)
+                }
+            }
+            HStack {
+                Picker("Preparation effort", selection: cfg.prepReasoningEffort) {
+                    ForEach(efforts(model, including: env.config.interview.prepReasoningEffort), id: \.self) { Text($0.capitalized).tag($0) }
+                }
+                Picker("Answer effort", selection: cfg.reasoningEffort) {
+                    ForEach(efforts(model, including: env.config.interview.reasoningEffort), id: \.self) { Text($0.capitalized).tag($0) }
+                }
+            }
+            Text("Low answer effort answers fastest. These are the same settings as Settings → Interview.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(.top, 2)
     }
+
+    private func efforts(_ model: String, including current: String) -> [String] {
+        var list = codex.efforts(for: model)
+        if !list.contains(current) { list.insert(current, at: 0) }
+        return list
+    }
+
+    @ViewBuilder private var startRow: some View {
+        let blocker = interview.preparationBlocker
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                if interview.preparing {
+                    ProgressView().controlSize(.small)
+                    Text("Preparing — \(interview.runningStep?.title ?? "starting")…").foregroundStyle(.secondary)
+                    Spacer()
+                } else if let failed = interview.preparationFailedAt {
+                    Label("Stopped at \(failed.title)", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    Spacer()
+                    Button("Continue") { Task { await interview.startPreparation(resume: true) } }
+                        .buttonStyle(.borderedProminent).disabled(blocker != nil)
+                    Button("Start over") { Task { await interview.startPreparation() } }.disabled(blocker != nil)
+                } else {
+                    if interview.isPrepared {
+                        Label("Prepared", systemImage: "checkmark.seal.fill").foregroundStyle(.green)
+                    }
+                    Spacer()
+                    Button { Task { await interview.startPreparation() } } label: {
+                        Label(interview.isPrepared ? "Prepare again" : "Start preparation", systemImage: "sparkles")
+                            .frame(minWidth: 150)
+                    }
+                    .buttonStyle(.borderedProminent).controlSize(.large)
+                    .disabled(blocker != nil)
+                }
+            }
+            if let blocker, !interview.preparing {
+                Text(blocker).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: Parts
 
     private var missingSkillsBanner: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -118,8 +163,15 @@ struct InterviewSetupSection: View {
 
     private func part<Content: View>(_ n: Int, _ title: String, step: InterviewController.Step,
                                      @ViewBuilder _ content: () -> Content) -> some View {
-        let done = step == .applyInstruction ? interview.activeProfile != nil
-                 : step == .liveCoding ? interview.liveCodingActive : interview.isDone(step)
+        let running = interview.runningStep == step
+        let failed = interview.preparationFailedAt == step && !interview.preparing
+        let done: Bool = {
+            switch step {
+            case .applyInstruction: return interview.activeProfile != nil && interview.activeProfile == interview.draft.profile
+            case .liveCoding: return interview.liveCodingActive
+            default: return interview.isDone(step)
+            }
+        }()
         return GroupBox {
             VStack(alignment: .leading, spacing: 6) { content() }.padding(4)
         } label: {
@@ -128,21 +180,12 @@ struct InterviewSetupSection: View {
                     .frame(width: 18, height: 18)
                     .background(done ? Color.green.opacity(0.25) : Color.secondary.opacity(0.15), in: Circle())
                 Text(title).font(.subheadline.weight(.semibold))
-                if done { Image(systemName: "checkmark").font(.caption).foregroundStyle(.green) }
+                if running { ProgressView().controlSize(.mini) }
+                else if failed { Image(systemName: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange) }
+                else if done { Image(systemName: "checkmark").font(.caption).foregroundStyle(.green) }
             }
         }
-    }
-
-    private func runRow(_ step: InterviewController.Step) -> some View {
-        let blocker = interview.blocker(step)
-        let done = interview.isDone(step)
-        return HStack(spacing: 8) {
-            if let blocker { Text(blocker).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
-            Spacer()
-            if running("/\(step.rawValue)") { ProgressView().controlSize(.small) }
-            Button(done ? "Run again" : "Run \(step.title)") { Task { await interview.run(step) } }
-                .disabled(blocker != nil || busy)
-        }
+        .disabled(interview.preparing)
     }
 
     private func uploadCV() {

@@ -9,7 +9,7 @@ final class InterviewFlowTests: XCTestCase {
 
     /// Records every call; answers each turn with `reply(text)`.
     final class FakeEngine: AnswerEngine, @unchecked Sendable {
-        struct Sent { let threadId: String; let input: [CodexRPC.Input]; let effort: String }
+        struct Sent { let threadId: String; let input: [CodexRPC.Input]; let effort: String; let model: String? }
         let notices: AsyncStream<EngineNotice>
         private let noticeSink: AsyncStream<EngineNotice>.Continuation
         private let lock = NSLock()
@@ -39,7 +39,9 @@ final class InterviewFlowTests: XCTestCase {
         func status() async -> EngineStatus { .ready(email: "me@example.com", plan: "plus") }
         func models() async throws -> [CodexRPC.Model] {
             [.init(id: "gpt-6-luna", displayName: "GPT-6-Luna", description: "", isDefault: false,
-                   defaultEffort: "medium", efforts: ["low", "medium"], acceptsImages: true)]
+                   defaultEffort: "medium", efforts: ["low", "medium"], acceptsImages: true),
+             .init(id: "gpt-6.1-sol", displayName: "GPT-6.1-Sol", description: "", isDefault: true,
+                   defaultEffort: "low", efforts: ["low", "medium", "high"], acceptsImages: true)]
         }
         func usage() async throws -> CodexRPC.Usage { .init(planType: "plus", windows: [.init(minutes: 300, usedPercent: 5, resetsAt: nil)]) }
         var failStart: EngineError?
@@ -49,8 +51,8 @@ final class InterviewFlowTests: XCTestCase {
             return "thr\(n)"
         }
         func resumeThread(id: String, _ cfg: ThreadConfig) async throws { lock.withLock { resumed.append(id) } }
-        func send(threadId: String, input: [CodexRPC.Input], effort: String) -> AsyncThrowingStream<AnswerEvent, Error> {
-            lock.lock(); _sent.append(Sent(threadId: threadId, input: input, effort: effort)); lock.unlock()
+        func send(threadId: String, input: [CodexRPC.Input], effort: String, model: String?) -> AsyncThrowingStream<AnswerEvent, Error> {
+            lock.lock(); _sent.append(Sent(threadId: threadId, input: input, effort: effort, model: model)); lock.unlock()
             let text: String = { if case .text(let t) = input.first { return t }; return "" }()
             if holdIf(text) {
                 return AsyncThrowingStream { c in
@@ -236,16 +238,79 @@ final class InterviewFlowTests: XCTestCase {
         XCTAssertTrue(reloaded.skills.isEmpty)
     }
 
-    func testLiveCodingCheckboxAppliesAndReappliesTheProfile() async throws {
+    // MARK: Start preparation
+
+    private func readyDraft(_ interview: InterviewController, liveCoding: Bool = false) throws {
+        interview.draft.cvId = try importCV()
+        interview.draft.jobDescription = "Senior iOS Engineer"
+        interview.draft.profile = .tech
+        interview.draft.liveCoding = liveCoding
+    }
+
+    func testStartPreparationRunsThePlanInOrder() async throws {
         try importSkills()
         let interview = InterviewController(env: env)
-        await interview.run(.applyInstruction, profile: .tech)
-        await interview.setLiveCoding(true)
-        XCTAssertTrue(interview.liveCodingActive)
-        await interview.setLiveCoding(false)
-        XCTAssertFalse(interview.liveCodingActive)
-        XCTAssertEqual(interview.activeProfile, .tech)
-        XCTAssertEqual(sentTexts.last, "/apply-instruction tech", "unticking re-applies the current profile")
+        try readyDraft(interview, liveCoding: true)
+        XCTAssertNil(interview.preparationBlocker)
+        XCTAssertFalse(interview.isPrepared)
+
+        await interview.startPreparation()
+
+        XCTAssertEqual(interview.turns.map(\.question),
+                       ["/discovery-cv", "/discovery-jd", "/apply-instruction tech", "/live-coding-design"])
+        XCTAssertTrue(interview.isPrepared)
+        XCTAssertNil(interview.preparationFailedAt)
+        XCTAssertEqual(Set(engine.sent.map(\.effort)), ["medium"], "preparation uses the preparation effort")
+        XCTAssertEqual(engine.threads.count, 1)
+    }
+
+    func testPreparationBlockers() throws {
+        let interview = InterviewController(env: env)
+        XCTAssertEqual(interview.preparationBlocker, "Load the 4 skills in Settings → Interview → Skills")
+        try importSkills()
+        XCTAssertEqual(interview.preparationBlocker, "Choose or upload a CV (①)")
+        interview.draft.cvId = try importCV()
+        XCTAssertEqual(interview.preparationBlocker, "Paste the job description (②)")
+        interview.draft.jobDescription = "JD"
+        XCTAssertEqual(interview.preparationBlocker, "Choose a mode (③)")
+        interview.draft.profile = .intro
+        interview.draft.liveCoding = true
+        XCTAssertEqual(interview.preparationBlocker, "Live coding needs the Tech mode (③)")
+        interview.draft.profile = .tech
+        XCTAssertNil(interview.preparationBlocker)
+    }
+
+    func testPreparationStopsAtAFailureAndContinuesFromThere() async throws {
+        try importSkills()
+        let interview = InterviewController(env: env)
+        try readyDraft(interview)
+        engine.reply = { text in text.hasSuffix("/discovery-jd") ? [.failed(.network("offline"), partial: "")] : [.completed("ok")] }
+
+        await interview.startPreparation()
+        XCTAssertEqual(interview.preparationFailedAt, .discoveryJD)
+        XCTAssertEqual(interview.turns.map(\.question), ["/discovery-cv", "/discovery-jd"], "stops at the failure")
+        XCTAssertFalse(interview.isPrepared)
+
+        engine.reply = { _ in [.completed("ok")] }
+        await interview.startPreparation(resume: true)
+        XCTAssertEqual(interview.turns.map(\.question), ["/discovery-cv", "/discovery-jd", "/discovery-jd", "/apply-instruction tech"],
+                       "Continue resumes at the failed step, not from the start")
+        XCTAssertTrue(interview.isPrepared)
+        XCTAssertNil(interview.preparationFailedAt)
+    }
+
+    func testChangingTheModelSwitchesTheNextTurn() async throws {
+        let interview = InterviewController(env: env)
+        await interview.sendTyped("hello")
+        XCTAssertNil(engine.sent.last?.model, "unchanged model → not resent")
+        XCTAssertEqual(engine.threads.first?.model, Config.Interview.recommendedModel)
+
+        env.config.interview.model = "gpt-6.1-sol"
+        await interview.sendTyped("again")
+        XCTAssertEqual(engine.sent.last?.model, "gpt-6.1-sol")
+        XCTAssertEqual(interview.record?.model, "gpt-6.1-sol")
+        await interview.sendTyped("once more")
+        XCTAssertNil(engine.sent.last?.model, "Codex keeps it; no need to resend")
     }
 
     func testDiscoveryCVSnapshotsTheCVForHistory() async throws {

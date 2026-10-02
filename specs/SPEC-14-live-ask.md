@@ -6,7 +6,7 @@ SPEC-11, SPEC-12, SPEC-13 (the interview's thread)
 > During the interview the user presses the **Ask** hotkey (default **F8**) or the Ask button.
 > The app takes the interviewer's recent words, adds any screenshots on the clipboard if that
 > is enabled, sends them as one turn on the interview's thread, and streams the answer into the
-> **Answers** panel. The user can also type to the coach or use quick-prompt buttons, all on the
+> **Answers** panel. The user can also type to the coach, all on the
 > same thread.
 
 ---
@@ -90,7 +90,7 @@ reads in the app, and only in Interview mode (SPEC-11 §Privacy).
       plus *Clear*. At most **10** per prompt (status says so beyond that). The Ask button shows
       the count.
 - [ ] **Ask (F8 / button)** and **Send** (the type box, now with a Send button) take the whole tray:
-      the images go with that turn and the tray empties. Quick prompts and Regenerate don't take it.
+      the images go with that turn and the tray empties. Regenerate doesn't take it.
       Image-only asks and sends are allowed.
 - [ ] Model doesn't accept images → text only, status "This model can't read images".
 - [ ] Storage: each image is saved in the database (`interview_images`, `<turn>-<n>.png`) and
@@ -135,9 +135,9 @@ Right side of the caption area in Interview mode.
 - [ ] Card actions: **Copy answer**, **Regenerate** (latest only), **Sent text** (a popover with
       exactly what was sent, plus image thumbnails — so the user can see what the model heard).
 - [ ] A **Stop** button while streaming (interrupt).
-- [ ] Bottom bar: **Ask** button (tooltip shows the hotkey), the
-      quick-prompt buttons from `interview.quick_prompts`, and a text field *"Type to the
-      coach…"* (Return sends, Shift-Return = newline).
+- [ ] Bottom bar: **Ask** button (tooltip shows the hotkey) and a text field *"Type to the
+      coach…"* with a **Send** button (Return sends, Shift-Return = newline). (Quick-prompt buttons
+      were removed on 2026-10-02.)
 - [ ] Text uses `caption.font_size` and follows the font ± controls; respects window opacity.
 - [ ] Min width 280, ideal 380 (compact behaviour in SPEC-15).
 
@@ -169,5 +169,5 @@ Right side of the caption area in Interview mode.
   clipboard is cleared if it still holds the last screenshot.
 - An image already on the clipboard when the interview opens is never added.
 - With the setting off, the app reads **no** clipboard content (only the change counter).
-- Typed messages and quick prompts go to the same thread and appear as cards.
+- Typed messages go to the same thread and appear as cards.
 - Hotkey conflict shows the header warning; the on-screen Ask still works.

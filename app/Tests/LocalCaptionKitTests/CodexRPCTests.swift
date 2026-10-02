@@ -36,7 +36,8 @@ final class CodexRPCTests: XCTestCase {
                     $0["type"]?.stringValue == "localImage" ? .localImage(path: $0["path"]?.stringValue ?? "")
                                                            : .text($0["text"]?.stringValue ?? "")
                 }
-                built = CodexRPC.turnStartParams(threadId: s("thread_id"), input: input, effort: s("effort"))
+                built = CodexRPC.turnStartParams(threadId: s("thread_id"), input: input, effort: s("effort"),
+                                                 model: a["model"]?.stringValue)
             case "turn_interrupt": built = CodexRPC.turnInterruptParams(threadId: s("thread_id"), turnId: s("turn_id"))
             case "thread_archive": built = CodexRPC.threadArchiveParams(threadId: s("thread_id"))
             case "model_list": built = CodexRPC.modelListParams

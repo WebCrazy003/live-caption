@@ -144,20 +144,18 @@ final class LiveAskTests: XCTestCase {
 
     // MARK: Typed / quick / regenerate
 
-    func testTypedQuickAndRegenerateGoToTheSameThread() async throws {
+    func testTypedAndRegenerateGoToTheSameThread() async throws {
         let interview = await preparedInterview()
         transcript = ([], "why us", 1000)
         await interview.ask()
         await interview.regenerate()
-        await interview.sendQuick(Config.Interview.defaultQuickPrompts[0])
         await interview.sendTyped("  make it about Swift  ")
 
         XCTAssertEqual(Set(engine.sent.map(\.threadId)), ["thr1"])
-        XCTAssertEqual(interview.turns.map(\.kind), [.ask, .regenerate, .quick, .typed])
-        XCTAssertEqual(askTexts.suffix(3), [InterviewPrompt.regenerate, Config.Interview.defaultQuickPrompts[0].text,
-                                             "make it about Swift"])
+        XCTAssertEqual(interview.turns.map(\.kind), [.ask, .regenerate, .typed])
+        XCTAssertEqual(askTexts.suffix(2), [InterviewPrompt.regenerate, "make it about Swift"])
         let rec = try XCTUnwrap(env.store.interview(id: XCTUnwrap(interview.record?.id)))
-        XCTAssertEqual(rec.turns.count, 4)
+        XCTAssertEqual(rec.turns.count, 3)
     }
 
     // MARK: Screenshot tray

@@ -127,9 +127,11 @@ actor CodexAppServerEngine: AnswerEngine {
         threads[id] = cfg
     }
 
-    nonisolated func send(threadId: String, input: [CodexRPC.Input], effort: String) -> AsyncThrowingStream<AnswerEvent, Error> {
+    nonisolated func send(threadId: String, input: [CodexRPC.Input], effort: String,
+                          model: String? = nil) -> AsyncThrowingStream<AnswerEvent, Error> {
         AsyncThrowingStream { continuation in
-            Task { await self.beginTurn(threadId: threadId, input: input, effort: effort, continuation: continuation) }
+            Task { await self.beginTurn(threadId: threadId, input: input, effort: effort, model: model,
+                                        continuation: continuation) }
         }
     }
 
@@ -296,7 +298,7 @@ actor CodexAppServerEngine: AnswerEngine {
 
     // MARK: Turns
 
-    private func beginTurn(threadId: String, input: [CodexRPC.Input], effort: String,
+    private func beginTurn(threadId: String, input: [CodexRPC.Input], effort: String, model: String?,
                            continuation: AsyncThrowingStream<AnswerEvent, Error>.Continuation) async {
         do { try await ensureStarted() } catch {
             continuation.yield(.failed(engineError(error), partial: "")); continuation.finish(); return
@@ -308,7 +310,7 @@ actor CodexAppServerEngine: AnswerEngine {
         active = turn
         startWatchdog(token: turn.token)
         do {
-            let r = try await request("turn/start", CodexRPC.turnStartParams(threadId: threadId, input: input, effort: effort))
+            let r = try await request("turn/start", CodexRPC.turnStartParams(threadId: threadId, input: input, effort: effort, model: model))
             guard var a = active, a.token == turn.token else { return }
             if let id = r["turn"]?["id"]?.stringValue {
                 if a.turnId == nil { a.turnId = id; active = a }
