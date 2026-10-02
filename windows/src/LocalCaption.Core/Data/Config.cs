@@ -354,9 +354,7 @@ public sealed record Config
         }
         catch (Exception e) when (e is JsonException or IOException or NotSupportedException)
         {
-            var backup = Path.Combine(Path.GetDirectoryName(path) ?? ".",
-                                      $"config.json.bak-{BackupStamp()}");
-            try { File.Copy(path, backup, overwrite: false); } catch (IOException) { /* keep the first */ }
+            Files.BackupCorrupt(path);
             var fresh = new Config();
             TryWrite(fresh, path);
             return (fresh, true);

@@ -5,11 +5,12 @@ Platform-neutral test vectors for the pure-logic layer, shared by **both** imple
 | Suite | Reads these |
 |---|---|
 | macOS — `app/Tests/LocalCaptionKitTests/ConformanceTests.swift` | captions, filters, sentences, config |
-| macOS — `app/Tests/LocalCaptionKitTests/InterviewConformanceTests.swift` | `hotkey/`, `ask/`, `interview-prompt/` |
+| macOS — `app/Tests/LocalCaptionKitTests/InterviewConformanceTests.swift` | `hotkey/`, `ask/`, `interview-prompt/`, `library/`, `records/` |
 | macOS — `app/Tests/LocalCaptionKitTests/CodexRPCTests.swift` | `codex/` |
 | Windows — `windows/tests/LocalCaption.Core.Tests/ConformanceTests.cs`, `ConfigConformanceTests.cs` | captions, filters, sentences, config |
 | Windows — `windows/tests/LocalCaption.Core.Tests/InterviewConformanceTests.cs` | `hotkey/`, `ask/`, `interview-prompt/` |
 | Windows — `windows/tests/LocalCaption.Core.Tests/CodexRpcTests.cs` | `codex/` |
+| Windows — `windows/tests/LocalCaption.Core.Tests/InterviewRecordTests.cs` | `library/`, `records/` |
 
 Specified by [`SPEC-WINDOWS.md`](../SPEC-WINDOWS.md) §6.1. The point is to make "parity" a
 checkable claim rather than an aspiration: a port that is subtly different fails here
@@ -32,10 +33,12 @@ testdata/
 ├── hotkey/          hotkey strings → canonical form or error kind      (Hotkey — SPEC-11)
 ├── ask/             finals + interim + mark → text sent on an Ask      (AskSelection — SPEC-14)
 ├── interview-prompt/ skill step / question / transcript → exact prompt text (InterviewPrompt — SPEC-13–15)
-└── codex/           Codex app-server requests, decoding, events, responses (CodexRPC — SPEC-12)
+├── codex/           Codex app-server requests, decoding, events, responses (CodexRPC — SPEC-12)
+├── library/         titles → slugs; SKILL.md text / folder paths → front matter, partition (LibrarySlug, SkillFile — SPEC-13)
+└── records/         interviewee/company/step/day → session name; turns → Q&A Markdown (InterviewRecord — SPEC-15)
 ```
 
-The `hotkey/`, `ask/`, `interview-prompt/` and `codex/` suites belong to Interview Assist
+The `hotkey/`, `ask/`, `interview-prompt/`, `codex/`, `library/` and `records/` suites belong to Interview Assist
 ([`specs/SPEC-11`](../specs/SPEC-11-interview-assist.md)); the Windows port of it is
 [`specs/SPEC-16`](../specs/SPEC-16-windows-parity.md). Every file here is read byte for byte,
 so the repository's `.gitattributes` keeps them LF on every platform.
@@ -46,6 +49,10 @@ it needs a working ASR engine on both sides to be meaningful.
 ## Conventions
 
 - **Times** are seconds (`double`); **samples** are 16 kHz mono frame counts (`int`).
+- A **`local_time`** (`"2026-10-02T12:00:00"`, no zone) is a wall-clock time in the test
+  machine's own time zone, so a local date derived from it is the same in every zone.
+- Characters that are invisible or that an editor could normalise (combining marks,
+  U+00A0, U+2028, U+3000…) are written as `\uXXXX` escapes.
 - Audio is expressed as **runs** — `{"amplitude": 0.1, "count": 16000}` means 16000
   consecutive samples of that constant value — so vectors stay readable and small.
 - `"$default"` in a config expectation means "equal to the freshly-constructed default

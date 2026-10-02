@@ -1,0 +1,44 @@
+{
+  "name": "qa-markdown",
+  "description": "InterviewRecord.qaMarkdown ('Copy all Q&A as Markdown'): '# name', then 'company — role' unless empty or equal to the name, then per turn a '## n. ' heading with [HH:MM:SS] from audio_to_ms when known and a per-kind prefix, a screenshot count, the answer or _(no answer)_, and an interrupted/failed mark. Blocks are joined by one blank line.",
+  "kind": "qa_markdown",
+  "cases": [
+    {
+      "name": "Acme — iOS", "company": "Acme", "role": "iOS",
+      "turns": [
+        { "n": 1, "kind": "ask", "question": "why us", "audio_to_ms": 65000, "images": ["attachments/1-1.png"], "answer": "**Q:** Why us?\nBecause.", "status": "completed" },
+        { "n": 2, "kind": "typed", "question": "shorter", "answer": "", "status": "failed", "error": "offline" }
+      ],
+      "expect": "# Acme — iOS\n\n## 1. [00:01:05] why us\n\n_1 screenshot(s)_\n\n**Q:** Why us?\nBecause.\n\n## 2. You: shorter\n\n_(no answer)_\n\n_(failed: offline)_"
+    },
+    {
+      "name": "Round 2", "company": "Acme", "role": "",
+      "turns": [
+        { "n": 1, "kind": "skill", "question": "/discovery-cv", "answer": "Profile…", "status": "completed" },
+        { "n": 2, "kind": "quick", "question": "STAR it", "audio_to_ms": 3725999, "images": ["2-1.png", "2-2.png", "2-3.png"], "answer": "Situation…\n", "status": "interrupted" },
+        { "n": 4, "kind": "regenerate", "question": "Regenerate", "audio_to_ms": 999, "answer": "Again.", "status": "completed" },
+        { "n": 5, "kind": "ask", "question": "", "answer": "", "status": "failed" },
+        { "n": 6, "kind": "typed", "question": "and?", "answer": "More.", "status": "failed", "error": "" },
+        { "n": 7, "kind": "ask", "question": "still going", "answer": "Partial", "status": "streaming" }
+      ],
+      "expect": "# Round 2\n\nAcme\n\n## 1. Skill: /discovery-cv\n\nProfile…\n\n## 2. [01:02:05] Quick: STAR it\n\n_3 screenshot(s)_\n\nSituation…\n\n\n_(interrupted)_\n\n## 4. [00:00:00] Regenerate\n\nAgain.\n\n## 5. \n\n_(no answer)_\n\n_(failed)_\n\n## 6. You: and?\n\nMore.\n\n_(failed: )_\n\n## 7. still going\n\nPartial"
+    },
+    {
+      "name": "Solo", "company": "", "role": "",
+      "turns": [],
+      "expect": "# Solo"
+    },
+    {
+      "name": "Interview", "company": "", "role": "Staff engineer",
+      "turns": [
+        { "n": 1, "kind": "ask", "question": "Tell me about yourself", "audio_to_ms": 0, "answer": "I build things.", "status": "completed" }
+      ],
+      "expect": "# Interview\n\nStaff engineer\n\n## 1. [00:00:00] Tell me about yourself\n\nI build things."
+    },
+    {
+      "name": "", "company": "Globex", "role": "SRE",
+      "turns": [],
+      "expect": "# \n\nGlobex — SRE"
+    }
+  ]
+}

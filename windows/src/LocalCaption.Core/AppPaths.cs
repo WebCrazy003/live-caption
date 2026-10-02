@@ -12,7 +12,8 @@ namespace LocalCaption.Core;
 /// ├── journal\          crash-recovery .jsonl
 /// ├── models\           whisper.cpp GGUF weights
 /// ├── config.json       versioned app config
-/// └── localcaption.db   sqlite session metadata
+/// ├── localcaption.db   sqlite sessions, captions and interviews
+/// └── interview\        Interview Assist library, outbox, Codex home (specs/SPEC-11)
 /// </code>
 /// <para><see cref="Environment.SpecialFolder.LocalApplicationData"/> is
 /// <c>%LOCALAPPDATA%</c> on Windows. It resolves elsewhere on macOS, which is harmless:
@@ -39,6 +40,36 @@ public static class AppPaths
     public static string Models => Path.Combine(Root, "models");
     public static string ConfigFile => Path.Combine(Root, "config.json");
     public static string DatabaseFile => Path.Combine(Root, "localcaption.db");
+
+    // Interview Assist (specs/SPEC-11 §On-disk layout), as on macOS. Kept out of the
+    // transcript folder: it holds the CV. Nothing here is created by Bootstrap.
+
+    /// <summary><c>interview\</c></summary>
+    public static string Interview => Path.Combine(Root, "interview");
+
+    /// <summary><c>interview\library\</c> — imported documents and skills.</summary>
+    public static string Library => Path.Combine(Interview, "library");
+
+    /// <summary><c>interview\library\index.json</c> (<c>InterviewLibraryIndex</c>).</summary>
+    public static string LibraryIndex => Path.Combine(Library, "index.json");
+
+    public static string Skills => Path.Combine(Library, "skills");
+    public static string Documents => Path.Combine(Library, "documents");
+
+    /// <summary>Short-lived PNGs handed to Codex as <c>localImage</c> input; deleted when the turn ends.</summary>
+    public static string Outbox => Path.Combine(Interview, "outbox");
+
+    /// <summary>Codex's working directory. Must stay empty (specs/SPEC-12 §Lockdown).</summary>
+    public static string Workspace => Path.Combine(Interview, "workspace");
+
+    /// <summary>
+    /// Dedicated <c>CODEX_HOME</c>, so the user's own Codex config never loads
+    /// (specs/SPEC-12 §Lockdown).
+    /// </summary>
+    public static string CodexHome => Path.Combine(Interview, "codex-home");
+
+    /// <summary>Codex's stderr (specs/SPEC-12).</summary>
+    public static string CodexLog => Path.Combine(Interview, "codex.log");
 
     /// <summary>Create the directory tree on first launch. Idempotent.</summary>
     public static string Bootstrap()

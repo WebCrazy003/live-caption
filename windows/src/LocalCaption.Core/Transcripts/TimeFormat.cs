@@ -42,6 +42,12 @@ public static class TimeFormat
     /// <summary><c>yyyy-MM-dd HH:mm:ss</c> — human header timestamp.</summary>
     public static string Human(DateTimeOffset date) => Fmt("yyyy-MM-dd HH:mm:ss", date);
 
+    /// <summary>
+    /// <c>yyyy-MM-dd</c> in local time — the date part of interview session names
+    /// (<c>InterviewRecord.SessionName</c>).
+    /// </summary>
+    public static string Day(DateTimeOffset date) => Fmt("yyyy-MM-dd", date.ToLocalTime());
+
     /// <summary><c>yyyy-MM-dd HH:mm</c> — short form for auto session names.</summary>
     public static string HumanShort(DateTimeOffset date) => Fmt("yyyy-MM-dd HH:mm", date);
 

@@ -30,6 +30,16 @@ public static class Files
         File.Move(temp, path, overwrite: true);
     }
 
+    /// <summary>
+    /// Keep an unreadable file as <c>&lt;name&gt;.bak-&lt;stamp&gt;</c> before it is replaced, so
+    /// a repair never destroys the user's data. A backup that already exists is kept.
+    /// </summary>
+    public static void BackupCorrupt(string path)
+    {
+        try { File.Copy(path, $"{path}.bak-{Config.BackupStamp()}", overwrite: false); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+    }
+
     /// <summary>Normalise to <c>\n</c> endings regardless of what produced the string.</summary>
     public static string Lf(string text) => text.Replace("\r\n", "\n").Replace('\r', '\n');
 }

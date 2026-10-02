@@ -57,6 +57,16 @@ public static class ModelCatalog
         ["medium.en"] = new("medium.en", "ggml-medium.en.bin", WhisperAlignmentHeadsPreset.MediumEn, 1_530_000_000),
     };
 
+    /// <summary>
+    /// macOS model names with no whisper.cpp build in the download repository, mapped to the
+    /// nearest one that has. Only what the name loads changes; <c>config.json</c> keeps the
+    /// Mac's name, so the file still round-trips (specs/SPEC-16 §6 C10).
+    /// </summary>
+    private static readonly Dictionary<string, string> MacOnly = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["distil-large-v3"] = "large-v3-turbo",
+    };
+
     /// <summary>Every model the app offers, in ascending size.</summary>
     public static IReadOnlyList<ModelSpec> All => Known.Values.OrderBy(m => m.ApproxBytes).ToList();
 
@@ -65,12 +75,16 @@ public static class ModelCatalog
     /// guess with <see cref="WhisperAlignmentHeadsPreset.None"/> — it may still load, but it
     /// will have no word timings, so the caller should expect the §5.7.1 fallback path.
     /// </summary>
-    public static ModelSpec Resolve(string name) =>
-        Known.TryGetValue(name.Trim(), out var spec)
+    public static ModelSpec Resolve(string name)
+    {
+        var key = name.Trim();
+        if (MacOnly.TryGetValue(key, out var standIn)) key = standIn;
+        return Known.TryGetValue(key, out var spec)
             ? spec
             : new ModelSpec(name, $"ggml-{name}.bin", WhisperAlignmentHeadsPreset.None, 0);
+    }
 
-    public static bool IsKnown(string name) => Known.ContainsKey(name.Trim());
+    public static bool IsKnown(string name) => Known.ContainsKey(name.Trim()) || MacOnly.ContainsKey(name.Trim());
 
     /// <summary>Where a model's weights live once downloaded.</summary>
     public static string PathFor(ModelSpec spec, string modelsDirectory) =>

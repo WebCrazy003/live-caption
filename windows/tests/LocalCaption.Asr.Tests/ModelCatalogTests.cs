@@ -32,6 +32,16 @@ public class ModelCatalogTests
     }
 
     [Fact]
+    public void AMacOnlyModelNameLoadsItsNearestWindowsModel()
+    {
+        // distil-large-v3 is a macOS choice with no GGML build in the download repository:
+        // a Mac config naming it must load something real, not a guessed file that 404s.
+        Assert.True(ModelCatalog.IsKnown("distil-large-v3"));
+        Assert.Equal("ggml-large-v3-turbo.bin", ModelCatalog.Resolve("distil-large-v3").FileName);
+        Assert.DoesNotContain(ModelCatalog.All, m => m.Name == "distil-large-v3");   // not offered here
+    }
+
+    [Fact]
     public void TheWindowsDefaultsResolve()
     {
         // §0.5 / §9.2: the RTX 3070 affords turbo as the default final model.

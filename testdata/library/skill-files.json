@@ -1,0 +1,27 @@
+{
+  "name": "skill-files",
+  "description": "SkillFile.frontMatter: an optional leading '---' block, CRLF or LF, keys case-insensitive, single-line values with one pair of matching quotes stripped; lines are trimmed of spaces and tabs only (a lone CR or U+2028 is not trimmed). SkillFile.partition: sorted by path (Unicode scalar order of the NFC form), SKILL.md at the top skipped, anything under a dot-component skipped, .md/.txt (any case) included, the rest ignored.",
+  "kind": "skill_files",
+  "cases": [
+    { "op": "front_matter", "text": "---\nname: \"Interview coach\"\ndescription: STAR answers\n---\n# Body", "expect_name": "Interview coach", "expect_description": "STAR answers" },
+    { "op": "front_matter", "text": "# No front matter", "expect_name": null, "expect_description": null },
+    { "op": "front_matter", "text": "", "expect_name": null, "expect_description": null },
+    { "op": "front_matter", "text": "---\r\nname: coach\r\ndescription: 'Short, sharp'\r\n---\r\nbody", "expect_name": "coach", "expect_description": "Short, sharp" },
+    { "op": "front_matter", "text": "  ---  \nNAME:  Spaced Out  \nDescription:\"x\"\n---", "expect_name": "Spaced Out", "expect_description": "x" },
+    { "op": "front_matter", "text": "---\n\tname:\tTabbed\t\n---", "expect_name": "Tabbed", "expect_description": null },
+    { "op": "front_matter", "text": "---\nname: \"coach'\ndescription: \"\n---", "expect_name": "\"coach'", "expect_description": "\"" },
+    { "op": "front_matter", "text": "---\nname: \"\"\ndescription:\n---", "expect_name": "", "expect_description": "" },
+    { "op": "front_matter", "text": "---\nname: a: b\ndescription : 'quoted \"inner\"'\n---", "expect_name": "a: b", "expect_description": "quoted \"inner\"" },
+    { "op": "front_matter", "text": "---\nname: first\n---\nname: second", "expect_name": "first", "expect_description": null },
+    { "op": "front_matter", "text": "---\nname: a\nname: b\n---", "expect_name": "b", "expect_description": null },
+    { "op": "front_matter", "text": "---\nname: open\nno colon here\ntitle: ignored", "expect_name": "open", "expect_description": null },
+    { "op": "front_matter", "text": "\n---\nname: x\n---", "expect_name": null, "expect_description": null },
+    { "op": "front_matter", "text": "---\rname: x\r---", "expect_name": null, "expect_description": null },
+    { "op": "front_matter", "text": "---\nname:\u00a0x\u00a0\ndescription: y\u2028\n---", "expect_name": "x", "expect_description": "y\u2028" },
+    { "op": "partition", "paths": ["SKILL.md", "z.txt", "refs/a.md", "run.sh", ".hidden/x.md", "img.png"], "expect_included": ["refs/a.md", "z.txt"], "expect_ignored": ["img.png", "run.sh"] },
+    { "op": "partition", "paths": ["skill.md", "refs/SKILL.md", "SKILL.MD", "b.Md", "A.TXT", "archive.tar.md", "notes.markdown", "README", "dir.md/file", "file."], "expect_included": ["A.TXT", "SKILL.MD", "archive.tar.md", "b.Md", "refs/SKILL.md", "skill.md"], "expect_ignored": ["README", "dir.md/file", "file.", "notes.markdown"] },
+    { "op": "partition", "paths": ["refs/.DS_Store", ".git/config", "a/.b/c.md", "a/b./c.md", ".md", "x/.notes.txt", "x/notes.txt"], "expect_included": ["a/b./c.md", "x/notes.txt"], "expect_ignored": [] },
+    { "op": "partition", "paths": ["😀.md", "ｚ.md", "z.md", "e\u0301a.md", "é.md", "Z.md"], "expect_included": ["Z.md", "z.md", "é.md", "e\u0301a.md", "ｚ.md", "😀.md"], "expect_ignored": [] },
+    { "op": "partition", "paths": [], "expect_included": [], "expect_ignored": [] }
+  ]
+}

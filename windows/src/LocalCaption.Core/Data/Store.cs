@@ -92,7 +92,6 @@ public sealed partial class Store : IDisposable
                 record.CommandText = "INSERT INTO grdb_migrations (identifier) VALUES ($id)";
                 record.Parameters.AddWithValue("$id", id);
                 record.ExecuteNonQuery();
-                return 0;
             });
         }
 
@@ -311,7 +310,7 @@ public sealed partial class Store : IDisposable
             if (segments is not { Count: > 0 }) continue;
             try
             {
-                InTransaction(() => { WriteSegments(segments, record.Id!.Value); return 0; });
+                InTransaction(() => WriteSegments(segments, record.Id!.Value));
                 imported++;
             }
             catch (SqliteException) { }   // one bad row must not stop the rest
@@ -479,6 +478,8 @@ public sealed partial class Store : IDisposable
     /// Run <paramref name="work"/> atomically. Commands made with <c>CreateCommand</c> inside
     /// it join the connection's open transaction.
     /// </summary>
+    internal void InTransaction(Action work) => InTransaction(() => { work(); return 0; });
+
     internal T InTransaction<T>(Func<T> work)
     {
         using var transaction = _connection.BeginTransaction();
