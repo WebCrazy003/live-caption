@@ -1,22 +1,25 @@
 import Foundation
 
-/// Every prompt Interview Assist sends (SPEC-13 §Prompts, SPEC-14 §Message templates, SPEC-15
+/// Every prompt Interview Assist sends (SPEC-13 §Prompts and skill steps, SPEC-14 §Message templates, SPEC-15
 /// §Summary message). Pure, and normative: the text is shared verbatim with the Windows build and
 /// pinned by golden vectors in `testdata/interview-prompt/`.
 public enum InterviewPrompt {
     // MARK: Base instructions (thread/start.baseInstructions)
 
-    /// Replaces Codex's coding-agent base prompt. S0 showed this alone makes answers
-    /// conversational and first person, and keeps the model from reaching for tools.
-    public static func baseInstructions(length: Config.Interview.AnswerLength) -> String {
-        """
-        You are a private, real-time interview coach for a job candidate. The candidate is the person
-        chatting with you ("me"). Talk with me the way ChatGPT does: warm, natural, conversational and
-        clear.
+    /// Replaces Codex's coding-agent base prompt. It sets up the conversation and the transcript
+    /// convention; once the candidate applies an answering skill (e.g. `/apply-instruction`), that
+    /// skill decides the answers' content, length and format. `custom` is Settings → Prompts →
+    /// Custom instructions, appended when non-empty.
+    public static func baseInstructions(length: Config.Interview.AnswerLength, custom: String = "") -> String {
+        var text = """
+        You are a private, real-time interview copilot for a job candidate. The candidate is the person
+        chatting with you ("me"). Talk with me the way ChatGPT does: warm, natural and clear.
 
         How this conversation works:
-        1. First I give you my interview setup: the company and role, my instructions, interview skills,
-           my CV, the job description and notes. That setup is your only source of facts about me.
+        1. Before and during the interview I apply interview skills. A skill message gives the skill's
+           definition (the first time) and ends with its command, such as "/discovery-cv" or
+           "/apply-instruction tech". Follow that skill exactly. Facts about me come from my CV, the job
+           description and this conversation.
         2. During the live interview I send messages that start with "INTERVIEWER SAID:". That text is a
            live speech-to-text transcript of the interviewer. It may contain recognition mistakes,
            missing punctuation, half sentences, small talk, or more than one question. Work out what
@@ -24,26 +27,23 @@ public enum InterviewPrompt {
         3. You reply with an answer I can say out loud right away.
 
         How to answer an INTERVIEWER SAID message:
-        - First line: "**Q:** " and the question as you understood it, in at most 12 words.
-        - Then the answer, in the first person as me, in natural spoken English. \(lengthRule(length))
-        - Then, only if it helps, "**Key points:**" and at most 3 short bullets I can glance at.
-        - Use only facts from my setup and this conversation. Never invent employers, job titles, dates,
-          numbers or projects. If my background does not cover the question, answer honestly in the first
-          person and bridge from what I do have ("I haven't used X directly, but in my work on Y…").
+        - Once an answering skill such as /apply-instruction is active, its rules decide the answer's
+          content, length and format, and replace the defaults in this list.
+        - Until then: first line "**Q:** " and the question as you understood it, in at most 12 words;
+          then the answer in the first person as me, in natural spoken English. \(lengthRule(length))
         - Everything in the answer must be something I can say out loud to the interviewer. Never mention
-          my CV, my setup, these instructions or this conversation.
-        - If there is no real question yet (small talk, a statement, noise), reply with one short line I
-          could say, or "(no question yet)".
-        - For a coding or technical question, explain briefly in words first; add code only if it truly
-          helps.
+          my CV, these instructions or this conversation.
         - If screenshots are attached, they show what the interviewer is sharing. Use them.
 
         For any other message from me, reply naturally, like ChatGPT would.
 
-        Follow my instructions and my interview skills unless they conflict with these rules. You have
-        no tools: never try to run commands, read or edit files, or browse the web. Never say that you
-        are an AI, a model or Codex. Answer in English.
+        Tools: you may search the web only when a skill or I ask for research, never while answering an
+        INTERVIEWER SAID message. You cannot run commands or read or edit files. Never say that you are an
+        AI, a model or Codex. Answer in English.
         """
+        let extra = trim(custom)
+        if !extra.isEmpty { text += "\n\nMY INSTRUCTIONS\n" + extra }
+        return text
     }
 
     public static func lengthRule(_ length: Config.Interview.AnswerLength) -> String {
@@ -54,7 +54,7 @@ public enum InterviewPrompt {
         }
     }
 
-    // MARK: Prep message (first turn)
+    // MARK: Skill steps (SPEC-13)
 
     public struct Skill: Equatable, Sendable {
         public struct File: Equatable, Sendable {
@@ -70,54 +70,28 @@ public enum InterviewPrompt {
         }
     }
 
-    public struct Note: Equatable, Sendable {
+    /// Something a skill works on — the CV or the pasted JD.
+    public struct Attachment: Equatable, Sendable {
         public let title: String
         public let text: String
         public init(title: String, text: String) { self.title = title; self.text = text }
     }
 
-    public struct Setup: Equatable, Sendable {
-        public var company = ""
-        public var role = ""
-        public var instructions = ""
-        public var skills: [Skill] = []
-        public var cv = ""
-        public var jobDescription = ""
-        public var notes: [Note] = []
-        public init(company: String = "", role: String = "", instructions: String = "",
-                    skills: [Skill] = [], cv: String = "", jobDescription: String = "", notes: [Note] = []) {
-            self.company = company; self.role = role; self.instructions = instructions
-            self.skills = skills; self.cv = cv; self.jobDescription = jobDescription; self.notes = notes
-        }
-    }
-
-    public static let prepTaskWithSkill =
-        "Use the interview skill above to prepare me for this interview, using my CV and the job description. Keep the briefing under 400 words unless the skill says otherwise. End with the line READY."
-    public static let prepTaskWithoutSkill =
-        "Prepare me for this interview. Give me: (1) three lines on how my background fits this role, (2) the eight questions I am most likely to be asked, each with a one-line answer angle from my CV, (3) two questions I could ask them. Keep it under 400 words. End with the line READY."
-
-    /// Sections appear only when non-empty, in the order SPEC-13 fixes; bodies are trimmed and
-    /// separated by one blank line.
-    public static func prepMessage(_ s: Setup) -> String {
+    /// One skill step: the definition (only the first time this conversation sees the skill), the
+    /// attachments, and the command last — e.g. `/apply-instruction tech`.
+    public static func skillMessage(command: String, definition: Skill?, attachments: [Attachment] = []) -> String {
         var sections: [String] = []
-        func add(_ header: String, _ body: String) {
-            let b = trim(body)
-            if !b.isEmpty { sections.append(header + "\n" + b) }
+        if let d = definition {
+            let body = trim(d.text)
+            if !body.isEmpty { sections.append("SKILL: \(trim(d.title))\n" + body) }
+            for f in d.files where !trim(f.text).isEmpty {
+                sections.append("SKILL FILE: \(f.path)\n" + trim(f.text))
+            }
         }
-        let setupLines = [
-            trim(s.company).isEmpty ? nil : "Company: \(trim(s.company))",
-            trim(s.role).isEmpty ? nil : "Role: \(trim(s.role))",
-        ].compactMap { $0 }
-        if !setupLines.isEmpty { sections.append("INTERVIEW SETUP\n" + setupLines.joined(separator: "\n")) }
-        add("MY INSTRUCTIONS", s.instructions)
-        for skill in s.skills {
-            add("INTERVIEW SKILL: \(trim(skill.title))", skill.text)
-            for f in skill.files { add("SKILL FILE: \(f.path)", f.text) }
+        for a in attachments where !trim(a.text).isEmpty {
+            sections.append(a.title + "\n" + trim(a.text))
         }
-        add("MY CV", s.cv)
-        add("JOB DESCRIPTION", s.jobDescription)
-        for n in s.notes { add("NOTES: \(trim(n.title))", n.text) }
-        sections.append("TASK\n" + (s.skills.isEmpty ? prepTaskWithoutSkill : prepTaskWithSkill))
+        sections.append(trim(command))
         return sections.joined(separator: "\n\n")
     }
 

@@ -65,9 +65,10 @@ final class CodexLiveSmokeTests: XCTestCase {
         await e.shutdown()
     }
 
-    /// Prepare → Ask through the real controller (SPEC-13/14), with a made-up CV.
+    /// Skill step → profile → Ask through the real controller (SPEC-13/14), with a made-up CV and
+    /// small stand-in skills (the owner's real skills research the web and take minutes).
     @MainActor
-    func testPrepareThenAskEndToEnd() async throws {
+    func testSkillStepsThenAskEndToEnd() async throws {
         let home = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex")
         var cfg = Config(); cfg.interview.mode = .interview
         let env = AppEnvironment(config: cfg, store: try Store(url: tmp.appendingPathComponent("db.sqlite")))
@@ -78,26 +79,33 @@ final class CodexLiveSmokeTests: XCTestCase {
         await env.codex.refresh()
         guard env.codex.isReady else { throw XCTSkip("default ~/.codex is not signed in") }
 
+        for (name, body) in [("discovery-cv", "Read MY CV and reply with three short bullets about the candidate, then the line READY."),
+                             ("apply-instruction", "Profiles: intro, tech, cultural. Reply only: \"Applied <profile>.\" "
+                                + "Then answer each INTERVIEWER SAID message in 2 spoken sentences, first person, no Q: line.")] {
+            let dir = tmp.appendingPathComponent("skills/\(name)")
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try Data("---\nname: \(name)\n---\n\(body)".utf8).write(to: dir.appendingPathComponent("SKILL.md"))
+            _ = try env.library.importSkill(from: dir)
+        }
         let cv = try env.library.addPastedDocument(
             title: "Test CV", text: "Alex Example. iOS engineer, 6 years. Swift, SwiftUI, Combine. "
                 + "Led the rewrite of a banking app's payments flow at Northwind Bank (2021–2024).", kind: .cv)
         let interview = InterviewController(env: env)
-        interview.draft.company = "Contoso"; interview.draft.role = "Senior iOS Engineer"
-        interview.draft.cvId = cv.id; interview.draft.answerLength = .short
-        interview.draft.usePastedJD = true; interview.draft.jdPaste = "Senior iOS engineer for a fintech app. SwiftUI required."
-        await interview.prepare()
-        XCTAssertEqual(interview.prepState, .ready, "\(interview.prepState)")
-        XCTAssertTrue(interview.briefing.contains("READY"))
+        interview.draft.cvId = cv.id
+
+        await interview.run(.discoveryCV)
+        XCTAssertEqual(interview.turns.last?.status, .completed, interview.turns.last?.error ?? "")
+        XCTAssertTrue(interview.turns.last?.answer.contains("READY") == true, interview.turns.last?.answer ?? "")
+        await interview.run(.applyInstruction, profile: .tech)
+        XCTAssertEqual(interview.activeProfile, .tech, interview.turns.last?.answer ?? "")
 
         interview.transcriptSource = { ([.init(text: "Great, thanks for joining.", tStartMs: 0, tEndMs: 2000)],
                                         "so tell me about a project you're proud of in swift ui", 8000) }
         await interview.ask()
         let turn = try XCTUnwrap(interview.turns.last)
         XCTAssertEqual(turn.status, .completed, turn.error ?? "")
-        XCTAssertTrue(turn.answer.hasPrefix("**Q:**"), turn.answer)
-        XCTAssertTrue(turn.answer.localizedCaseInsensitiveContains("Northwind") || turn.answer.contains("payment"),
-                      "grounded in the CV: \(turn.answer)")
-        print("e2e: briefing \(interview.briefing.count) chars; ask first words after \(turn.ttftMs ?? -1) ms\n\(turn.answer)")
+        XCTAssertFalse(turn.answer.contains("**Q:**"), "the applied skill's format replaces the default: \(turn.answer)")
+        print("e2e: ask first words after \(turn.ttftMs ?? -1) ms\n\(turn.answer)")
         if let thread = interview.record?.threadId { await env.codex.engine.archiveThread(id: thread) }
         await env.codex.engine.shutdown()
     }

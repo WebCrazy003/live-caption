@@ -39,12 +39,12 @@ enum EngineStatus: Equatable, Sendable {
 
     var isReady: Bool { if case .ready = self { return true }; return false }
 
-    /// One line for Settings and the Prepare panel.
+    /// One line for Settings and the interview setup.
     var summary: String {
         switch self {
         case .notInstalled: return "Codex isn't installed. Install it with Homebrew: brew install codex"
         case .tooOld(let v): return "Codex \(v) is too old — LocalCaption needs \(CodexRPC.minimumVersion) or newer (brew upgrade codex)."
-        case .signedOut: return "Not signed in to ChatGPT. Sign in from Settings → Interview."
+        case .signedOut: return "Not signed in to ChatGPT. Sign in here or in Settings → Codex."
         case .ready(let email, let plan):
             let who = email ?? "ChatGPT"
             return plan.map { "Signed in as \(who) (\($0.capitalized))" } ?? "Signed in as \(who)"

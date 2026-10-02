@@ -16,7 +16,7 @@ SPEC-11 – SPEC-14, SPEC-06 (session list), SPEC-07 (Settings), SPEC-08 (window
 
 `[● Recording] Interview · Acme — Senior iOS   [Ready ✓]  [⚠ 5h: 12% left]  [⚠ F8]   00:23:41`
 
-- [ ] Mode/name chip; prep state chip (*Preparing… / Ready / Not prepared / Failed*).
+- [ ] Mode/name chip; coach chip (*Coach not started / Starting coach… / Coach ready · <profile> / Coach unavailable*).
 - [ ] Usage chip appears **only** when the 5-hour or weekly window has < 20 % left (tooltip: both
       windows and reset times).
 - [ ] Hotkey chip appears **only** when registration failed.
@@ -54,7 +54,7 @@ today's transport bar). No control is ever clipped or hidden without an alternat
       `session_id`, `ended_at`.
 - [ ] If an answer is streaming at Stop, let it finish (cap 30 s, then interrupt).
 - [ ] If `summarize_on_end`: send the **summary turn** on the same thread with
-      `prep_reasoning_effort`; stream into the Results view; write `summary.md`;
+      `prep_reasoning_effort`; stream into the replay view; write `summary.md`;
       `summary.status = "done"`. Then shut the engine down.
 - [ ] Summary failure (offline, usage limit) → `summary.status = "failed"` and a **Generate summary**
       button in Results and in the history viewer. Retrying restarts the engine and
@@ -84,21 +84,27 @@ I captured only the interviewer's audio, not mine, so do not judge how I answere
 
 `{transcript}` = the session's committed transcript, last 15 000 words if longer.
 
-### Results view
+### Replay view (read-only)
 
-Shown in the Active Session area after Stop in Interview mode, and in the history viewer.
+Shown in the Active Session area after Stop in Interview mode, and when an interview is opened
+from the sessions list (owner, 2026-10-02: "restores transcript / AI Q&A history, read only").
 
-- [ ] Tabs: **Summary** (streams in) · **Q&A** (every turn: question, answer, time into the
-      interview, *Interrupted/Failed* marks, image thumbnails) · **Briefing** · **Transcript**.
-- [ ] Actions: Copy summary, Copy all Q&A as Markdown, Reveal interview folder, Generate summary
-      (when missing or failed).
+- [ ] **Summary** on top (collapsible; streams in; **Generate summary** when missing or failed).
+- [ ] Below, side by side ≥ 700 pt: the **transcript** (left) and the **AI conversation** (right) —
+      every turn as a read-only card: skill steps collapsed, questions and answers expanded,
+      *Interrupted/Failed* marks, screenshot thumbnails, "what was sent". Narrower: a
+      *Conversation / Transcript* toggle.
+- [ ] Toolbar: Read-only badge, active profile, Copy Q&A (Markdown), Reveal interview folder.
+- [ ] Old records made with the Prepare button show their briefing above the conversation.
 
 ## History
 
 - [ ] **Session list** (SPEC-06): interview sessions show a briefcase icon; a filter
       *All / Captions / Interviews*. Search also matches the interview's company and role.
-- [ ] **Opening** an interview session shows the Results view read-only (the `TranscriptViewer`
-      gains the extra tabs when `mode = 'interview'`).
+- [ ] **Opening** an interview session shows the replay view (the `TranscriptViewer` switches to it
+      when `mode = 'interview'`). Caption sessions show the transcript as before.
+- [ ] Opening a past session never disturbs the live one: the session and interview controllers
+      belong to `AppEnvironment`, not to the session screen.
 - [ ] **Delete** (SPEC-06 confirm flow) offers, checked by default: *"Also delete the interview
       data (CV text, Q&A, screenshots)"* → removes the interview folder and archives the Codex
       thread (SPEC-12).
@@ -131,7 +137,7 @@ Out-of-range values clamp, as in SPEC-07.
 - At 900, 700 and 420 pt wide, the interview screen shows side-by-side, stacked and one-pane
   layouts; at the narrowest width every control is still reachable, with tooltips.
 - Stop saves the transcript immediately; the summary streams in afterwards; `summary.md` has the
-  five sections; the summary turn is on the same `thread_id` as prep and all asks.
+  five sections; the summary turn is on the same `thread_id` as the skill steps and all asks.
 - Offline at Stop → transcript saved, summary *failed*, **Generate summary** later succeeds on
   the same thread.
 - The interview appears in the session list with the icon and filter; reopening shows Summary,

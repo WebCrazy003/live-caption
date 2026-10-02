@@ -8,7 +8,7 @@ public struct InterviewRecord: Codable, Equatable, Identifiable, Sendable {
     public static let currentSchemaVersion = 1
 
     public enum Status: String, Codable, Sendable { case pending, running, done, failed, skipped }
-    public enum TurnKind: String, Codable, Sendable { case ask, typed, quick, regenerate }
+    public enum TurnKind: String, Codable, Sendable { case ask, typed, quick, regenerate, skill }
     public enum TurnStatus: String, Codable, Sendable { case streaming, completed, interrupted, failed }
 
     public struct Setup: Codable, Equatable, Sendable {
@@ -33,6 +33,8 @@ public struct InterviewRecord: Codable, Equatable, Identifiable, Sendable {
         }
     }
 
+    /// Legacy (schema-1 records made with the one-shot Prepare button). Interviews now run their
+    /// skills as `skill` turns; new records leave this at its defaults.
     public struct Prep: Codable, Equatable, Sendable {
         public var status: Status
         public var briefing: String
@@ -133,6 +135,34 @@ public struct InterviewRecord: Codable, Equatable, Identifiable, Sendable {
 
     /// Next turn number (1-based).
     public var nextTurnNumber: Int { (turns.map(\.n).max() ?? 0) + 1 }
+
+    /// Skill turns the model actually received (completed or interrupted), by command name —
+    /// a skill's definition is sent only the first time (SPEC-13 §Skill steps).
+    public var skillsReceived: Set<String> {
+        Set(turns.filter { $0.kind == .skill && ($0.status == .completed || $0.status == .interrupted) }
+            .compactMap { Self.skillName($0.question) })
+    }
+
+    /// `/apply-instruction tech` → `"apply-instruction"`.
+    public static func skillName(_ command: String) -> String? {
+        guard command.hasPrefix("/") else { return nil }
+        return command.dropFirst().split(separator: " ").first.map(String.init)
+    }
+
+    /// The `apply-instruction` profile in force: the last one that completed.
+    public var activeProfile: String? {
+        turns.last { $0.kind == .skill && $0.status == .completed && $0.question.hasPrefix("/apply-instruction ") }
+            .map { String($0.question.dropFirst("/apply-instruction ".count)) }
+    }
+
+    /// `live-coding-design` is active until the next `apply-instruction` replaces it.
+    public var liveCodingActive: Bool {
+        for t in turns.reversed() where t.kind == .skill && t.status == .completed {
+            if t.question.hasPrefix("/apply-instruction") { return false }
+            if t.question.hasPrefix("/live-coding-design") { return true }
+        }
+        return false
+    }
 
     /// On launch: any turn still `streaming` was cut off by a quit or crash (SPEC-15 §History).
     public mutating func failInterruptedTurns(reason: String = "app closed") -> Bool {
@@ -387,6 +417,7 @@ extension InterviewRecord {
             case .typed: head += "You: \(t.question)"
             case .quick: head += "Quick: \(t.question)"
             case .regenerate: head += t.question
+            case .skill: head += "Skill: \(t.question)"
             }
             out.append(head)
             if !t.images.isEmpty { out.append("_\(t.images.count) screenshot(s)_") }

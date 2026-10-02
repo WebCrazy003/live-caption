@@ -2,18 +2,20 @@ import SwiftUI
 import AppKit
 import LocalCaptionKit
 
-/// Interview mode, once prepared: one card per turn, newest at the bottom and expanded, with
-/// the Ask button, quick prompts and a box to type to the coach (SPEC-14 §Answers panel).
-struct AnswersPanel: View {
+/// Interview mode (SPEC-13 §Interview panel): a header with the apply-instruction profiles, the
+/// setup (CV, pasted JD, skill steps), the conversation — one card per turn, newest expanded —
+/// and the Ask bar (SPEC-14).
+struct InterviewPanel: View {
     @ObservedObject var interview: InterviewController
     @EnvironmentObject var env: AppEnvironment
     @ObservedObject var hotkey = GlobalHotkey.shared
     let fontSize: Double
-    var onEditSetup: () -> Void = {}
+    /// Recording or paused: the setup folds away once the interview is live.
+    let isLive: Bool
 
     @State private var expanded: Set<Int> = []
     @State private var draft = ""
-    @State private var showingBriefing = false
+    @State private var setupExpanded = true
     @State private var showingTypeBox = false
     private let clipboardPoll = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
@@ -23,32 +25,86 @@ struct AnswersPanel: View {
             if let status = interview.status {
                 Text(status).font(.caption).foregroundStyle(.orange).lineLimit(2)
             }
+            if setupExpanded {
+                ScrollView {
+                    InterviewSetupSection(interview: interview, codex: env.codex, library: env.library)
+                        .padding(.trailing, 4)
+                }
+                .frame(maxHeight: interview.turns.isEmpty ? .infinity : 340)
+                Divider()
+            }
             cards
             Divider()
             bottomBar
         }
         .onReceive(clipboardPoll) { _ in interview.refreshClipboardBadge() }
+        .onAppear { setupExpanded = !isLive }
+        .onChange(of: isLive) { _, live in if live { setupExpanded = false } }
     }
 
-    // MARK: Header
+    // MARK: Header (profiles stay reachable during the interview)
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Text("Answers").font(.headline)
-            Spacer()
+        ViewThatFits(in: .horizontal) {
+            headerRow(compact: false)
+            headerRow(compact: true)
+        }
+    }
+
+    private func headerRow(compact: Bool) -> some View {
+        HStack(spacing: 6) {
+            if !compact { Text("Interview").font(.headline) }
+            profileButtons(compact: compact)
+            liveCodingButton(compact: compact)
+            Spacer(minLength: 4)
             if interview.isStreaming {
                 Button { Task { await interview.stopStreaming() } } label: { Label("Stop", systemImage: "stop.circle") }
                     .labelStyle(.iconOnly).help("Stop this answer")
             }
-            Button { showingBriefing.toggle() } label: { Label("Briefing", systemImage: "doc.text.magnifyingglass") }
-                .labelStyle(.iconOnly).help("Show the prep briefing")
-                .popover(isPresented: $showingBriefing) {
-                    ScrollView { MarkdownText(markdown: interview.briefing, fontSize: 13).padding() }
-                        .frame(width: 420, height: 480)
-                }
-            Button(action: onEditSetup) { Label("Setup", systemImage: "slider.horizontal.3") }
-                .labelStyle(.iconOnly).help("Interview setup")
+            Button { withAnimation { setupExpanded.toggle() } } label: {
+                Label("Setup", systemImage: setupExpanded ? "chevron.up.circle" : "slider.horizontal.3")
+            }
+            .labelStyle(.iconOnly).help(setupExpanded ? "Hide the setup" : "Show the setup (CV, JD, skill steps)")
         }
+    }
+
+    @ViewBuilder private func profileButtons(compact: Bool) -> some View {
+        let blocked = interview.blocker(.applyInstruction)
+        if compact {
+            Menu {
+                ForEach(InterviewController.Profile.allCases) { p in
+                    Button(p.label) { Task { await interview.run(.applyInstruction, profile: p) } }
+                }
+            } label: { Text(interview.activeProfile?.label ?? "Profile") }
+            .menuStyle(.borderlessButton).fixedSize()
+            .disabled(blocked != nil).help(blocked ?? "Apply an answering profile (/apply-instruction)")
+        } else {
+            HStack(spacing: 2) {
+                ForEach(InterviewController.Profile.allCases) { p in
+                    let active = interview.activeProfile == p
+                    Button(p.label) { Task { await interview.run(.applyInstruction, profile: p) } }
+                        .buttonStyle(.bordered)
+                        .tint(active ? .accentColor : nil)
+                        .fontWeight(active ? .semibold : .regular)
+                        .help(blocked ?? "/apply-instruction \(p.rawValue)" + (active ? " (active)" : ""))
+                }
+            }
+            .controlSize(.small)
+            .disabled(blocked != nil)
+        }
+    }
+
+    private func liveCodingButton(compact: Bool) -> some View {
+        let blocked = interview.blocker(.liveCoding)
+        let active = interview.liveCodingActive
+        let icon = active ? "chevron.left.forwardslash.chevron.right" : "curlybraces"
+        return Button { Task { await interview.run(.liveCoding) } } label: {
+            if compact { Image(systemName: icon) } else { Label("Live coding", systemImage: icon) }
+        }
+        .buttonStyle(.bordered).controlSize(.small)
+        .tint(active ? .accentColor : nil)
+        .disabled(blocked != nil)
+        .help(blocked ?? (active ? "Live coding & design is active" : "Apply /live-coding-design (optional)"))
     }
 
     // MARK: Cards
@@ -58,8 +114,9 @@ struct AnswersPanel: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     if interview.turns.isEmpty {
-                        Text("Press \(hotkeyLabel) (or Ask) when the interviewer finishes a question.")
-                            .font(.callout).foregroundStyle(.secondary).padding(.vertical, 20)
+                        Text("Run the steps in the setup, then press \(hotkeyLabel) (or Ask) when the interviewer "
+                             + "finishes a question. You can also just start — the coach is ready either way.")
+                            .font(.callout).foregroundStyle(.secondary).padding(.vertical, 12)
                     }
                     ForEach(interview.turns) { turn in
                         AnswerCard(turn: turn, isLatest: turn.n == interview.turns.last?.n,
@@ -67,7 +124,7 @@ struct AnswersPanel: View {
                                    isStreaming: interview.streamingTurn == turn.n,
                                    folder: interview.folder, fontSize: fontSize,
                                    toggle: { if expanded.contains(turn.n) { expanded.remove(turn.n) } else { expanded.insert(turn.n) } },
-                                   regenerate: { Task { await interview.regenerate() } })
+                                   regenerate: turn.kind == .skill ? nil : { Task { await interview.regenerate() } })
                             .id(turn.n)
                     }
                     Color.clear.frame(height: 1).id("bottom")
@@ -95,7 +152,7 @@ struct AnswersPanel: View {
                 if d == .full {
                     ForEach(env.config.interview.quickPrompts, id: \.self) { qp in
                         Button(qp.label) { Task { await interview.sendQuick(qp) } }
-                            .help(qp.text).disabled(!interview.prepState.isReady)
+                            .help(qp.text)
                     }
                 } else {
                     Menu {
@@ -104,7 +161,6 @@ struct AnswersPanel: View {
                         }
                     } label: { Image(systemName: "ellipsis.bubble") }
                     .menuStyle(.borderlessButton).fixedSize().help("Quick prompts")
-                    .disabled(!interview.prepState.isReady)
                 }
                 if d == .iconEverything {
                     Button { showingTypeBox.toggle() } label: { Image(systemName: "keyboard") }
@@ -131,8 +187,7 @@ struct AnswersPanel: View {
             }
         }
         .buttonStyle(.borderedProminent)
-        .disabled(!interview.prepState.isReady)
-        .help(interview.prepState.isReady ? "Send the interviewer's latest words (\(hotkeyLabel))" : "Preparing…")
+        .help("Send the interviewer's latest words (\(hotkeyLabel))")
         .accessibilityLabel("Ask")
     }
 
@@ -140,7 +195,6 @@ struct AnswersPanel: View {
         TextField("Type to the coach…", text: $draft, axis: .vertical)
             .lineLimit(1...4)
             .textFieldStyle(.roundedBorder)
-            .disabled(!interview.prepState.isReady)
             .onSubmit {
                 let text = draft
                 draft = ""
@@ -154,8 +208,9 @@ struct AnswersPanel: View {
     }
 }
 
-/// One turn: the answer (streaming), its state, and Copy / Regenerate / Sent text.
-private struct AnswerCard: View {
+/// One turn: the answer (streaming), its state, and Copy / Regenerate / Sent text. Shared with
+/// the read-only history view, where `regenerate` is nil.
+struct AnswerCard: View {
     let turn: InterviewRecord.Turn
     let isLatest: Bool
     let isExpanded: Bool
@@ -163,7 +218,7 @@ private struct AnswerCard: View {
     let folder: URL?
     let fontSize: Double
     let toggle: () -> Void
-    let regenerate: () -> Void
+    let regenerate: (() -> Void)?
     @State private var showingSent = false
     @State private var copied = false
 
@@ -214,7 +269,7 @@ private struct AnswerCard: View {
             Button { showingSent.toggle() } label: { Image(systemName: "text.quote") }
                 .buttonStyle(.borderless).help("What was sent")
                 .popover(isPresented: $showingSent) { sentPopover }
-            if isLatest && !isStreaming {
+            if isLatest && !isStreaming, let regenerate {
                 Button(action: regenerate) { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.borderless).help("Give me a different answer")
             }
@@ -254,11 +309,13 @@ private struct AnswerCard: View {
         case .typed: return "You: "
         case .quick: return "Quick: "
         case .regenerate: return ""
+        case .skill: return "Skill: "
         }
     }
 
     /// The model's `**Q:**` line, else what was sent.
     private var summaryLine: String {
+        if turn.kind == .skill { return "Skill: \(turn.question)" }
         if let first = turn.answer.split(separator: "\n").first, first.hasPrefix("**Q:**") {
             return first.replacingOccurrences(of: "**Q:**", with: "Q:").trimmingCharacters(in: .whitespaces)
         }

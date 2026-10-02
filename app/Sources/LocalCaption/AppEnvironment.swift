@@ -21,6 +21,17 @@ final class AppEnvironment: ObservableObject {
     lazy var library = InterviewLibrary()
     /// Where interview records live; injectable for tests.
     var interviewsRoot = AppPaths.interviews
+
+    /// The live session and its interview. Held here, not by the session screen, so opening a
+    /// past session in the sidebar and coming back keeps both (recording, prep, conversation).
+    lazy var session = SessionController(env: self)
+    lazy var interview: InterviewController = {
+        let i = InterviewController(env: self)
+        i.transcriptSource = { [weak self] in
+            self?.session.askSnapshot ?? (segments: [], interim: "", audioMs: 0)
+        }
+        return i
+    }()
     lazy var codex = CodexService(engine: CodexAppServerEngine(codexPath: { [codexPath] in codexPath.get() }))
     private let codexPath = LockedValue("")
 

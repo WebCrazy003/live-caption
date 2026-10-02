@@ -1,0 +1,104 @@
+{
+  "name": "skill-message",
+  "description": "One skill step (SPEC-13 §Skill message): definition only the first time, then attachments, command last; blank sections omitted; one blank line between sections.",
+  "cases": [
+    {
+      "kind": "skill",
+      "name": "discovery-cv first time",
+      "command": "/discovery-cv",
+      "definition": {
+        "title": "discovery-cv",
+        "text": "---\nname: discovery-cv\n---\n# /discovery-cv\nBuild the profile.\n",
+        "files": [
+          {
+            "path": "refs/example.md",
+            "text": "Example card."
+          },
+          {
+            "path": "empty.txt",
+            "text": "  "
+          }
+        ]
+      },
+      "attachments": [
+        {
+          "title": "MY CV",
+          "text": "\nJane Doe\nSwift, 8 years.\n"
+        }
+      ],
+      "expect": "SKILL: discovery-cv\n---\nname: discovery-cv\n---\n# /discovery-cv\nBuild the profile.\n\nSKILL FILE: refs/example.md\nExample card.\n\nMY CV\nJane Doe\nSwift, 8 years.\n\n/discovery-cv"
+    },
+    {
+      "kind": "skill",
+      "name": "discovery-jd first time",
+      "command": "/discovery-jd",
+      "definition": {
+        "title": "discovery-jd",
+        "text": "# /discovery-jd\nResearch the company."
+      },
+      "attachments": [
+        {
+          "title": "JOB DESCRIPTION",
+          "text": "Senior iOS role at Acme."
+        }
+      ],
+      "expect": "SKILL: discovery-jd\n# /discovery-jd\nResearch the company.\n\nJOB DESCRIPTION\nSenior iOS role at Acme.\n\n/discovery-jd"
+    },
+    {
+      "kind": "skill",
+      "name": "skill already received: no definition",
+      "command": "/discovery-cv",
+      "definition": null,
+      "attachments": [
+        {
+          "title": "MY CV",
+          "text": "Jane Doe (edited)"
+        }
+      ],
+      "expect": "MY CV\nJane Doe (edited)\n\n/discovery-cv"
+    },
+    {
+      "kind": "skill",
+      "name": "apply-instruction with a profile",
+      "command": "/apply-instruction tech",
+      "definition": {
+        "title": "apply-instruction",
+        "text": "# /apply-instruction\nAnswer fast."
+      },
+      "attachments": [],
+      "expect": "SKILL: apply-instruction\n# /apply-instruction\nAnswer fast.\n\n/apply-instruction tech"
+    },
+    {
+      "kind": "skill",
+      "name": "switching profile later",
+      "command": "/apply-instruction cultural",
+      "definition": null,
+      "attachments": [],
+      "expect": "/apply-instruction cultural"
+    },
+    {
+      "kind": "skill",
+      "name": "live-coding-design, no attachment",
+      "command": "/live-coding-design",
+      "definition": {
+        "title": "live-coding-design",
+        "text": "# /live-coding-design\nCode step by step."
+      },
+      "attachments": [],
+      "expect": "SKILL: live-coding-design\n# /live-coding-design\nCode step by step.\n\n/live-coding-design"
+    },
+    {
+      "kind": "skill",
+      "name": "blank attachment is omitted",
+      "command": "/discovery-jd",
+      "definition": null,
+      "attachments": [
+        {
+          "title": "JOB DESCRIPTION",
+          "text": " \n "
+        }
+      ],
+      "expect": "/discovery-jd"
+    }
+  ]
+}

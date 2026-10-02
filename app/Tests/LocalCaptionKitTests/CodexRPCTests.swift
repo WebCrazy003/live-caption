@@ -142,8 +142,12 @@ final class CodexRPCTests: XCTestCase {
         }
     }
 
-    func testToolGuardAllowsOnlyChatItems() {
-        XCTAssertEqual(CodexRPC.allowedItemTypes, ["userMessage", "agentMessage", "reasoning"])
+    func testToolGuardAllowsChatItemsAndWebSearchOnly() {
+        // Web search is allowed since 2026-10-02 (discovery-jd); commands, edits, MCP stay blocked.
+        XCTAssertEqual(CodexRPC.allowedItemTypes, ["userMessage", "agentMessage", "reasoning", "webSearch"])
+        for blocked in ["commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "imageGeneration"] {
+            XCTAssertFalse(CodexRPC.allowedItemTypes.contains(blocked), blocked)
+        }
     }
 
     // MARK: Responses

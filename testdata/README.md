@@ -27,7 +27,7 @@ testdata/
 ├── config/          malformed configs → expected repaired config      (Config)
 ├── hotkey/          hotkey strings → canonical form or error kind      (Hotkey — SPEC-11)
 ├── ask/             finals + interim + mark → text sent on an Ask      (AskSelection — SPEC-14)
-└── interview-prompt/ setup / question / transcript → exact prompt text  (InterviewPrompt — SPEC-13–15)
+└── interview-prompt/ skill step / question / transcript → exact prompt text (InterviewPrompt — SPEC-13–15)
 ```
 
 The `hotkey/`, `ask/` and `interview-prompt/` suites belong to Interview Assist

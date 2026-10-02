@@ -49,7 +49,7 @@ struct LibraryView: View {
                     Text("Interview skills")
                 } footer: {
                     Text("A folder with SKILL.md, or a single .md file. Its text, plus any .md/.txt files with it, "
-                         + "goes into the prep message; scripts and other files are left out.")
+                         + "is sent the first time you run that skill step; scripts and other files are left out.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

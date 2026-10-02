@@ -28,6 +28,8 @@ final class InterviewLibrary: ObservableObject {
     }
     func document(_ id: String) -> InterviewLibraryIndex.Document? { index.documents.first { $0.id == id } }
     func skill(_ id: String) -> InterviewLibraryIndex.Skill? { index.skills.first { $0.id == id } }
+    /// The newest skill with this slug (SPEC-13 §Skill steps finds steps by slug).
+    func skill(slug: String) -> InterviewLibraryIndex.Skill? { index.skills.last { $0.slug == slug } }
 
     private func save() {
         do { try index.write(to: indexURL) } catch { lastError = "Could not save the library: \(error.localizedDescription)" }
@@ -151,7 +153,7 @@ final class InterviewLibrary: ObservableObject {
         return SkillImport(skill: skill, ignored: ignored)
     }
 
-    /// The skill as it goes into the prep message.
+    /// The skill's definition as a skill step sends it (SPEC-13 §Skill message).
     func promptSkill(_ id: String) -> InterviewPrompt.Skill? {
         guard let s = skill(id) else { return nil }
         let dir = skillsDir.appendingPathComponent(s.slug)

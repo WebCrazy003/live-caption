@@ -2,8 +2,8 @@ import XCTest
 @testable import LocalCaption
 import LocalCaptionKit
 
-/// The interview flow against a fake engine (SPEC-13 §Acceptance): library import, Prepare on a
-/// new thread, extra prep turns on the same thread, re-prepare, and the recording hook.
+/// The interview flow against a fake engine (SPEC-13 §Acceptance): library import, the CV upload,
+/// the manual skill steps on one thread, profiles, and the coach opening on Start.
 @MainActor
 final class InterviewFlowTests: XCTestCase {
 
@@ -42,7 +42,9 @@ final class InterviewFlowTests: XCTestCase {
                    defaultEffort: "medium", efforts: ["low", "medium"], acceptsImages: true)]
         }
         func usage() async throws -> CodexRPC.Usage { .init(planType: "plus", windows: [.init(minutes: 300, usedPercent: 5, resetsAt: nil)]) }
+        var failStart: EngineError?
         func startThread(_ cfg: ThreadConfig) async throws -> String {
+            if let failStart { throw failStart }
             let n = lock.withLock { _threads.append(cfg); return _threads.count }
             return "thr\(n)"
         }
@@ -97,117 +99,162 @@ final class InterviewFlowTests: XCTestCase {
         return url
     }
 
-    private func seedLibrary() throws -> (cv: String, jd: String, skill: String) {
-        let src = tmp.appendingPathComponent("src")
-        let cv = try env.library.importDocument(from: write("Jane Doe\r\nSwift, 8 years.", "Jane CV.txt", in: src), kind: .cv)
-        let jd = try env.library.addPastedDocument(title: "Acme JD", text: "Senior iOS role.", kind: .jd)
-        let skillDir = src.appendingPathComponent("coach")
+    /// The owner's four skills, as importable folders.
+    @discardableResult
+    private func importSkills(_ names: [String] = InterviewController.Step.allCases.map(\.rawValue)) throws -> [String: String] {
+        var ids: [String: String] = [:]
+        for name in names {
+            let dir = tmp.appendingPathComponent("src/\(name)")
+            _ = try write("---\nname: \(name)\n---\n# /\(name)\nDo the \(name) step.", "SKILL.md", in: dir)
+            ids[name] = try env.library.importSkill(from: dir).skill.id
+        }
+        return ids
+    }
+
+    private func importCV() throws -> String {
+        try env.library.importDocument(from: write("Jane Doe\r\nSwift, 8 years.", "Jane CV.txt", in: tmp.appendingPathComponent("src")),
+                                       kind: .cv).id
+    }
+
+    private var sentTexts: [String] {
+        engine.sent.compactMap { if case .text(let t)? = $0.input.first { return t }; return nil }
+    }
+
+    // MARK: Library
+
+    func testLibraryImportsNormaliseAndPersist() throws {
+        let cv = try importCV()
+        let skillDir = tmp.appendingPathComponent("src/coach")
         _ = try write("---\nname: Interview coach\n---\nUse STAR.", "SKILL.md", in: skillDir)
         _ = try write("Situation, Task, Action, Result.", "refs/star.md", in: skillDir)
         _ = try write("#!/bin/sh\necho hi", "run.sh", in: skillDir)
         let imported = try env.library.importSkill(from: skillDir)
         XCTAssertEqual(imported.ignored, ["run.sh"])
         XCTAssertEqual(imported.skill.files, ["SKILL.md", "refs/star.md"])
-        return (cv.id, jd.id, imported.skill.id)
-    }
-
-    func testLibraryImportsNormaliseAndPersist() throws {
-        let ids = try seedLibrary()
-        XCTAssertEqual(env.library.text(of: ids.cv), "Jane Doe\nSwift, 8 years.")
-        XCTAssertEqual(env.library.promptSkill(ids.skill)?.files.map(\.path), ["refs/star.md"])
-        // A fresh library instance reads the same index from disk.
+        XCTAssertEqual(env.library.text(of: cv), "Jane Doe\nSwift, 8 years.")
         let reloaded = InterviewLibrary(root: tmp.appendingPathComponent("library"))
-        XCTAssertEqual(reloaded.documents.map(\.title).sorted(), ["Acme JD", "Jane CV"])
-        XCTAssertEqual(reloaded.skills.map(\.title), ["Interview coach"])
-        env.library.setText("Edited", of: ids.cv)
-        XCTAssertEqual(env.library.text(of: ids.cv), "Edited")
+        XCTAssertEqual(reloaded.documents.map(\.title), ["Jane CV"])
+        XCTAssertEqual(reloaded.skills.map(\.slug), ["interview-coach"])
+        XCTAssertThrowsError(try env.library.importDocument(from: write("x", "cv.docx", in: tmp), kind: .cv),
+                             ".docx isn't supported any more")
     }
 
-    func testPrepareOpensOneLockedThreadAndStreamsTheBriefing() async throws {
-        let ids = try seedLibrary()
+    func testUploadCVImportsAndSelectsIt() throws {
         let interview = InterviewController(env: env)
-        interview.draft.company = "Acme"; interview.draft.role = "Senior iOS"
-        interview.draft.cvId = ids.cv; interview.draft.jdId = ids.jd; interview.draft.skillIds = [ids.skill]
-        interview.draft.answerLength = .short
-        XCTAssertTrue(interview.canPrepare)
+        XCTAssertNil(interview.draft.cvId)
+        try interview.uploadCV(from: write("Alex Example\nKotlin.", "Alex.md", in: tmp.appendingPathComponent("src")))
+        let id = try XCTUnwrap(interview.draft.cvId)
+        XCTAssertEqual(env.library.document(id)?.kind, .cv)
+        XCTAssertEqual(env.library.text(of: id), "Alex Example\nKotlin.")
+    }
 
-        await interview.prepare()
+    // MARK: Skill steps
 
-        XCTAssertEqual(interview.prepState, .ready)
-        XCTAssertEqual(interview.briefing, "Briefing\nREADY")
+    func testStepsRunOnOneThreadAndSendEachDefinitionOnce() async throws {
+        try importSkills()
+        let interview = InterviewController(env: env)
+        interview.draft.cvId = try importCV()
+        interview.draft.jobDescription = "Senior iOS Engineer\nAcme, London."
+        let skill = { (slug: String) in self.env.library.promptSkill(try! XCTUnwrap(self.env.library.skill(slug: slug)).id) }
+
+        await interview.run(.discoveryCV)
+        XCTAssertEqual(sentTexts.last, InterviewPrompt.skillMessage(
+            command: "/discovery-cv", definition: skill("discovery-cv"),
+            attachments: [.init(title: "MY CV", text: "Jane Doe\nSwift, 8 years.")]))
+        XCTAssertEqual(engine.sent.last?.effort, "medium", "skill steps use prep_reasoning_effort")
+        XCTAssertEqual(engine.threads.first?.baseInstructions, InterviewPrompt.baseInstructions(length: .medium))
+
+        await interview.run(.discoveryCV)
+        XCTAssertEqual(sentTexts.last, InterviewPrompt.skillMessage(
+            command: "/discovery-cv", definition: nil,
+            attachments: [.init(title: "MY CV", text: "Jane Doe\nSwift, 8 years.")]), "definition only the first time")
+
+        await interview.run(.discoveryJD)
+        XCTAssertTrue(sentTexts.last!.hasSuffix("JOB DESCRIPTION\nSenior iOS Engineer\nAcme, London.\n\n/discovery-jd"))
+        XCTAssertEqual(interview.record?.name, "Senior iOS Engineer")
+
+        XCTAssertNotNil(interview.blocker(.liveCoding), "live coding waits for Tech")
+        await interview.run(.applyInstruction, profile: .tech)
+        XCTAssertTrue(sentTexts.last!.hasSuffix("\n\n/apply-instruction tech"))
+        XCTAssertEqual(interview.activeProfile, .tech)
+        XCTAssertNil(interview.blocker(.liveCoding))
+        await interview.run(.liveCoding)
+        XCTAssertEqual(sentTexts.last, InterviewPrompt.skillMessage(command: "/live-coding-design",
+                                                                   definition: skill("live-coding-design")))
+        XCTAssertTrue(interview.liveCodingActive)
+
+        await interview.run(.applyInstruction, profile: .cultural)
+        XCTAssertEqual(sentTexts.last, "/apply-instruction cultural", "switching profile resends no definition")
+        XCTAssertEqual(interview.activeProfile, .cultural)
+        XCTAssertFalse(interview.liveCodingActive, "a new profile replaces live coding")
+
         XCTAssertEqual(engine.threads.count, 1)
-        XCTAssertEqual(engine.threads[0].baseInstructions, InterviewPrompt.baseInstructions(length: .short))
-        XCTAssertEqual(engine.threads[0].model, "gpt-6-luna")
-        let prep = try XCTUnwrap(engine.sent.first)
-        XCTAssertEqual(prep.effort, "medium", "prep uses prep_reasoning_effort")
-        XCTAssertEqual(prep.input, [.text(interview.prepMessage)])
-        guard case .text(let text) = prep.input[0] else { return XCTFail() }
-        XCTAssertTrue(text.contains("INTERVIEW SKILL: Interview coach"))
-        XCTAssertTrue(text.contains("SKILL FILE: refs/star.md"))
-        XCTAssertTrue(text.hasSuffix(InterviewPrompt.prepTaskWithSkill))
-
-        // On disk.
-        let folder = try XCTUnwrap(interview.folder)
-        let rec = try InterviewFiles.read(from: folder)
-        XCTAssertEqual(rec.threadId, "thr1")
-        XCTAssertEqual(rec.prep.status, .done)
-        XCTAssertEqual(rec.setup.documentIds, [ids.cv, ids.jd])
-        XCTAssertEqual(rec.name, "Acme — Senior iOS")
-    }
-
-    func testExtraPrepTurnsGoToTheSameThread() async throws {
-        let interview = InterviewController(env: env)
-        interview.draft.company = "Acme"
-        await interview.prepare()
-        engine.reply = { _ in [.delta("Sure"), .completed("Sure — here are three more.")] }
-
-        let status = await interview.runTurn(kind: .typed, text: "Also prepare system design", question: "Also prepare system design")
-
-        XCTAssertEqual(status, .completed)
-        XCTAssertEqual(engine.sent.map(\.threadId), ["thr1", "thr1"])
-        XCTAssertEqual(engine.sent.last?.effort, "low", "turns use reasoning_effort")
+        XCTAssertEqual(Set(engine.sent.map(\.threadId)), ["thr1"])
         let rec = try InterviewFiles.read(from: XCTUnwrap(interview.folder))
-        XCTAssertEqual(rec.prep.extraTurns, 1)
-        XCTAssertEqual(rec.turns.first?.answer, "Sure — here are three more.")
-        XCTAssertEqual(rec.turns.first?.status, .completed)
-        XCTAssertNotNil(rec.turns.first?.ttftMs)
+        XCTAssertEqual(rec.turns.map(\.kind), Array(repeating: .skill, count: 6))
+        XCTAssertEqual(rec.turns.map(\.question), ["/discovery-cv", "/discovery-cv", "/discovery-jd",
+                                                   "/apply-instruction tech", "/live-coding-design", "/apply-instruction cultural"])
+        XCTAssertTrue(interview.isDone(.discoveryCV) && interview.isDone(.discoveryJD))
     }
 
-    func testPreparingAgainReplacesAnUnstartedInterview() async throws {
+    func testStepBlockers() throws {
         let interview = InterviewController(env: env)
-        interview.draft.company = "Acme"
-        await interview.prepare()
-        let first = try XCTUnwrap(interview.folder)
-        interview.draft.role = "Lead"
-        XCTAssertTrue(interview.setupChangedSinceReady)
-
-        await interview.prepare()
-
-        XCTAssertFalse(FileManager.default.fileExists(atPath: first.path), "the unstarted draft is deleted")
-        XCTAssertEqual(engine.archived, ["thr1"], "and its thread archived")
-        XCTAssertEqual(interview.record?.threadId, "thr2")
-        XCTAssertFalse(interview.setupChangedSinceReady)
+        XCTAssertEqual(interview.blocker(.discoveryCV), "Import the discovery-cv skill in the library")
+        try importSkills()
+        XCTAssertEqual(interview.blocker(.discoveryCV), "Select or upload a CV")
+        XCTAssertEqual(interview.blocker(.discoveryJD), "Paste the job description")
+        XCTAssertNil(interview.blocker(.applyInstruction))
+        XCTAssertEqual(interview.blocker(.liveCoding), "Apply the Tech profile first")
     }
 
-    func testStartedInterviewIsKeptAndLinkedToTheCapture() async throws {
+    // MARK: The coach without any step
+
+    func testStartOpensTheCoachWithoutAnySteps() async throws {
+        env.config.interview.answerLength = .short
+        env.config.interview.customInstructions = "Mention measurable results."
         let interview = InterviewController(env: env)
-        let uuid = UUID()
-        interview.recordingStarted(uuid: uuid, at: Date())      // Start before Prepare is allowed
-        await interview.prepare()
-        await interview.discardUnstarted()
+        interview.recordingStarted(uuid: UUID(), at: Date())
+        let thread = await interview.ensureThread()      // joins the open started by Start
+        XCTAssertEqual(thread, "thr1")
+        XCTAssertEqual(engine.threads.count, 1)
+        XCTAssertEqual(interview.threadState, .open)
+        XCTAssertEqual(engine.threads[0].baseInstructions,
+                       InterviewPrompt.baseInstructions(length: .short, custom: "Mention measurable results."))
         let rec = try InterviewFiles.read(from: XCTUnwrap(interview.folder))
-        XCTAssertEqual(rec.captureSessionUUID, uuid.uuidString)
         XCTAssertNotNil(rec.startedAt)
+        XCTAssertNotNil(rec.captureSessionUUID)
     }
 
-    func testFailedPrepCanBeRetriedOnTheSameThread() async throws {
-        engine.reply = { _ in [.failed(.network("offline"), partial: "")] }
+    func testCoachUnavailableIsReportedAndRetryable() async throws {
+        engine.failStart = .signedOut
         let interview = InterviewController(env: env)
-        await interview.prepare()
-        guard case .failed = interview.prepState else { return XCTFail("expected failure") }
-        engine.reply = { _ in [.completed("READY")] }
-        await interview.retryPrepare()
-        XCTAssertEqual(interview.prepState, .ready)
-        XCTAssertEqual(engine.threads.count, 1, "retry reuses the thread")
+        let first = await interview.ensureThread()
+        XCTAssertNil(first)
+        XCTAssertEqual(interview.threadState, .failed(EngineError.signedOut.localizedDescription))
+        engine.failStart = nil
+        let second = await interview.ensureThread()
+        XCTAssertEqual(second, "thr1")
+        XCTAssertEqual(interview.threadState, .open)
+    }
+
+    func testStartOverDiscardsAnUnstartedInterview() async throws {
+        let interview = InterviewController(env: env)
+        await interview.sendTyped("hello")
+        let folder = try XCTUnwrap(interview.folder)
+        await interview.discardUnstarted()
+        interview.resetForNewInterview()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
+        XCTAssertEqual(engine.archived, ["thr1"])
+        XCTAssertEqual(interview.threadState, .none)
+        XCTAssertTrue(interview.turns.isEmpty)
+    }
+
+    func testStartedInterviewIsNotDiscarded() async throws {
+        let interview = InterviewController(env: env)
+        interview.recordingStarted(uuid: UUID(), at: Date())
+        await interview.ensureThread()
+        await interview.discardUnstarted()
+        XCTAssertNotNil(interview.record)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(interview.folder).path))
     }
 }

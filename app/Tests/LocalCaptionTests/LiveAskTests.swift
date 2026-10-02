@@ -32,24 +32,34 @@ final class LiveAskTests: XCTestCase {
     private func preparedInterview() async -> InterviewController {
         let interview = InterviewController(env: env)
         interview.transcriptSource = { [unowned self] in self.transcript }
-        interview.draft.company = "Acme"
-        await interview.prepare()
-        XCTAssertEqual(interview.prepState, .ready)
+        await interview.ensureThread()
+        XCTAssertEqual(interview.threadState, .open)
         engine.reply = { _ in [.delta("**Q:** Why us?\n"), .completed("**Q:** Why us?\nBecause…")] }
         return interview
     }
 
     private var askTexts: [String] {
-        engine.sent.dropFirst().compactMap { if case .text(let t)? = $0.input.first { return t }; return nil }
+        engine.sent.compactMap { if case .text(let t)? = $0.input.first { return t }; return nil }
     }
 
     // MARK: Selection → turn
 
-    func testAskBeforeReadySendsNothing() async {
+    func testAskWithoutAnyStepOpensTheCoachAndAnswers() async {
         let interview = InterviewController(env: env)
+        interview.transcriptSource = { [unowned self] in self.transcript }
+        transcript = ([], "tell me about yourself", 2000)
         await interview.ask()
-        XCTAssertEqual(interview.status, "Still preparing…")
-        XCTAssertTrue(engine.sent.isEmpty)
+        XCTAssertEqual(engine.threads.count, 1)
+        XCTAssertEqual(askTexts, [InterviewPrompt.ask("tell me about yourself")])
+        XCTAssertEqual(interview.turns.last?.status, .completed)
+    }
+
+    func testNothingNewOpensNoCoach() async {
+        let interview = InterviewController(env: env)
+        interview.transcriptSource = { ([], "", 0) }
+        await interview.ask()
+        XCTAssertEqual(interview.status, "Nothing new since your last ask")
+        XCTAssertTrue(engine.threads.isEmpty)
     }
 
     func testAskSendsTheInterviewersLatestWordsThenOnlyWhatIsNew() async throws {
@@ -143,7 +153,6 @@ final class LiveAskTests: XCTestCase {
                                              "make it about Swift"])
         let rec = try InterviewFiles.read(from: XCTUnwrap(interview.folder))
         XCTAssertEqual(rec.turns.count, 4)
-        XCTAssertEqual(rec.prep.extraTurns, 1, "a typed turn before Start counts as prep chat")
     }
 
     // MARK: Clipboard helpers

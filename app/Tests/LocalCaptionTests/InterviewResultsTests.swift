@@ -32,10 +32,9 @@ final class InterviewResultsTests: XCTestCase {
     /// Prepare, start recording, ask once — ready for Stop.
     private func runInterview() async throws -> (InterviewController, Int64) {
         let interview = InterviewController(env: env)
-        interview.draft.company = "Acme"
         interview.transcriptSource = { ([], "why us", 3000) }
-        await interview.prepare()
         interview.recordingStarted(uuid: UUID(), at: Date())
+        await interview.ensureThread()
         engine.reply = { _ in [.completed("**Q:** Why us?\nBecause.")] }
         await interview.ask()
         let row = try env.store.insert(SessionRecord(sessionName: "Interview 1", createdAt: TimeFormat.iso(Date())))
@@ -98,8 +97,7 @@ final class InterviewResultsTests: XCTestCase {
         let folder = try XCTUnwrap(live.folder)
 
         let reopened = try InterviewController(env: env, existing: folder)
-        XCTAssertEqual(reopened.prepState, .ready)
-        XCTAssertEqual(reopened.briefing, live.briefing)
+        XCTAssertEqual(reopened.threadState, .open)
         XCTAssertEqual(reopened.record?.turns.count, 1)
         XCTAssertTrue(reopened.isFinished)
 
@@ -115,7 +113,7 @@ final class InterviewResultsTests: XCTestCase {
 
     func testLaunchSweepFailsCutOffTurns() async throws {
         let interview = InterviewController(env: env)
-        await interview.prepare()
+        await interview.ensureThread()
         engine.holdIf = { _ in true }
         let turn = Task { await interview.sendTyped("left hanging") }
         try await Task.sleep(nanoseconds: 100_000_000)
@@ -134,7 +132,7 @@ final class InterviewResultsTests: XCTestCase {
         let interview = InterviewController(env: env)
         let capture = UUID()
         interview.recordingStarted(uuid: capture, at: Date())
-        await interview.prepare()
+        await interview.ensureThread()
         let row = try env.store.insert(SessionRecord(sessionName: "Recovered", createdAt: TimeFormat.iso(Date())))
 
         env.linkRecoveredInterview(captureId: capture, sessionId: row.id)

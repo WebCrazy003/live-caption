@@ -14,7 +14,9 @@ public enum CodexRPC {
         "image_generation", "multi_agent", "plugins", "tool_suggest", "skill_search", "sleep_tool",
         "in_app_browser", "goals", "hooks",
     ]
-    public static let configOverrides = [#"web_search="disabled""#, "mcp_servers={}", "project_doc_max_bytes=0"]
+    /// Web search stays on (owner decision 2026-10-02): the discovery-jd skill researches the company
+    /// with source URLs. Files, commands, edits, MCP and AGENTS.md stay off.
+    public static let configOverrides = [#"web_search="live""#, "mcp_servers={}", "project_doc_max_bytes=0"]
 
     /// Arguments after the `codex` executable.
     public static var launchArguments: [String] {
@@ -22,7 +24,7 @@ public enum CodexRPC {
     }
 
     /// The only item types a locked-down turn may produce. Anything else trips the tool-call guard.
-    public static let allowedItemTypes: Set<String> = ["userMessage", "agentMessage", "reasoning"]
+    public static let allowedItemTypes: Set<String> = ["userMessage", "agentMessage", "reasoning", "webSearch"]
 
     // MARK: Outgoing
 

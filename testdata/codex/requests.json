@@ -1,6 +1,6 @@
 {
   "name": "requests",
-  "description": "Builder inputs → the exact params object sent (compared as JSON, key order irrelevant). These are the lockdown settings S0 verified.",
+  "description": "Builder inputs → the exact params object sent (compared as JSON, key order irrelevant). The lockdown settings S0 verified; web search on since 2026-10-02 (discovery-jd).",
   "cases": [
     {
       "build": "initialize",
@@ -220,7 +220,7 @@
     "--disable",
     "hooks",
     "-c",
-    "web_search=\"disabled\"",
+    "web_search=\"live\"",
     "-c",
     "mcp_servers={}",
     "-c",

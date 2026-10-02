@@ -98,7 +98,7 @@ on the child's `PATH`: prepend the directory of the found binary and, on macOS,
       `item/tool/requestUserInput`, `mcpServer/elicitation/request`, `item/tool/call`, legacy
       `applyPatchApproval` / `execCommandApproval`. With approvals `never` none arrived in S0; if
       one does, log it as a lockdown breach.
-- [ ] One process per app run, started on **Prepare**, kept until the interview's summary is
+- [ ] One process per app run, started when the interview's thread first opens (a skill step, an Ask, or Start), kept until the interview's summary is
       done or the app quits. On unexpected exit: restart once, `thread/resume` the thread, mark
       any in-flight turn `failed` ("Codex restarted — press Ask again"). A second crash →
       engine `failed`, the UI says so, captions are unaffected.
@@ -116,10 +116,10 @@ safe:
 | Working folder | `cwd` = `interview/workspace/`. App-owned and **always empty**: verified (and emptied) before every `thread/start`; attachments and records live elsewhere. |
 | Sandbox | `thread/start` `sandbox: "read-only"` (0.159.3 enum: `read-only` \| `workspace-write` \| `danger-full-access`). |
 | Approvals | `approvalPolicy: "never"` — nothing ever pauses waiting for a click. |
-| Tools off (config) | Launch flags verified on 0.159.3 (S0.8): `--disable` each of `shell_tool unified_exec apps browser_use browser_use_external computer_use image_generation multi_agent plugins tool_suggest skill_search sleep_tool in_app_browser goals hooks`, plus `-c web_search="disabled" -c 'mcp_servers={}' -c project_doc_max_bytes=0` (no `AGENTS.md`). Re-check with `codex features list` when the pinned version changes. |
+| Tools off (config) | Launch flags verified on 0.159.3 (S0.8): `--disable` each of `shell_tool unified_exec apps browser_use browser_use_external computer_use image_generation multi_agent plugins tool_suggest skill_search sleep_tool in_app_browser goals hooks`, plus `-c web_search="live" -c 'mcp_servers={}' -c project_doc_max_bytes=0` (no `AGENTS.md`). **Web search is on** since 2026-10-02 (owner decision — discovery-jd researches the company); it was `disabled` before. Re-check with `codex features list` when the pinned version changes. |
 | Isolation | Dedicated `CODEX_HOME`, so the user's own `~/.codex` config, `AGENTS.md`, skills and MCP servers never load (S0.7). Fallback if sign-in can't be done there: default `CODEX_HOME` + all overrides above. |
-| Instructions | `baseInstructions` = the interview-coach prompt (SPEC-13), which states it has no tools and must only answer. |
-| **Tool-call guard** | If an `item/started` arrives with any type other than `userMessage`, `agentMessage` or `reasoning`, immediately `turn/interrupt`, mark the turn `failed` ("Blocked: the model tried to use a tool"), and log the item type. |
+| Instructions | `baseInstructions` = the interview-copilot prompt (SPEC-13): no commands or files; web search only when a skill or the user asks for research, never while answering a live question. |
+| **Tool-call guard** | If an `item/started` arrives with any type other than `userMessage`, `agentMessage`, `reasoning` or `webSearch`, immediately `turn/interrupt`, mark the turn `failed` ("Blocked: the model tried to use a tool"), and log the item type. |
 
 ## Threads & turns
 

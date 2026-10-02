@@ -1,7 +1,7 @@
 # SPEC-14 — Live ask: hotkey, selection, screenshots, Answers panel
 
-**Status:** 🟢 Built (step 4) — hotkey, selection, screenshots, Answers panel, busy policy; tests + live Prepare→Ask (1.25 s to first words) pass; in-call check by the user pending · **Step:** 4 of [SPEC-11](SPEC-11-interview-assist.md) · **Depends on:**
-SPEC-11, SPEC-12, SPEC-13 (a prepared thread)
+**Status:** 🟢 Built (step 4) — hotkey, selection, screenshots, Answers panel, busy policy; tests + live skill step → Ask (1.5–1.8 s to first words) pass; in-call check by the user pending · **Step:** 4 of [SPEC-11](SPEC-11-interview-assist.md) · **Depends on:**
+SPEC-11, SPEC-12, SPEC-13 (the interview's thread)
 
 > During the interview the user presses the **Ask** hotkey (default **F8**) or the Ask button.
 > The app takes the interviewer's recent words, adds any screenshots on the clipboard if that
@@ -15,7 +15,7 @@ SPEC-11, SPEC-12, SPEC-13 (a prepared thread)
 
 The interview runs in Zoom/Meet/Teams, so the key must work **when LocalCaption is not focused**.
 
-- [ ] Registered while the Active Session screen is in **Interview** mode (prepared or not);
+- [ ] Registered while the Active Session screen is in **Interview** mode, set up or not;
       unregistered in Caption only mode, after Stop, and on quit.
 - [ ] **macOS:** Carbon `RegisterEventHotKey` + `InstallEventHandler`. Needs **no** Accessibility
       or Input Monitoring permission. Map the SPEC-11 grammar to `kVK_*` codes and
@@ -26,8 +26,9 @@ The interview runs in Zoom/Meet/Teams, so the key must work **when LocalCaption 
 - [ ] **Mac F-key caveat:** on Apple keyboards F8 is the play/pause media key; apps receive F8
       only with **fn** held, or with *System Settings → Keyboard → "Use F1, F2, etc. keys as
       standard function keys"* on. When the hotkey is a bare F-key, Settings shows this hint.
-- [ ] A press before the thread is Ready → status "Still preparing…" and a short system beep;
-      nothing is sent or queued.
+- [ ] A press before the thread is open opens it (SPEC-13 §The thread) and then sends; if Codex
+      is unavailable, the status says why and the system beeps. Nothing new to send → no thread
+      is opened.
 - [ ] Settings field: **Record shortcut** — captures the next key combination with a local key
       monitor, validates it with the shared parser, writes the canonical string to
       `interview.hotkey`, re-registers. **Reset to F8** button.
@@ -119,7 +120,7 @@ streaming:
 - **`queue`:** compute the selection now, hold it as the single queued turn; a further Ask
   **merges** its text into the queued one. Sent when the current turn completes.
 
-## Answers panel
+## Answers panel (now the conversation part of the interview panel, SPEC-13)
 
 Right side of the caption area in Interview mode.
 
@@ -131,7 +132,7 @@ Right side of the caption area in Interview mode.
 - [ ] Card actions: **Copy answer**, **Regenerate** (latest only), **Sent text** (a popover with
       exactly what was sent, plus image thumbnails — so the user can see what the model heard).
 - [ ] A **Stop** button while streaming (interrupt).
-- [ ] Bottom bar: **Ask** button (tooltip shows the hotkey; disabled until Ready), the
+- [ ] Bottom bar: **Ask** button (tooltip shows the hotkey), the
       quick-prompt buttons from `interview.quick_prompts`, and a text field *"Type to the
       coach…"* (Return sends, Shift-Return = newline).
 - [ ] Text uses `caption.font_size` and follows the font ± controls; respects window opacity.

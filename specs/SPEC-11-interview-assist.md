@@ -7,7 +7,7 @@ not in SPEC.md v2.0 · **Build steps:** this spec + [12](SPEC-12-codex-engine.md
 
 > While a live interview is being captioned, the user presses a hotkey (default **F8**). The
 > interviewer's latest words (plus, optionally, screenshots on the clipboard) go to a **ChatGPT
-> model through the Codex CLI**, in a conversation that was prepared before the interview with
+> model through the Codex CLI**, in a conversation the user prepares by running their interview skills with
 > the user's CV, the JD, an interview skill and their own instructions. The answer streams into a
 > panel next to the captions. When the interview ends, the app summarizes it and keeps the
 > history.
@@ -25,7 +25,7 @@ In a live interview the user understands the question (captions help) but needs 
 it. Typing the question into ChatGPT by hand is too slow and visibly distracting. So:
 
 - **One key press** sends the question. No typing, no window switching.
-- **Prepared context.** CV, JD, interview skill and instructions are loaded **before** the
+- **Prepared context.** CV, JD, interview skills and instructions are loaded **before** the
   interview, once, so each answer costs only the question.
 - **One conversation.** Prep, instructions and every question live in **one** thread, so later
   answers stay consistent with earlier ones ("as I said about the migration project…").
@@ -42,9 +42,9 @@ it. Typing the question into ChatGPT by hand is too slow and visibly distracting
 | D1 | **Engine = Codex CLI (`codex app-server`)**, signed in with the user's **ChatGPT Plus** account | No extra cost over Plus. `app-server` is a long-lived JSON-RPC process, so there is no per-question process start-up. |
 | D2 | **Engine behind an interface** (`AnswerEngine`) | If S0 shows Codex is too slow, an OpenAI-API engine drops in without touching the UI or the flow (the fallback discussed with the user). |
 | D3 | **One Codex thread per interview** | Prep, instructions, questions and the end-of-interview summary are all turns on the same thread. |
-| D4 | **Codex is locked down to a chat model** | Empty working folder, read-only sandbox, approvals `never`, shell / file-edit / web-search / MCP tools disabled. It answers; it never reads files, runs commands or edits anything ([SPEC-12 §Lockdown](SPEC-12-codex-engine.md#lockdown)). |
+| D4 | **Codex is locked down to a chat model** | Empty working folder, read-only sandbox, approvals `never`, shell / file-edit / MCP tools disabled. It never reads files, runs commands or edits anything. **Web search is allowed** (owner, 2026-10-02) because the discovery-jd skill researches the company ([SPEC-12 §Lockdown](SPEC-12-codex-engine.md#lockdown)). |
 | D5 | **GPT-style answers** | Codex's coding base instructions are **replaced** (`baseInstructions`) with an interview-coach prompt. S0 showed this alone gives conversational, first-person answers (`personality` is deprecated in Codex 0.159 and no longer selects a style). Default model **`gpt-6-luna` at `low`** (S0: 1.3 s to first word). |
-| D6 | **The app inlines all context as text** | Skill, CV and JD text are put into the prep message by the app; Codex never opens a file. This works with the lockdown, and would work unchanged with an API engine (D2). |
+| D6 | **The app inlines all context as text** | Skill, CV and JD text are put into each skill-step message by the app; Codex never opens a file. This works with the lockdown, and would work unchanged with an API engine (D2). |
 | D7 | **Two modes: Caption only / Interview** | Caption only is today's app, byte-for-byte unchanged, and keeps the on-device guarantee. Interview mode is explicit opt-in. |
 | D8 | **macOS first, Windows later**; both share config keys, file formats, prompt text and test vectors, never code | Same approach as the existing port ([SPEC-WINDOWS.md](../SPEC-WINDOWS.md) §6.1). |
 
@@ -55,7 +55,7 @@ app *"never reads the clipboard."* **Interview mode breaks both, on purpose and 
 mode:**
 
 - The question text, the CV, the JD, skill text, instructions and any clipboard screenshots are
-  sent to **OpenAI** (through the `codex` process; the app itself still makes no network calls —
+  sent to **OpenAI**, and Codex may search the web for skill research (through the `codex` process; the app itself still makes no network calls —
   ATS stays localhost-only).
 - The clipboard is **read**, but only for images, only on an Ask, and only if
   `interview.include_clipboard_images` is on (default **off**).
@@ -100,14 +100,16 @@ image read/clear, PDF text extraction, UI.
 
 ```
 Mode = Interview
-  → Prepare:   start codex app-server → thread/start (locked down)
-               → prep turn: skill + CV + JD + instructions  → briefing streams in
-               → optional extra prep turns (user types)      → "Ready"
-  → Start:     captions run exactly as today (SPEC-04/05)
+  → Setup:     pick/upload the CV, paste the JD; run skill steps by hand, in any order:
+               /discovery-cv · /discovery-jd · /apply-instruction intro|tech|cultural
+               · /live-coding-design (optional) — each a turn on the interview's thread,
+               which opens on first need (codex app-server → thread/start, locked down)
+  → Start:     captions run exactly as today (SPEC-04/05); the thread opens now if no
+               step has, so Ask works with no setup at all
   → Ask (F8):  AskSelection(text since last ask | last N sentences) + clipboard images
                → turn/start on the same thread → answer streams into the Answers panel
   → Stop:      transcript saved as today
-               → summary turn on the same thread → summary.md → Results view
+               → summary turn on the same thread → summary.md → read-only replay
 ```
 
 ---
@@ -127,7 +129,7 @@ a string this build doesn't know falls back to that key's default (no repair); a
 | `codex_path` | string | `""` | `""` = auto-detect ([SPEC-12](SPEC-12-codex-engine.md#finding-codex)). Platform-specific → `"$default"` in vectors. |
 | `model` | string | `""` | `""` = the S0 recommended default, **`gpt-6-luna`** (falls back to the server's `isDefault` model if absent). Picker lists `model/list`. |
 | `reasoning_effort` | string | `"low"` | For **answers**. Values come from the model's `supportedReasoningEfforts`. |
-| `prep_reasoning_effort` | string | `"medium"` | For prep and summary turns (not time-critical). |
+| `prep_reasoning_effort` | string | `"medium"` | For skill steps and the summary (not time-critical). |
 | `answer_length` | `"short"` \| `"medium"` \| `"long"` | `"medium"` | 2–3 / 4–6 / 8–10 spoken sentences. |
 | `custom_instructions` | string | `""` | Global answer instructions, prefilled into every new interview's setup. |
 | `quick_prompts` | `[{label, text}]` | 3 defaults | Buttons on the Answers panel ([SPEC-14 §Answers panel](SPEC-14-live-ask.md#answers-panel)). |
@@ -232,7 +234,8 @@ file is backed up to `index.json.bak-<ts>` and replaced with an empty index.
 
 - `session_id` is null until Stop saves the session; `capture_session_uuid` is the journal's
   session id, so crash recovery can link the record (SPEC-15 §History).
-- `kind` ∈ `ask` (hotkey/button) | `typed` | `quick` | `regenerate`.
+- `kind` ∈ `ask` (hotkey/button) | `typed` | `quick` | `regenerate` | `skill` (a skill step; `question` is the command, e.g. `/apply-instruction tech`).
+- `prep` is legacy (records made with the old Prepare button); new records leave it at its defaults.
 - `status` ∈ `streaming` | `completed` | `interrupted` | `failed`.
 - Optional fields that are null are omitted when written.
 - `ttft_ms` = press → first answer text; `total_ms` = press → turn completed. Kept for tuning.
@@ -295,7 +298,7 @@ machines before the feature is ported. Windows-specific risks to verify on the G
 | **0** ✅ | [12 §S0](SPEC-12-codex-engine.md#s0--spike-gate) | `spike/codex-answer-spike/`: measured latency, lockdown, tone, images, usage read | **Passed 2026-10-01** — [RESULTS.md](../spike/codex-answer-spike/RESULTS.md) |
 | 1 ✅ | **11** (this) | Kit: config group, hotkey parser, `AskSelection`, `InterviewPrompt`, records, vectors; DB migration | `swift test` green incl. new vectors |
 | 2 ✅ | [12](SPEC-12-codex-engine.md) | `CodexAppServerEngine`: process, JSON-RPC, lockdown, streaming, models, usage, sign-in | Engine passes its scripted fake-server tests + a live smoke run |
-| 3 ✅ | [13](SPEC-13-interview-prep.md) | Library (skills, CV, JD, prompts), mode picker, Prepare flow | A prepared thread with a visible briefing |
+| 3 ✅ | [13](SPEC-13-interview-prep.md) | Library, mode picker, CV upload, manual skill steps (rebuilt 2026-10-02) | Skill steps on one thread |
 | 4 ✅ | [14](SPEC-14-live-ask.md) | Hotkey, selection, clipboard images, Answers panel, typed/quick prompts | F8 during a real call → answer streaming |
 | 5 ✅ | [15](SPEC-15-interview-ui-results.md) | Compact layout, end-of-interview summary, history, Settings (usage) | Full acceptance below |
 
@@ -307,13 +310,14 @@ Step 1 can start before S0 finishes (it is engine-independent). Steps 2–5 wait
 
 - Caption only mode is unchanged: no `codex` process, no clipboard reads, all existing tests and
   vectors still pass.
-- From an empty library, the user can import a skill, a CV and a JD, prepare an interview, start
-  captions, press F8 and see an answer begin streaming within the S0 latency budget.
-- Every Ask, prep turn and the summary go to the **same** `thread_id`.
-- During a whole interview Codex executes **no** command, edits **no** file, makes **no**
-  web search and calls **no** MCP tool (verified from the event stream; SPEC-12).
-- After Stop, a summary appears and the interview (setup, briefing, Q&A, summary, transcript
-  link) can be reopened later from the session list.
+- From an empty library, the user can upload a CV, paste a JD, run the skill steps, start
+  captions, press F8 and see an answer begin streaming within the S0 latency budget — and F8
+  also works after Start with no step run.
+- Every skill step, Ask and the summary go to the **same** `thread_id`.
+- During a whole interview Codex executes **no** command, edits **no** file and calls **no** MCP
+  tool (verified from the event stream; SPEC-12). Web search is allowed.
+- After Stop, a summary appears and the interview (transcript beside the full AI conversation,
+  summary) can be reopened read-only from the session list.
 - An old `config.json` loads with `interview` defaults; a Mac `config.json` round-trips through
   the Windows build without losing the `interview` group.
 

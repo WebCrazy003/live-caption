@@ -38,7 +38,8 @@ struct InterviewSettingsSections: View {
             Text("Codex")
         } footer: {
             Text("Interview mode answers live questions with ChatGPT through the Codex app, with its own "
-                 + "sign-in (separate from your Codex terminal). Codex is locked down: no files, commands or web.")
+                 + "sign-in (separate from your Codex terminal). Codex is locked down: no files or commands; "
+                 + "it may search the web when a skill asks for research.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -112,7 +113,7 @@ struct InterviewSettingsSections: View {
             Picker("Answer effort", selection: cfg.reasoningEffort) {
                 ForEach(efforts(including: env.config.interview.reasoningEffort), id: \.self) { Text($0.capitalized).tag($0) }
             }
-            Picker("Prep & summary effort", selection: cfg.prepReasoningEffort) {
+            Picker("Skill steps & summary effort", selection: cfg.prepReasoningEffort) {
                 ForEach(efforts(including: env.config.interview.prepReasoningEffort), id: \.self) { Text($0.capitalized).tag($0) }
             }
             Picker("Answer length", selection: cfg.answerLength) {
@@ -125,7 +126,7 @@ struct InterviewSettingsSections: View {
             Text("Model & answers")
         } footer: {
             Text("Low effort answers fastest (about 1–2 s to first words with \(Config.Interview.recommendedModel)). "
-                 + "Changes apply to the next interview you prepare.")
+                 + "Model, answer length and custom instructions apply when the next interview's coach starts.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -250,7 +251,7 @@ struct InterviewSettingsSections: View {
 
     private var privacySection: some View {
         Section {
-            Text("Interview mode sends your CV, the job description, your skills and instructions (on Prepare), "
+            Text("Interview mode sends your CV, the job description and your skills (when you run a skill step), "
                  + "the interviewer's recent words (on each Ask) and, if enabled, clipboard screenshots to OpenAI "
                  + "through Codex. Caption only mode sends nothing.")
                 .font(.callout).foregroundStyle(.secondary)

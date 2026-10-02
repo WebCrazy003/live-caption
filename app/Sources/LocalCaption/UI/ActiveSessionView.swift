@@ -6,18 +6,19 @@ import LocalCaptionKit
 /// transport controls (Start / Pause / Resume / Stop), font +/−, and the live caption area.
 struct ActiveSessionView: View {
     @EnvironmentObject var env: AppEnvironment
-    @StateObject private var controller: SessionController
-    @StateObject private var interview: InterviewController
+    /// Owned by `AppEnvironment`, so switching to a past session in the sidebar and back keeps
+    /// the live session and its interview (SPEC-13 §Skill steps).
+    @ObservedObject private var controller: SessionController
+    @ObservedObject private var interview: InterviewController
     @State private var showingIssues = false
     @State private var showingPrivacyNotice = false
-    @State private var showingSetup = false
     @State private var narrowTab: NarrowTab = .answers
 
     private enum NarrowTab: String, CaseIterable { case answers = "Answers", captions = "Captions" }
 
     init(env: AppEnvironment) {
-        _controller = StateObject(wrappedValue: SessionController(env: env))
-        _interview = StateObject(wrappedValue: InterviewController(env: env))
+        controller = env.session
+        interview = env.interview
     }
 
     var body: some View {
@@ -42,18 +43,12 @@ struct ActiveSessionView: View {
                 cancel: { showingPrivacyNotice = false })
         }
         .onAppear {
-            interview.transcriptSource = { [weak controller] in
-                controller?.askSnapshot ?? (segments: [], interim: "", audioMs: 0)
-            }
             updateHotkey()
         }
         .onChange(of: env.config.interview.mode) { _, _ in updateHotkey() }
         .onChange(of: env.config.interview.hotkey) { _, _ in updateHotkey() }
         .onChange(of: controller.phase) { _, _ in updateHotkey() }
-        .onDisappear {
-            GlobalHotkey.shared.unregister()
-            Task { await interview.discardUnstarted() }
-        }
+
     }
 
     /// Stop saves the transcript exactly as before; only then does the interview link itself to
@@ -153,8 +148,8 @@ struct ActiveSessionView: View {
 
     @ViewBuilder private var captionArea: some View {
         if isInterviewMode && controller.phase == .saved && interview.isFinished {
-            ResultsView(interview: interview, transcript: controller.committedText,
-                        fontSize: Double(env.config.caption.fontSize))
+            InterviewReplayView(interview: interview, transcript: controller.committedText,
+                                fontSize: Double(env.config.caption.fontSize))
         } else if isInterviewMode {
             interviewLayout
         } else {
@@ -194,21 +189,8 @@ struct ActiveSessionView: View {
         .onChange(of: interview.turns.count) { _, _ in narrowTab = .answers }
     }
 
-    /// Prepare until ready; then Answers.
-    @ViewBuilder private var interviewPanel: some View {
-        if interview.prepState.isReady && !showingSetup {
-            AnswersPanel(interview: interview, fontSize: Double(env.config.caption.fontSize),
-                         onEditSetup: { showingSetup = true })
-        } else {
-            VStack(alignment: .leading, spacing: 6) {
-                if interview.prepState.isReady {
-                    Button { showingSetup = false } label: { Label("Back to answers", systemImage: "chevron.left") }
-                        .buttonStyle(.link)
-                }
-                PreparePanel(interview: interview, codex: env.codex, library: env.library,
-                             fontSize: Double(env.config.caption.fontSize))
-            }
-        }
+    private var interviewPanel: some View {
+        InterviewPanel(interview: interview, fontSize: Double(env.config.caption.fontSize), isLive: isLive)
     }
 
     @ViewBuilder private var statusPill: some View {
@@ -397,11 +379,16 @@ private struct InterviewHeaderChips: View {
     }
 
     @ViewBuilder private func prepChip(compact: Bool) -> some View {
-        switch interview.prepState {
-        case .notPrepared: chip(compact ? "" : "Not prepared", icon: "circle.dashed", color: .secondary)
-        case .preparing: chip(compact ? "" : "Preparing…", icon: "hourglass", color: .secondary)
-        case .ready: chip(compact ? "" : "Ready", icon: "checkmark.circle.fill", color: .green)
-        case .failed: chip(compact ? "" : "Prep failed", icon: "exclamationmark.triangle.fill", color: .orange)
+        switch interview.threadState {
+        case .none: chip(compact ? "" : "Coach not started", icon: "circle.dashed", color: .secondary)
+        case .opening: chip(compact ? "" : "Starting coach…", icon: "hourglass", color: .secondary)
+        case .open:
+            if let p = interview.activeProfile {
+                chip(compact ? p.label : "Coach ready · \(p.label)", icon: "checkmark.circle.fill", color: .green)
+            } else {
+                chip(compact ? "" : "Coach ready", icon: "checkmark.circle.fill", color: .green)
+            }
+        case .failed: chip(compact ? "" : "Coach unavailable", icon: "exclamationmark.triangle.fill", color: .orange)
         }
     }
 

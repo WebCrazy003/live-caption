@@ -3,52 +3,58 @@ import SwiftUI
 import AppKit
 import LocalCaptionKit
 
-/// One interview (SPEC-13–15): the setup draft, the Prepare step, and every turn on the
-/// interview's single Codex thread. Persists `interview.json` after every state change.
+/// One interview (SPEC-13–15): the setup (CV, pasted JD), the skill steps the user runs by hand,
+/// and every turn on the interview's single Codex thread. The thread opens on first need — a
+/// skill step, an Ask, or Start. Persists `interview.json` after every state change.
 @MainActor
 final class InterviewController: ObservableObject {
-    enum PrepState: Equatable {
-        case notPrepared, preparing, ready, failed(String)
-        var isReady: Bool { self == .ready }
-    }
-
-    /// The Prepare panel's form (SPEC-13 §Prepare panel).
-    struct Draft: Equatable {
-        var name = ""
-        var company = ""
-        var role = ""
-        var cvId: String?
-        var jdId: String?
-        var jdPaste = ""
-        var usePastedJD = false
-        var noteIds: Set<String> = []
-        var skillIds: Set<String> = []
-        var instructions = ""
-        var answerLength: Config.Interview.AnswerLength = .medium
-        var model = ""
-        var effort = "low"
-
-        var displayName: String {
-            let n = name.trimmingCharacters(in: .whitespaces)
-            if !n.isEmpty { return n }
-            let parts = [company, role].map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-            return parts.isEmpty ? "Interview" : parts.joined(separator: " — ")
+    /// The owner's skill sequence (SPEC-13 §Skill steps), found in the library by slug.
+    enum Step: String, CaseIterable, Identifiable {
+        case discoveryCV = "discovery-cv"
+        case discoveryJD = "discovery-jd"
+        case applyInstruction = "apply-instruction"
+        case liveCoding = "live-coding-design"
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .discoveryCV: return "Discovery CV"
+            case .discoveryJD: return "Discovery JD"
+            case .applyInstruction: return "Apply instruction"
+            case .liveCoding: return "Live coding & design"
+            }
         }
     }
 
-    /// Prep message size limit (SPEC-13): over this, Prepare is disabled.
-    static let maxPrepChars = 150_000
+    /// `apply-instruction` profiles. `cultural` is the skill's name for the behavioral profile.
+    enum Profile: String, CaseIterable, Identifiable {
+        case intro, tech, cultural
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .intro: return "Intro"
+            case .tech: return "Tech"
+            case .cultural: return "Behavioral"
+            }
+        }
+    }
+
+    enum ThreadState: Equatable { case none, opening, open, failed(String) }
+
+    /// The setup form (SPEC-13 §Interview panel).
+    struct Draft: Equatable {
+        var cvId: String?
+        var jobDescription = ""
+    }
 
     @Published var draft: Draft
-    @Published private(set) var prepState: PrepState = .notPrepared
+    @Published private(set) var threadState: ThreadState = .none
     @Published private(set) var record: InterviewRecord?
-    @Published private(set) var briefing = ""
     @Published private(set) var streamingTurn: Int?
     @Published private(set) var status: String?
 
     private(set) var folder: URL?
-    private var preparedDraft: Draft?
     private var recordingStart: (uuid: UUID, date: Date)?
+    private var opening: Task<String?, Never>?
 
     let env: AppEnvironment
     var library: InterviewLibrary { env.library }
@@ -64,83 +70,76 @@ final class InterviewController: ObservableObject {
     /// the summary on the same thread — resumed first, since this app run may not know it.
     init(env: AppEnvironment, existing folder: URL) throws {
         self.env = env
-        self.draft = Draft()
         let rec = try InterviewFiles.read(from: folder)
+        self.draft = Draft(cvId: rec.setup.documentIds.first, jobDescription: rec.setup.jdTextInline ?? "")
         self.folder = folder
         self.record = rec
-        self.briefing = rec.prep.briefing
-        self.prepState = rec.prep.status == .done ? .ready : .notPrepared
+        self.threadState = rec.threadId == nil ? .none : .open
         self.needsResume = true
         self.summaryText = (try? String(contentsOf: folder.appendingPathComponent(InterviewFiles.summaryName),
                                         encoding: .utf8)) ?? ""
     }
 
-    // MARK: Draft
-
-    /// Prefill from the most recent interview, else from config (SPEC-13 §Prepare panel).
+    /// The CV from the most recent interview, else the newest CV.
     private static func initialDraft(env: AppEnvironment) -> Draft {
-        let cfg = env.config.interview
-        var d = Draft(instructions: cfg.customInstructions, answerLength: cfg.answerLength,
-                      model: cfg.effectiveModel, effort: cfg.reasoningEffort)
         let lib = env.library
+        var d = Draft()
         if let last = InterviewFiles.all(in: env.interviewsRoot).first?.record {
-            d.company = last.setup.company
-            d.role = last.setup.role
             let ids = Set(last.setup.documentIds)
             d.cvId = lib.documents(of: .cv).first { ids.contains($0.id) }?.id
-            d.skillIds = Set(last.setup.skillIds.filter { lib.skill($0) != nil })
         }
         if d.cvId == nil { d.cvId = lib.documents(of: .cv).last?.id }
         return d
     }
 
-    var setupChangedSinceReady: Bool {
-        guard prepState.isReady || prepState == .preparing, let p = preparedDraft else { return false }
-        return p != draft
+    /// Briefing from a schema-1 record made with the old Prepare button (shown in history).
+    var legacyBriefing: String { record?.prep.briefing ?? "" }
+
+    // MARK: Thread
+
+    var isOpen: Bool { threadState == .open }
+
+    /// The interview's thread, opening it (and creating the record) on first need.
+    @discardableResult
+    func ensureThread() async -> String? {
+        if let t = record?.threadId { return t }
+        if let opening { return await opening.value }
+        let task = Task { await self.openThread() }
+        opening = task
+        defer { opening = nil }
+        return await task.value
     }
 
-    var jobDescriptionText: String {
-        draft.usePastedJD ? draft.jdPaste : (draft.jdId.map(library.text(of:)) ?? "")
+    private func openThread() async -> String? {
+        guard record != nil || createRecord() else { return nil }
+        threadState = .opening
+        let cfg = env.config.interview
+        let model = codex.resolvedModel(cfg.model)
+        do {
+            let thread = try await engine.startThread(ThreadConfig(
+                model: model,
+                baseInstructions: InterviewPrompt.baseInstructions(length: cfg.answerLength, custom: cfg.customInstructions)))
+            record?.threadId = thread
+            record?.model = model
+            persist()
+            threadState = .open
+            return thread
+        } catch {
+            let message = (error as? EngineError)?.localizedDescription ?? error.localizedDescription
+            threadState = .failed(message)
+            status = message
+            return nil
+        }
     }
 
-    func promptSetup() -> InterviewPrompt.Setup {
-        InterviewPrompt.Setup(
-            company: draft.company, role: draft.role, instructions: draft.instructions,
-            skills: library.skills.filter { draft.skillIds.contains($0.id) }.compactMap { library.promptSkill($0.id) },
-            cv: draft.cvId.map(library.text(of:)) ?? "",
-            jobDescription: jobDescriptionText,
-            notes: library.documents(of: .notes).filter { draft.noteIds.contains($0.id) }
-                .map { .init(title: $0.title, text: library.text(of: $0.id)) })
-    }
-
-    var prepMessage: String { InterviewPrompt.prepMessage(promptSetup()) }
-    var prepChars: Int { prepMessage.count }
-    var oversizedSkills: [String] {
-        library.skills.filter { draft.skillIds.contains($0.id) && $0.chars > SkillFile.maxChars }.map(\.title)
-    }
-
-    var canPrepare: Bool {
-        codex.isReady && prepState != .preparing && prepChars <= Self.maxPrepChars
-    }
-
-    // MARK: Prepare
-
-    func prepare() async {
-        guard canPrepare else { return }
-        let snapshot = draft
-        await discardUnstarted()                 // a re-prepare starts a new thread
-
-        let model = codex.resolvedModel(snapshot.model)
+    private func createRecord() -> Bool {
+        let cfg = env.config.interview
         var rec = InterviewRecord(
-            name: snapshot.displayName, createdAt: TimeFormat.iso(Date()), model: model,
-            reasoningEffort: snapshot.effort,
-            setup: .init(company: snapshot.company, role: snapshot.role,
-                         skillIds: Array(snapshot.skillIds).sorted(),
-                         documentIds: ([snapshot.cvId, snapshot.usePastedJD ? nil : snapshot.jdId].compactMap { $0 }
-                                       + Array(snapshot.noteIds).sorted()),
-                         jdTextInline: snapshot.usePastedJD ? snapshot.jdPaste : nil,
-                         instructions: snapshot.instructions,
-                         answerLength: snapshot.answerLength.rawValue))
+            name: Self.name(fromJD: draft.jobDescription), createdAt: TimeFormat.iso(Date()),
+            model: codex.resolvedModel(cfg.model), reasoningEffort: cfg.reasoningEffort,
+            setup: .init(documentIds: draft.cvId.map { [$0] } ?? [],
+                         jdTextInline: draft.jobDescription.isEmpty ? nil : draft.jobDescription,
+                         instructions: cfg.customInstructions, answerLength: cfg.answerLength.rawValue))
         if let start = recordingStart {
             rec.startedAt = TimeFormat.iso(start.date)
             rec.captureSessionUUID = start.uuid.uuidString
@@ -148,78 +147,91 @@ final class InterviewController: ObservableObject {
         do {
             folder = try InterviewFiles.makeFolder(in: env.interviewsRoot, date: Date(), name: rec.name)
         } catch {
-            prepState = .failed("Could not create the interview folder: \(error.localizedDescription)")
-            return
+            let message = "Could not create the interview folder: \(error.localizedDescription)"
+            threadState = .failed(message); status = message
+            return false
         }
-        rec.prep.status = .running
         record = rec
-        preparedDraft = snapshot
-        briefing = ""
-        prepState = .preparing
         persist()
-
-        do {
-            let thread = try await engine.startThread(ThreadConfig(
-                model: model, baseInstructions: InterviewPrompt.baseInstructions(length: snapshot.answerLength)))
-            record?.threadId = thread
-            persist()
-        } catch {
-            failPrep(error.localizedDescription); return
-        }
-        await runPrepTurn(message: InterviewPrompt.prepMessage(promptSetup()))
+        return true
     }
 
-    func retryPrepare() async {
-        guard case .failed = prepState else { return }
-        if record?.threadId != nil, record?.prep.status == .failed {
-            prepState = .preparing
-            record?.prep.status = .running
-            persist()
-            await runPrepTurn(message: prepMessage)
-        } else {
-            await prepare()
+    /// "Interview", or the JD's first line (usually the role) — up to 60 characters.
+    static func name(fromJD jd: String) -> String {
+        let first = jd.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty } ?? ""
+        return first.isEmpty ? "Interview" : String(first.prefix(60))
+    }
+
+    // MARK: Skill steps (SPEC-13)
+
+    func skill(for step: Step) -> InterviewLibraryIndex.Skill? { library.skill(slug: step.rawValue) }
+
+    /// Completed at least once on this thread.
+    func isDone(_ step: Step) -> Bool {
+        turns.contains { $0.kind == .skill && $0.status == .completed && $0.question.hasPrefix("/\(step.rawValue)") }
+    }
+
+    var activeProfile: Profile? { record?.activeProfile.flatMap(Profile.init(rawValue:)) }
+    var liveCodingActive: Bool { record?.liveCodingActive ?? false }
+
+    /// Why a step can't run right now, or nil when it can.
+    func blocker(_ step: Step) -> String? {
+        if skill(for: step) == nil { return "Import the \(step.rawValue) skill in the library" }
+        switch step {
+        case .discoveryCV: return draft.cvId == nil ? "Select or upload a CV" : nil
+        case .discoveryJD:
+            return draft.jobDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Paste the job description" : nil
+        case .applyInstruction: return nil
+        case .liveCoding: return activeProfile == .tech ? nil : "Apply the Tech profile first"
         }
     }
 
-    private func runPrepTurn(message: String) async {
-        guard let thread = record?.threadId else { return }
-        let effort = env.config.interview.prepReasoningEffort
-        var text = ""
-        for await event in streamEvents(engine.send(threadId: thread, input: [.text(message)], effort: effort)) {
-            switch event {
-            case .delta(let d): text += d; briefing = text
-            case .completed(let full):
-                briefing = full
-                record?.prep = .init(status: .done, briefing: full, extraTurns: record?.prep.extraTurns ?? 0,
-                                     completedAt: TimeFormat.iso(Date()))
-                prepState = .ready
-                persist()
-            case .interrupted(let partial):
-                failPrep("Preparation was interrupted.", partial: partial)
-            case .failed(let e, let partial):
-                failPrep(e.localizedDescription, partial: partial)
-            case .started, .thinking, .slow:
-                break
+    /// Run one skill step as a turn on the thread.
+    func run(_ step: Step, profile: Profile? = nil) async {
+        guard blocker(step) == nil, let skill = skill(for: step) else { return }
+        guard await ensureThread() != nil else { return }
+        let slug = step.rawValue
+        let command = profile.map { "/\(slug) \($0.rawValue)" } ?? "/\(slug)"
+        let definition = (record?.skillsReceived.contains(slug) ?? false) ? nil : library.promptSkill(skill.id)
+        var attachments: [InterviewPrompt.Attachment] = []
+        switch step {
+        case .discoveryCV:
+            if let id = draft.cvId {
+                attachments.append(.init(title: "MY CV", text: library.text(of: id)))
+                if record?.setup.documentIds.contains(id) == false { record?.setup.documentIds.insert(id, at: 0) }
             }
+        case .discoveryJD:
+            attachments.append(.init(title: "JOB DESCRIPTION", text: draft.jobDescription))
+            record?.setup.jdTextInline = draft.jobDescription
+            if record?.name == "Interview" { record?.name = Self.name(fromJD: draft.jobDescription) }
+        case .applyInstruction, .liveCoding:
+            break
         }
-    }
-
-    private func failPrep(_ message: String, partial: String = "") {
-        if !partial.isEmpty { briefing = partial }
-        record?.prep.status = .failed
-        record?.prep.briefing = partial
-        prepState = .failed(message)
+        if let id = definitionSkillId(skill) { record?.setup.skillIds.append(id) }
         persist()
+        await submit(Request(kind: .skill,
+                             text: InterviewPrompt.skillMessage(command: command, definition: definition,
+                                                                attachments: attachments),
+                             question: command, effort: env.config.interview.prepReasoningEffort))
     }
 
-    /// Remove a prepared interview that never started recording (SPEC-13: "deleted if never
-    /// started") — its folder and its Codex thread.
+    private func definitionSkillId(_ skill: InterviewLibraryIndex.Skill) -> String? {
+        (record?.setup.skillIds.contains(skill.id) ?? true) ? nil : skill.id
+    }
+
+    /// Setup → Upload…: import a CV file into the library and select it.
+    func uploadCV(from url: URL) throws {
+        let doc = try library.importDocument(from: url, kind: .cv)
+        draft.cvId = doc.id
+    }
+
+    /// New Session: drop an interview that never started recording — folder and thread.
     func discardUnstarted() async {
         guard let rec = record, rec.startedAt == nil, recordingStart == nil else { return }
         if let folder { try? FileManager.default.removeItem(at: folder) }
         if let thread = rec.threadId { await engine.archiveThread(id: thread) }
-        record = nil; folder = nil; preparedDraft = nil; briefing = ""
-        prepState = .notPrepared
+        record = nil; folder = nil; threadState = .none
     }
 
     // MARK: End of interview (SPEC-15)
@@ -252,7 +264,7 @@ final class InterviewController: ObservableObject {
             while isStreaming, Date() < grace { try? await Task.sleep(nanoseconds: 50_000_000) }
         }
 
-        if env.config.interview.summarizeOnEnd, record?.threadId != nil, prepState.isReady {
+        if env.config.interview.summarizeOnEnd, record?.threadId != nil, !turns.isEmpty {
             await generateSummary(transcript: transcript)
         } else {
             record?.summary.status = .skipped
@@ -275,7 +287,8 @@ final class InterviewController: ObservableObject {
             let length = Config.Interview.AnswerLength(rawValue: rec.setup.answerLength) ?? .medium
             do {
                 try await engine.resumeThread(id: thread, ThreadConfig(
-                    model: rec.model, baseInstructions: InterviewPrompt.baseInstructions(length: length)))
+                    model: rec.model,
+                    baseInstructions: InterviewPrompt.baseInstructions(length: length, custom: rec.setup.instructions)))
                 needsResume = false
             } catch {
                 failSummary(error.localizedDescription); return
@@ -314,19 +327,23 @@ final class InterviewController: ObservableObject {
 
     /// The session screen starts a new recording after Results: start a fresh interview.
     func resetForNewInterview() {
-        record = nil; folder = nil; preparedDraft = nil; briefing = ""; summaryText = ""; summaryError = nil
-        prepState = .notPrepared; mark = nil; queued = nil; recordingStart = nil; status = nil
+        record = nil; folder = nil; threadState = .none; summaryText = ""; summaryError = nil
+        mark = nil; queued = nil; recordingStart = nil; status = nil
         draft = Self.initialDraft(env: env)
     }
 
     // MARK: Recording hooks
 
+    /// Start in Interview mode: link the capture and open the thread now, so the cold first turn
+    /// is paid before the first question (SPEC-13 §The thread).
     func recordingStarted(uuid: UUID, at date: Date) {
         recordingStart = (uuid, date)
-        guard record != nil else { return }
-        record?.startedAt = TimeFormat.iso(date)
-        record?.captureSessionUUID = uuid.uuidString
-        persist()
+        if record != nil {
+            record?.startedAt = TimeFormat.iso(date)
+            record?.captureSessionUUID = uuid.uuidString
+            persist()
+        }
+        Task { await ensureThread() }
     }
 
     // MARK: Turns
@@ -339,14 +356,13 @@ final class InterviewController: ObservableObject {
     /// Returns when the turn ends.
     @discardableResult
     func runTurn(kind: InterviewRecord.TurnKind, text: String, question: String,
-                 images: [URL] = [], span: (from: Int, to: Int)? = nil,
+                 images: [URL] = [], span: (from: Int, to: Int)? = nil, effort: String? = nil,
                  onAccepted: (() -> Void)? = nil) async -> InterviewRecord.TurnStatus? {
-        guard prepState.isReady, let thread = record?.threadId, var rec = record else { return nil }
+        guard let thread = await ensureThread(), var rec = record else { return nil }
         let n = rec.nextTurnNumber
         let relImages = images.map { "\(InterviewFiles.attachmentsName)/\($0.lastPathComponent)" }
         rec.turns.append(.init(n: n, kind: kind, question: question, audioFromMs: span?.from, audioToMs: span?.to,
                                images: relImages, askedAt: TimeFormat.iso(Date())))
-        if rec.startedAt == nil, kind == .typed { rec.prep.extraTurns += 1 }
         record = rec
         streamingTurn = n
         persist()
@@ -355,7 +371,7 @@ final class InterviewController: ObservableObject {
         let input: [CodexRPC.Input] = [.text(text)] + images.map { .localImage(path: $0.path) }
         var final: InterviewRecord.TurnStatus = .failed
         for await event in streamEvents(engine.send(threadId: thread, input: input,
-                                                    effort: env.config.interview.reasoningEffort)) {
+                                                    effort: effort ?? env.config.interview.reasoningEffort)) {
             switch event {
             case .delta(let d):
                 update(n) { t in
@@ -396,7 +412,6 @@ final class InterviewController: ObservableObject {
     private var clipboardChangeCount = -1
     private var mark: AskSelection.Mark?
     private var queued: Request?
-    private var draining = false
 
     /// One turn to send, already built at press time.
     struct Request {
@@ -406,17 +421,14 @@ final class InterviewController: ObservableObject {
         var images: [URL] = []
         var span: (from: Int, to: Int)?
         var onAccepted: (() -> Void)?
+        /// Skill steps use `prep_reasoning_effort`; nil = `reasoning_effort`.
+        var effort: String?
         /// For merging queued asks: the transcript text and screenshot count behind `text`.
         var askText = ""
     }
 
     /// The Ask hotkey / button.
     func ask() async {
-        guard prepState.isReady else {
-            status = "Still preparing…"
-            NSSound.beep()
-            return
-        }
         let cfg = env.config.interview
         let src = transcriptSource?() ?? (segments: [], interim: "", audioMs: 0)
         let sel = AskSelection.select(segments: src.segments, interim: src.interim, mode: cfg.askMode,
@@ -438,6 +450,7 @@ final class InterviewController: ObservableObject {
             status = "Nothing new since your last ask"
             return
         }
+        guard await ensureThread() != nil else { NSSound.beep(); return }
 
         var urls: [URL] = []
         if let snapshot, let folder {
@@ -469,18 +482,17 @@ final class InterviewController: ObservableObject {
 
     func sendTyped(_ text: String) async {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty, prepState.isReady else { return }
+        guard !t.isEmpty else { return }
         await submit(Request(kind: .typed, text: t, question: t))
     }
 
     func sendQuick(_ prompt: Config.Interview.QuickPrompt) async {
-        guard prepState.isReady else { return }
         await submit(Request(kind: .quick, text: prompt.text, question: prompt.label))
     }
 
     /// A different answer to the latest question (latest card only).
     func regenerate() async {
-        guard prepState.isReady, let last = turns.last else { return }
+        guard let last = turns.last(where: { $0.kind != .skill }) else { return }
         await submit(Request(kind: .regenerate, text: InterviewPrompt.regenerate,
                              question: "Another answer: \(last.question)"))
     }
@@ -503,7 +515,7 @@ final class InterviewController: ObservableObject {
         var next: Request? = request
         while let r = next {
             await runTurn(kind: r.kind, text: r.text, question: r.question, images: r.images,
-                          span: r.span, onAccepted: r.onAccepted)
+                          span: r.span, effort: r.effort, onAccepted: r.onAccepted)
             next = queued
             queued = nil
         }

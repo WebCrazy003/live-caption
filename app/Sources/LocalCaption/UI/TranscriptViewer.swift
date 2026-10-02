@@ -19,8 +19,8 @@ struct TranscriptViewer: View {
                 header(rec)
                 Divider()
                 if let interview {
-                    ResultsView(interview: interview, transcript: text,
-                                fontSize: Double(env.config.caption.fontSize))
+                    InterviewReplayView(interview: interview, transcript: text,
+                                        fontSize: Double(env.config.caption.fontSize))
                 } else if let err = loadError {
                     ContentUnavailableCompat(err)
                 } else {

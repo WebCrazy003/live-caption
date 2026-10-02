@@ -103,22 +103,21 @@ final class InterviewConformanceTests: XCTestCase {
 
     private struct PromptVector: Decodable {
         struct SkillFile: Decodable { let path: String; let text: String }
-        struct Skill: Decodable { let title: String; let text: String; let files: [SkillFile]? }
-        struct Note: Decodable { let title: String; let text: String }
-        struct Setup: Decodable {
-            let company: String?; let role: String?; let instructions: String?
-            let skills: [Skill]?; let cv: String?; let jd: String?; let notes: [Note]?
-        }
+        struct Definition: Decodable { let title: String; let text: String; let files: [SkillFile]? }
+        struct Attachment: Decodable { let title: String; let text: String }
         struct Case: Decodable {
             let kind: String
             let length: String?
-            let setup: Setup?
+            let custom: String?
+            let command: String?
+            let definition: Definition?
+            let attachments: [Attachment]?
             let text: String?
             let imageCount: Int?
             let transcript: String?
             let expect: String
             enum CodingKeys: String, CodingKey {
-                case kind, length, setup, text, transcript, expect
+                case kind, length, custom, command, definition, attachments, text, transcript, expect
                 case imageCount = "image_count"
             }
         }
@@ -132,17 +131,15 @@ final class InterviewConformanceTests: XCTestCase {
                 switch c.kind {
                 case "base":
                     let length = try XCTUnwrap(Config.Interview.AnswerLength(rawValue: c.length ?? ""))
-                    actual = InterviewPrompt.baseInstructions(length: length)
-                case "prep":
-                    let s = try XCTUnwrap(c.setup)
-                    actual = InterviewPrompt.prepMessage(InterviewPrompt.Setup(
-                        company: s.company ?? "", role: s.role ?? "", instructions: s.instructions ?? "",
-                        skills: (s.skills ?? []).map { sk in
-                            InterviewPrompt.Skill(title: sk.title, text: sk.text,
-                                                  files: (sk.files ?? []).map { .init(path: $0.path, text: $0.text) })
+                    actual = InterviewPrompt.baseInstructions(length: length, custom: c.custom ?? "")
+                case "skill":
+                    actual = InterviewPrompt.skillMessage(
+                        command: c.command ?? "",
+                        definition: c.definition.map { d in
+                            InterviewPrompt.Skill(title: d.title, text: d.text,
+                                                  files: (d.files ?? []).map { .init(path: $0.path, text: $0.text) })
                         },
-                        cv: s.cv ?? "", jobDescription: s.jd ?? "",
-                        notes: (s.notes ?? []).map { .init(title: $0.title, text: $0.text) }))
+                        attachments: (c.attachments ?? []).map { .init(title: $0.title, text: $0.text) })
                 case "ask":
                     actual = InterviewPrompt.ask(c.text ?? "", imageCount: c.imageCount ?? 0)
                 case "regenerate":
