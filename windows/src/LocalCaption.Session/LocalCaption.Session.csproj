@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\LocalCaption.Asr\LocalCaption.Asr.csproj" />
+    <ProjectReference Include="..\LocalCaption.Audio\LocalCaption.Audio.csproj" />
+    <ProjectReference Include="..\LocalCaption.Core\LocalCaption.Core.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Deviation from §15, which puts SessionController inside LocalCaption.App. Keeping the
+         orchestration out of the WPF project means B3 could be built and run before B4 exists,
+         and it stays driveable from a console — which is how it was smoke-tested. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+</Project>

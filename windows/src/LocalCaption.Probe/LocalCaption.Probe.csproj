@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- The probe measures the raw WASAPI layer and the capture layer built on it, so a B1
+         regression shows up against the same hardware B0 characterised. -->
+    <ProjectReference Include="..\LocalCaption.Audio\LocalCaption.Audio.csproj" />
+    <ProjectReference Include="..\LocalCaption.Session\LocalCaption.Session.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- NAudio's CoreAudioApi is the same WASAPI surface B1 ships against: endpoint
+         enumeration, IAudioClient, and the IAudioCaptureClient.GetBuffer overload that
+         reports u64DevicePosition and the buffer flags. Nothing here is shipped. -->
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Lets the Mac still restore and build the solution (SPEC-WINDOWS.md 16.1). It
+         cannot run: WASAPI is Windows COM. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+</Project>

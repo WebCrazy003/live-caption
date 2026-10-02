@@ -1,11 +1,16 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/LocalCaption.App/LocalCaption.App.csproj" />
     <Project Path="src/LocalCaption.Asr/LocalCaption.Asr.csproj" />
+    <Project Path="src/LocalCaption.Audio/LocalCaption.Audio.csproj" />
     <Project Path="src/LocalCaption.Bench/LocalCaption.Bench.csproj" />
     <Project Path="src/LocalCaption.Core/LocalCaption.Core.csproj" />
+    <Project Path="src/LocalCaption.Probe/LocalCaption.Probe.csproj" />
+    <Project Path="src/LocalCaption.Session/LocalCaption.Session.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/LocalCaption.Asr.Tests/LocalCaption.Asr.Tests.csproj" />
+    <Project Path="tests/LocalCaption.Audio.Tests/LocalCaption.Audio.Tests.csproj" />
     <Project Path="tests/LocalCaption.Core.Tests/LocalCaption.Core.Tests.csproj" />
   </Folder>
 </Solution>

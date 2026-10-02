@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Local Caption — send to chat</title>
+<style>
+  body { font: 13px "Segoe UI", sans-serif; margin: 16px; min-width: 320px; color: #1f1d18; }
+  label { display: block; margin-bottom: 6px; }
+  input { font: inherit; padding: 5px 7px; width: 90px; }
+  p { color: #6b6658; line-height: 1.45; }
+  @media (prefers-color-scheme: dark) { body { background: #0e1116; color: #e8e0cc; } p { color: #8f8a7d; } }
+</style>
+<label for="port">Local Caption port</label>
+<input id="port" type="number" min="1024" max="65535">
+<p>Must match Settings ▸ Send ▸ Port in Local Caption (17653 unless you changed it).
+   This extension talks to nothing except Local Caption on this PC.</p>
+<script src="options.js"></script>

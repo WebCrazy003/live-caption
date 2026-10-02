@@ -26,3 +26,9 @@ app/LocalCaption.app/
 windows/**/bin/
 windows/**/obj/
 app/dist/
+
+# §11 publish output
+windows/publish/
+windows/publish-*/
+windows/.cuda-stash-*/
+windows/artifacts/

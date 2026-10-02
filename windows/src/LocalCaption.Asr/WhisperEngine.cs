@@ -1,17 +1,40 @@
 using LocalCaption.Core.Audio;
 using LocalCaption.Core.Captions;
 using Whisper.net;
+using Whisper.net.LibraryLoader;
 
 namespace LocalCaption.Asr;
 
 /// <summary>What a loaded engine ended up using, for the log and the Settings readout.</summary>
+/// <param name="Backend">The backend that was <i>asked for</i> after probing.</param>
+/// <param name="Library">
+/// The native library whisper.cpp <i>actually</i> loaded. Not the same thing: Whisper.net
+/// walks its runtime order and falls back to the CPU library without raising anything when
+/// a GPU one cannot load — a missing CUDA dependency looks exactly like a slow machine.
+/// §5.2 requires the active backend to be visible rather than merely felt, and this is the
+/// field that makes it so.
+/// </param>
 public sealed record EngineInfo(
     string InterimModel, string FinalModel, AsrBackend Backend,
-    bool WordTimings, int Threads, string RuntimeInfo)
+    bool WordTimings, int Threads, string RuntimeInfo, string Library = "unknown")
 {
+    /// <summary>
+    /// True when CUDA was asked for and something else loaded — the §5.8 symptom that would
+    /// otherwise present only as captions quietly getting slower.
+    /// </summary>
+    /// <remarks>
+    /// CUDA only. Metal is not a separate runtime library in Whisper.net — the macOS build
+    /// reports it in the <c>Cpu</c> slot — so asking the same question there would raise a
+    /// false alarm on every Mac development run.
+    /// </remarks>
+    public bool FellBack =>
+        Backend is AsrBackend.Cuda &&
+        !Library.Equals(nameof(AsrBackend.Cuda), StringComparison.OrdinalIgnoreCase);
+
     public override string ToString() =>
-        $"{Backend.ToString().ToLowerInvariant()} · interim={InterimModel} final={FinalModel} · " +
-        $"threads={Threads} · word-timings={(WordTimings ? "dtw" : "none")}";
+        $"{Backend.ToString().ToLowerInvariant()}→{Library.ToLowerInvariant()} · interim={InterimModel} final={FinalModel} · " +
+        $"threads={Threads} · word-timings={(WordTimings ? "dtw" : "none")}" +
+        (FellBack ? "  ⚠ fell back to the CPU library" : "");
 }
 
 /// <summary>
@@ -43,18 +66,30 @@ public sealed class WhisperEngine : IAsyncDisposable
     private WhisperProcessor? _interim;
     private WhisperProcessor? _final;
 
+    /// <summary>The longest prompt worth sending: whisper.cpp keeps about 224 tokens of it.</summary>
+    private const int PromptLimit = 600;
+
     public string InterimName { get; }
     public string FinalName { get; }
+
+    /// <summary>The initial prompt built from <c>asr.vocabulary</c>, or null when there is none.</summary>
+    public string? Prompt { get; }
+
+    /// <summary>Beam width on the final lane; below 2 means greedy.</summary>
+    public int FinalBeamSize { get; }
     public AsrBackend RequestedBackend { get; }
     public int Threads { get; }
     public EngineInfo? Info { get; private set; }
     public bool IsLoaded => _interim is not null && _final is not null;
 
     public WhisperEngine(string interimModel, string finalModel,
-                         AsrBackend backend = AsrBackend.Auto, int threads = 0)
+                         AsrBackend backend = AsrBackend.Auto, int threads = 0, string? vocabulary = null,
+                         int finalBeamSize = 0)
     {
         InterimName = interimModel;
         FinalName = finalModel;
+        Prompt = BuildPrompt(vocabulary);
+        FinalBeamSize = Math.Clamp(finalBeamSize, 0, 8);
         RequestedBackend = backend;
         // 0 means "physical cores" (§9.2). Environment.ProcessorCount counts logical
         // processors, and oversubscribing whisper.cpp with SMT siblings costs throughput.
@@ -107,9 +142,46 @@ public sealed class WhisperEngine : IAsyncDisposable
 
         Info = new EngineInfo(InterimName, FinalName, backend,
                               WordTimings: interimSpec.Heads != WhisperAlignmentHeadsPreset.None,
-                              Threads, WhisperFactory.GetRuntimeInfo() ?? "unknown");
+                              Threads, WhisperFactory.GetRuntimeInfo() ?? "unknown",
+                              Library: LoadedLibrary());
         onStatus?.Invoke($"Ready — {Info}");
         return Info;
+    }
+
+    /// <summary>
+    /// Turn a comma-separated list into the sentence whisper.cpp is primed with.
+    /// </summary>
+    /// <remarks>
+    /// The decoder treats its prompt as "what was said just before", so a name that appears
+    /// there is a name it will prefer to spell that way again. It is a nudge, not a
+    /// dictionary: it fixes "Chukwu Emeka" → "Chukwuemeka", it does not teach a language the
+    /// model was never trained on.
+    /// </remarks>
+    public static string? BuildPrompt(string? vocabulary)
+    {
+        if (string.IsNullOrWhiteSpace(vocabulary)) return null;
+
+        var terms = vocabulary.Split([',', ';', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                              .Where(t => t.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase);
+        var list = string.Join(", ", terms);
+        if (list.Length == 0) return null;
+        if (list.Length > PromptLimit) list = list[..PromptLimit];
+        return $"{PromptLead}: {list}.";
+    }
+
+    /// <summary>
+    /// Which native library Whisper.net settled on, read after the first factory is built.
+    /// </summary>
+    /// <remarks>
+    /// Whisper.net resolves this once per process, on first load, by trying each library in
+    /// its runtime order and moving on when one will not load. Nothing is thrown and nothing
+    /// is logged, so without reading it back a CUDA build that silently ran on the CPU is
+    /// indistinguishable from a CUDA build that was simply slow (§5.2).
+    /// </remarks>
+    private static string LoadedLibrary()
+    {
+        try { return RuntimeOptions.LoadedLibrary?.ToString() ?? "cpu"; }
+        catch (Exception) { return "unknown"; }
     }
 
     /// <summary>Two specs, or one when both roles chose the same model.</summary>
@@ -149,20 +221,55 @@ public sealed class WhisperEngine : IAsyncDisposable
     /// Final decoding: accuracy over latency. This output is what gets written to the
     /// transcript and can never be revised, so it keeps temperature fallback enabled.
     /// </summary>
-    private WhisperProcessor BuildFinal(WhisperFactory factory) => factory.CreateBuilder()
-        .WithLanguage("en")
-        .WithThreads(Threads)
-        .WithProbabilities()
-        .WithNoContext()
-        .Build();
+    /// <remarks>
+    /// The vocabulary prompt goes here and only here. The interim lane decodes overlapping
+    /// six-second windows several times a second, where a prompt is both wasted time and one
+    /// more thing for a fragment of silence to be "completed" into.
+    /// </remarks>
+    private WhisperProcessor BuildFinal(WhisperFactory factory)
+    {
+        var builder = factory.CreateBuilder()
+            .WithLanguage("en")
+            .WithThreads(Threads)
+            .WithProbabilities()
+            .WithNoContext();
+        if (Prompt is not null) builder = builder.WithPrompt(Prompt);
+
+        // Final lane only, for the same reason as the prompt: an interim result is thrown
+        // away half a second later, so spending twice the decode on it buys nothing.
+        if (FinalBeamSize > 1) builder = builder.WithBeamSearchSamplingStrategy(beam => beam.WithBeamSize(FinalBeamSize));
+        return builder.Build();
+    }
 
     // ── Decoding ─────────────────────────────────────────────────────────────────────────
 
     public Task<SpeechOutcome> TranscribeInterimAsync(IReadOnlyList<float> audio, CancellationToken cancellationToken = default) =>
         RunAsync(_interim, audio, wantWords: true, cancellationToken);
 
-    public Task<SpeechOutcome> TranscribeFinalAsync(IReadOnlyList<float> audio, CancellationToken cancellationToken = default) =>
-        RunAsync(_final, audio, wantWords: false, cancellationToken);
+    public async Task<SpeechOutcome> TranscribeFinalAsync(IReadOnlyList<float> audio, CancellationToken cancellationToken = default)
+    {
+        var outcome = await RunAsync(_final, audio, wantWords: false, cancellationToken).ConfigureAwait(false);
+
+        // A primed decoder handed near-silence will sometimes recite its prompt. That is a
+        // hallucination with a known text, so it can be caught exactly.
+        return outcome is SpeechOutcome.Success success && EchoesPrompt(success.Text)
+            ? new SpeechOutcome.Filtered()
+            : outcome;
+    }
+
+    private bool EchoesPrompt(string text)
+    {
+        if (Prompt is null) return false;
+        var said = text.Trim().TrimEnd('.', ' ');
+
+        // Narrow on purpose. Someone may genuinely say two listed names in a row, and losing
+        // real speech is the worse error — so only the prompt's own framing, or most of the
+        // prompt recited whole, counts as an echo.
+        return said.StartsWith(PromptLead, StringComparison.OrdinalIgnoreCase) ||
+               (said.Length >= Prompt.Length * 0.6 && Prompt.Contains(said, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private const string PromptLead = "Names and terms";
 
     private static async Task<SpeechOutcome> RunAsync(WhisperProcessor? processor, IReadOnlyList<float> audio,
                                                       bool wantWords, CancellationToken cancellationToken)

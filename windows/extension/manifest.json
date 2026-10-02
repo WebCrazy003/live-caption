@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Local Caption — send to chat",
+  "version": "1.2.0",
+  "description": "Types the question Local Caption heard into the chat tab you have open. Talks only to Local Caption on this PC (127.0.0.1).",
+  "minimum_chrome_version": "116",
+  "permissions": ["alarms", "storage"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "background": { "service_worker": "background.js" },
+  "options_ui": { "page": "options.html", "open_in_tab": false },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://chat.deepseek.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*",
+        "https://copilot.microsoft.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

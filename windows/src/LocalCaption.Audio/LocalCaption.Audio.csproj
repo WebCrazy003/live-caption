@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\LocalCaption.Core\LocalCaption.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- CoreAudioApi for WASAPI, and WdlResamplingSampleProvider for §4.4's 48k/44.1k → 16k
+         conversion. §4.4 names that resampler specifically: the 44.1 kHz ratio is
+         non-integer and a naive decimation would alias and cost WER. -->
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- So the solution still restores and builds on the Mac (§16.1). The WASAPI paths
+         cannot run there; the format conversion can, and its tests do. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+</Project>
