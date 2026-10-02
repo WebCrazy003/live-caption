@@ -134,7 +134,6 @@ public sealed record Config
         [JsonPropertyName("reasoning_effort")] public string ReasoningEffort { get; set; } = "low";
         [JsonPropertyName("send_mode")] public string SendMode { get; set; } = "since_last_ask";
         [JsonPropertyName("send_sentences")] public int SendSentences { get; set; } = 3;
-        [JsonPropertyName("show_key_points")] public bool ShowKeyPoints { get; set; }
         [JsonPropertyName("summarize_on_end")] public bool SummarizeOnEnd { get; set; } = true;
 
         public void OnDeserialized()

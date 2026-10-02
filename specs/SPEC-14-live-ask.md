@@ -121,8 +121,7 @@ streaming:
 
 ## Answers panel
 
-Right side of the caption area in Interview mode (SPEC-10's Key points slot). When
-`show_key_points` is on, the right pane splits vertically: Answers (top ⅔) and Key points (⅓).
+Right side of the caption area in Interview mode.
 
 - [ ] **Cards**, oldest at the top, autoscrolled to the newest. The **latest card is expanded**;
       older cards collapse to their `**Q:**` line and expand on click.

@@ -24,10 +24,6 @@ final class SessionController: ObservableObject {
     @Published var saveError: String?
     @Published var justCopied = false
 
-    // Live AI summary (SPEC-10): a growing list of "Key points" cards, one per ~100-word block.
-    @Published var summaries: [SummaryCard] = []
-    @Published var summarizing = false        // a generation is in flight
-    @Published var summaryUnavailable = false // local model server not reachable
 
     /// True once any final has been committed — gates the "Copy last N" button.
     var hasTranscript: Bool { !transcript.isEmpty }
@@ -44,18 +40,6 @@ final class SessionController: ObservableObject {
     private(set) var sessionId = UUID()
     private(set) var startDate = Date()
     private var clockTask: Task<Void, Never>?
-
-    // Summary trigger state (SPEC-10). Counts committed final words; at the threshold it
-    // summarizes the accumulated block and resets. Independent of the paragraph counter.
-    private var summaryEngine: SummaryEngine?
-    private var summaryBuffer = ""
-    private var summaryWords = 0
-    private var summaryCardSeq = 0
-    private var summaryFlushPending = false
-    // Rolling background: the last few blocks of transcript, fed to the model as context only
-    // so each one-sentence summary understands what came before. Capped to stay small/fast.
-    private var summaryContextTail = ""
-    private let summaryContextMaxWords = 120
 
     var displayName: String { sessionName.isEmpty ? "New Session" : sessionName }
 
@@ -122,7 +106,6 @@ final class SessionController: ObservableObject {
         sessionName = env.config.general.sessionNamePrefix + TimeFormat.fileStamp(startDate)
         transcript = Transcript(); paragraphs = []; current = ""
         savedTxtURL = nil; saveError = nil
-        resetSummaryState()
         do { journal = try JournalWriter(sessionId: sessionId) }
         catch { saveError = "Could not create recovery journal: \(error.localizedDescription)"; phase = .failed; return }
         do { try await orchestrator.startCapture() }
@@ -144,7 +127,6 @@ final class SessionController: ObservableObject {
         stopClock()
         await orchestrator.pauseAndFinalize()
         elapsed = TimeFormat.clock(orchestrator.recordedMs / 1000)
-        flushSummary()   // summarize the tail of the utterance before we freeze
         phase = .paused
     }
 
@@ -165,7 +147,6 @@ final class SessionController: ObservableObject {
         phase = .saving
         stopClock()
         await orchestrator.stopAndFinalize()
-        flushSummary()   // final card for the whole call; does not block the save below
         phase = await save() ? .saved : .failed
     }
 
@@ -192,7 +173,6 @@ final class SessionController: ObservableObject {
         }
         transcript.append(seg)
         addToParagraphs(text)
-        accumulateForSummary(text)         // SPEC-10 word-count trigger
     }
 
     // MARK: Clipboard (write-only; never reads — SPEC.md §9.4)
@@ -229,87 +209,6 @@ final class SessionController: ObservableObject {
         current = current.isEmpty ? text : current + " " + text
         if Filters.sentenceCount(current) >= 4 || Filters.wordCount(current) >= 100 {
             paragraphs.append(current); current = ""
-        }
-    }
-
-    // MARK: Live AI summary (SPEC-10)
-
-    /// Fresh summary state for a new session.
-    private func resetSummaryState() {
-        summaries = []; summaryBuffer = ""; summaryWords = 0; summaryContextTail = ""
-        summaryCardSeq = 0; summarizing = false; summaryFlushPending = false; summaryUnavailable = false
-        guard summaryActive else { summaryEngine = nil; return }
-        let engine = MLXServerEngine(serverURL: env.config.summary.serverURL,
-                                     model: env.config.summary.model)
-        summaryEngine = engine
-        // Non-blocking availability check so the panel can show a quiet note if the server is down.
-        Task { @MainActor [weak self] in self?.summaryUnavailable = !(await engine.probe()) }
-    }
-
-    /// Key points run in Caption only mode when enabled; in Interview mode only if also asked
-    /// for there (`interview.show_key_points`, SPEC-11) — otherwise the GPU stays free.
-    private var summaryActive: Bool {
-        env.config.summary.enabled
-            && (env.config.interview.mode != .interview || env.config.interview.showKeyPoints)
-    }
-
-    /// Add a committed final to the pending block; summarize once it reaches the word threshold.
-    private func accumulateForSummary(_ text: String) {
-        guard summaryActive, summaryEngine != nil else { return }
-        let t = text.trimmingCharacters(in: .whitespaces)
-        guard !t.isEmpty else { return }
-        summaryBuffer = summaryBuffer.isEmpty ? t : summaryBuffer + " " + t
-        summaryWords += Filters.wordCount(t)
-        if summaryWords >= env.config.summary.wordsPerSummary, !summarizing {
-            dispatchSummary()
-        }
-    }
-
-    /// Append a just-summarized block to the rolling background, keeping only the most recent
-    /// `summaryContextMaxWords` words so the context stays small and generation stays fast.
-    private func appendSummaryContext(_ block: String) {
-        summaryContextTail = summaryContextTail.isEmpty ? block : summaryContextTail + " " + block
-        let words = summaryContextTail.split(separator: " ")
-        if words.count > summaryContextMaxWords {
-            summaryContextTail = words.suffix(summaryContextMaxWords).joined(separator: " ")
-        }
-    }
-
-    /// Summarize the tail (any remaining words) on pause/stop. Never blocks the save path.
-    private func flushSummary() {
-        guard summaryActive, summaryEngine != nil, !summaryBuffer.isEmpty else { return }
-        summaryFlushPending = true
-        if !summarizing { summaryFlushPending = false; dispatchSummary() }
-    }
-
-    /// Send the accumulated block to the engine; reset the buffer. Callers decide *when*
-    /// (threshold or flush); if more text piled up during generation, re-dispatch on completion.
-    private func dispatchSummary() {
-        guard let engine = summaryEngine, !summaryBuffer.isEmpty else { return }
-        let chunk = summaryBuffer
-        let background = summaryContextTail
-        let id = summaryCardSeq
-        let maxBullets = env.config.summary.maxBullets
-        summaryBuffer = ""; summaryWords = 0; summaryCardSeq += 1
-        // Roll this block into the background tail for the next summary, capped to recent words.
-        appendSummaryContext(chunk)
-        summarizing = true
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                let card = try await engine.summarize(chunk: chunk, background: background, id: id, maxBullets: maxBullets)
-                if !card.isEmpty { self.summaries.append(card) }
-                self.summaryUnavailable = false
-            } catch {
-                self.summaryUnavailable = true
-            }
-            self.summarizing = false
-            // Merge-while-busy: enough new words arrived during generation, or a flush is pending.
-            if !self.summaryBuffer.isEmpty,
-               self.summaryWords >= self.env.config.summary.wordsPerSummary || self.summaryFlushPending {
-                self.summaryFlushPending = false
-                self.dispatchSummary()
-            }
         }
     }
 

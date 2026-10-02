@@ -232,7 +232,6 @@ struct InterviewSettingsSections: View {
     private var afterSection: some View {
         Section {
             Toggle("Summarize when the interview ends", isOn: cfg.summarizeOnEnd)
-            Toggle("Show Key points in Interview mode", isOn: cfg.showKeyPoints)
         } header: {
             Text("Interview — After the interview")
         }

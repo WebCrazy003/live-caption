@@ -17,7 +17,8 @@
 >    `app/` is untouched. What is shared is the *specification, file formats, config
 >    schema and test vectors* — not code.
 > 2. **Full feature parity except the Live AI Summary** (SPEC-10 / "Key points"). That
->    panel is explicitly out of scope for Windows v1; the config key stays reserved so the
+>    panel is explicitly out of scope for Windows v1 — and since 2026-10-02 it is removed
+>    from macOS too, so it is no longer a parity gap. The config key stays reserved so the
 >    two platforms' `config.json` files remain interchangeable (§9.2).
 >
 > Decisions I made are tagged **[DECISION]**. Decisions that still need the owner are
@@ -1166,6 +1167,9 @@ than v1.2's equivalents because A3/A4 arrive already written — B1/B2/B4 are ve
 and repair rather than greenfield.
 
 ### 16.7 Deferred: the Live AI Summary on Windows
+
+> **Superseded 2026-10-02:** the feature was removed from macOS (SPEC-10), so there is nothing
+> to port. Kept for history.
 
 When it is wanted, the port is small because the macOS design already isolates the LLM
 behind an HTTP contract: bundle **`llama-server.exe`** (llama.cpp) with

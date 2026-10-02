@@ -1,5 +1,11 @@
 # SPEC-10 — Live AI Summary (on-device)
 
+> ❌ **Removed on 2026-10-02 — the owner decided the feature isn't needed.** The panel, its
+> engine (`SummaryEngine`, `SummaryPrompt`, `SummaryCard`), its Settings section, the
+> `scripts/summary-server.sh` launcher and the localhost ATS exception were deleted. The
+> `summary` group stays in `config.json` as a reserved, unused key so the file keeps
+> round-tripping with the Windows build. This document is kept as history.
+
 **Status:** ✅ Implemented (engine via **local mlx-lm server**; native MLX-Swift deferred — see
 Implementation notes) · **Depends on:** SPEC-04 (finals via `SessionController.ingestFinal`),
 SPEC-05 (Active Session layout), SPEC-01 (config) · **Extends:** SPEC.md §9 (UI) & §12 (config)

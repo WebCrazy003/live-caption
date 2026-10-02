@@ -22,7 +22,6 @@
     "interview.include_clipboard_images": false,
     "interview.clear_clipboard_images_after_send": true,
     "interview.busy_policy": "interrupt",
-    "interview.summarize_on_end": true,
-    "interview.show_key_points": false
+    "interview.summarize_on_end": true
   }
 }

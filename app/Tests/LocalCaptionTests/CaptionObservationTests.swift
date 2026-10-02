@@ -29,7 +29,6 @@ final class CaptionObservationTests: XCTestCase {
         try Data([0]).write(to: blocked)
         var config = Config()
         config.general.transcriptFolder = blocked.path
-        config.summary.enabled = false
         let env = AppEnvironment(config: config, store: try Store(url: directory.appendingPathComponent("test.db")))
         let controller = SessionController(env: env)
         // Inject a completed decode; this never starts capture or reads user files.

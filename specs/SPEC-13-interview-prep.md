@@ -41,14 +41,13 @@ as SPEC-11 §On-disk layout.
 
 ### Documents (CV, JD, notes)
 
-- [ ] **Import** `.pdf`, `.docx`, `.md`, `.txt`, or **Paste text**. Choose `kind`: CV, Job
+- [ ] **Import** `.pdf`, `.md`, `.txt`, or **Paste text** (no `.docx` — decided 2026-10-02; paste Word text instead). Choose `kind`: CV, Job
       description, Notes.
 - [ ] Text extraction into `text.txt` (this is what gets sent):
   - `.pdf` — macOS PDFKit page text, pages joined with blank lines. No text layer → error
     "This PDF is a scanned image; paste the text instead." (OCR is out of scope.) PDFKit
     letter-spaces large headings ("S t e v e  O n y e" — seen in S0); harmless to the model, and
     the editable-text step below lets the user tidy it.
-  - `.docx` — macOS `NSAttributedString(url:, documentType: .officeOpenXML)` → plain string.
   - `.md` / `.txt` — read as UTF-8 (fallback Windows-1252), normalise line endings to `\n`.
 - [ ] After import, show the extracted text in an **editable** view so the user can fix
       extraction mistakes; saving rewrites `text.txt` only.

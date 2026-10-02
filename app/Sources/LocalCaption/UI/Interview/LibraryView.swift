@@ -100,8 +100,7 @@ struct LibraryView: View {
 
     private func importDocument(_ kind: InterviewLibraryIndex.DocumentKind) {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.pdf, .plainText, UTType(filenameExtension: "md") ?? .plainText,
-                                     UTType(filenameExtension: "docx") ?? .data]
+        panel.allowedContentTypes = [.pdf, .plainText, UTType(filenameExtension: "md") ?? .plainText]
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {

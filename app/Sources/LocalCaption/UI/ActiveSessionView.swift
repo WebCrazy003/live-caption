@@ -138,7 +138,7 @@ struct ActiveSessionView: View {
 
     private var isLive: Bool { controller.phase == .recording || controller.phase == .paused }
 
-    // MARK: Caption area (captions left, live AI summary right — SPEC-10)
+    // MARK: Caption area
 
     private var captionView: some View {
         CaptionView(
@@ -157,19 +157,6 @@ struct ActiveSessionView: View {
                         fontSize: Double(env.config.caption.fontSize))
         } else if isInterviewMode {
             interviewLayout
-        } else if env.config.summary.enabled {
-            HStack(alignment: .top, spacing: 12) {
-                captionView.frame(maxWidth: .infinity)
-                Divider()
-                SummaryView(
-                    cards: controller.summaries,
-                    summarizing: controller.summarizing,
-                    unavailable: controller.summaryUnavailable,
-                    fontSize: Double(env.config.caption.fontSize),
-                    isLive: isLive
-                )
-                .frame(minWidth: 240, idealWidth: 320, maxWidth: 420)
-            }
         } else {
             captionView
         }
@@ -207,21 +194,11 @@ struct ActiveSessionView: View {
         .onChange(of: interview.turns.count) { _, _ in narrowTab = .answers }
     }
 
-    /// Prepare until ready; then Answers (with Key points below when enabled).
+    /// Prepare until ready; then Answers.
     @ViewBuilder private var interviewPanel: some View {
         if interview.prepState.isReady && !showingSetup {
-            VStack(spacing: 8) {
-                AnswersPanel(interview: interview, fontSize: Double(env.config.caption.fontSize),
-                             onEditSetup: { showingSetup = true })
-                    .layoutPriority(2)
-                if env.config.interview.showKeyPoints && env.config.summary.enabled {
-                    Divider()
-                    SummaryView(cards: controller.summaries, summarizing: controller.summarizing,
-                                unavailable: controller.summaryUnavailable,
-                                fontSize: Double(env.config.caption.fontSize), isLive: isLive)
-                        .frame(maxHeight: 220)
-                }
-            }
+            AnswersPanel(interview: interview, fontSize: Double(env.config.caption.fontSize),
+                         onEditSetup: { showingSetup = true })
         } else {
             VStack(alignment: .leading, spacing: 6) {
                 if interview.prepState.isReady {
@@ -362,16 +339,6 @@ struct ActiveSessionView: View {
             }
             .disabled(!controller.hasTranscript)
             .help("Copy the last \(env.config.clipboard.recentSentences) sentences")
-            .iconOnly(iconActions)
-
-            Divider().frame(height: 16)
-
-            // Live AI summary panel toggle (SPEC-10). Off = captions get full width, no LLM runs.
-            Button { env.config.summary.enabled.toggle() } label: {
-                Label("Key points", systemImage: "sparkles")
-                    .foregroundStyle(env.config.summary.enabled ? Color.accentColor : Color.secondary)
-            }
-            .help("Show the live AI summary of what the other person wants")
             .iconOnly(iconActions)
 
             Divider().frame(height: 16)

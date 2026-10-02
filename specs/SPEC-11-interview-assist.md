@@ -20,7 +20,7 @@ the per-area detail and acceptance criteria.
 
 ## Why (the user need)
 
-In a live interview the user understands the question (captions + Key points help) but needs a
+In a live interview the user understands the question (captions help) but needs a
 **reference answer fast**, grounded in *their* CV and *this* JD, phrased the way they would say
 it. Typing the question into ChatGPT by hand is too slow and visibly distracting. So:
 
@@ -139,7 +139,6 @@ a string this build doesn't know falls back to that key's default (no repair); a
 | `clear_clipboard_images_after_send` | bool | `true` | Remove those images from the clipboard once sent. |
 | `busy_policy` | `"interrupt"` \| `"queue"` | `"interrupt"` | What an Ask does while an answer is still streaming. |
 | `summarize_on_end` | bool | `true` | Run the summary turn on Stop. |
-| `show_key_points` | bool | `false` | Show the SPEC-10 Key points panel in Interview mode too. |
 
 **Default `quick_prompts`:** `Shorter` → "Make that answer shorter — two sentences I can say.",
 `Example` → "Give me one concrete example from my CV that supports that answer.",
@@ -175,7 +174,7 @@ LocalCaption/
     │   ├── index.json                   ← documents + skills + metadata (schema below)
     │   ├── skills/<slug>/SKILL.md       ← imported skill (+ any .md/.txt it ships)
     │   └── documents/<slug>/
-    │       ├── original.<pdf|md|txt|docx>
+    │       ├── original.<pdf|md|txt>
     │       └── text.txt                 ← extracted text the prompt actually uses
     ├── interviews/<yyyy-MM-dd HHmm> <name>/
     │   ├── interview.json               ← the record (schema below)
@@ -263,7 +262,7 @@ cheap, the macOS build must keep everything **shared** below in the portable for
 | Codex protocol | request builders + event parser, golden JSON | spawning (`Process` vs `System.Diagnostics.Process`; on Windows the npm shim is `codex.cmd` → spawn via `cmd.exe /c` or the `node` entry) |
 | Records | `interview.json`, `index.json`, folder layout, file names | root path |
 | Clipboard images | behaviour (which types, PNG re-encode, removal rule) | `NSPasteboard` vs `Clipboard` (`CF_DIB`/`CF_DIBV5`, PNG, `CF_HDROP` image files) |
-| Documents | `text.txt` extraction result is what is sent | PDF: PDFKit vs a .NET library (PdfPig); DOCX: both unzip `word/document.xml` |
+| Documents | `text.txt` extraction result is what is sent | PDF: PDFKit vs a .NET library (PdfPig). No DOCX (decided) |
 
 **New conformance vectors** (asserted by both suites, per `testdata/README.md` rules):
 
@@ -340,9 +339,9 @@ Step 1 can start before S0 finishes (it is engine-independent). Steps 2–5 wait
 
 ## Open decisions
 
-1. **Busy policy default** — `interrupt` (latest question wins) vs `queue`. Default `interrupt`.
-2. **Key points in Interview mode** — off by default (`show_key_points`) to save screen space and
-   GPU; revisit after the first real interview.
+1. ✅ **Busy policy default** — `interrupt` (latest question wins). Confirmed by the user 2026-10-02.
+2. ✅ **Key points in Interview mode** — moot: the Key points feature (SPEC-10) was removed on
+   2026-10-02, and `show_key_points` with it.
 3. **Custom prompts interpretation** — this spec reads "custom prompts" as (a) global + per-interview
    instructions, (b) saved quick-prompt buttons, (c) a typed-message box. Confirm.
-4. **Answer language** — English only for v1, like SPEC-10.
+4. ✅ **Answer language** — English only. Confirmed by the user 2026-10-02.

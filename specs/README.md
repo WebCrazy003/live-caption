@@ -13,8 +13,8 @@ and *blockers*. Build in the sequence below.
 
 **Phases 1–5 are built and shipping** (in `../app/`): the app builds, captions, saves,
 recovers, and is locally signed; **35 unit tests** pass. The authoritative build state is
-**[STATUS.md](STATUS.md)**. Only notarized distribution (09) and the new Live AI Summary
-(10) remain.
+**[STATUS.md](STATUS.md)**. Notarized distribution (09) remains; the Live AI Summary (10)
+was removed on 2026-10-02.
 
 Legend: ✅ done · 🟢 mostly · 🟡 partial · 🔴 barely · ⬜ not started
 
@@ -30,7 +30,7 @@ Legend: ✅ done · 🟢 mostly · 🟡 partial · 🔴 barely · ⬜ not starte
 | 07 | [Settings](SPEC-07-settings.md) | ✅ done | — |
 | 08 | [Window & Clipboard](SPEC-08-window-clipboard.md) | ✅ done | auto-copy-on-selection (needs AppKit text view) |
 | 09 | [Packaging & Distribution](SPEC-09-packaging.md) | 🟡 partial | Developer ID, notarize, DMG — blocked on **B2** |
-| 10 | [Live AI Summary (on-device)](SPEC-10-live-summary.md) | ✅ done | on-device 1B LLM (local mlx-lm server), "Key points" card every ~50 words; native MLX-Swift deferred |
+| 10 | [Live AI Summary (on-device)](SPEC-10-live-summary.md) | ❌ removed | on-device 1B LLM (local mlx-lm server), "Key points" card every ~50 words; native MLX-Swift deferred |
 | 11 | [Interview Assist — overview & shared contract](SPEC-11-interview-assist.md) | 🟢 built (macOS) | config group, hotkey/selection/prompt/record contracts, Windows vectors |
 | 12 | [Codex answer engine](SPEC-12-codex-engine.md) | ✅ engine built | S0 ✅ (Luna low: 1.3 s to first word, lockdown holds); `codex app-server` client, lockdown, usage |
 | 13 | [Interview library & preparation](SPEC-13-interview-prep.md) | 🟢 built | skills/CV/JD library, mode picker, Prepare on one thread |
@@ -58,11 +58,11 @@ Remaining work: **[SEQUENCE.md](SEQUENCE.md)**; shipped-state detail: **[STATUS.
 | **B4** | ASR: hybrid vs single-model streaming | 03 | ✅ **Resolved** — dual-model hybrid (tiny.en + small.en) shipped |
 | **B2** | Apple Developer account + Developer ID cert | 09 (notarization) | ⛔ Still needed for Phase 6 only |
 | **B5** | Product decisions (journal encryption, JSON sidecar, bundled model, min-OS) — SPEC.md §22 | 04, 09 | ✅ Resolved in Phase 2 |
-| **B6–B8** | Local-LLM memory pressure · latency > cadence · summary quality | 10 | New — see [SPEC-10](SPEC-10-live-summary.md) |
+| **B6–B8** | Local-LLM memory pressure · latency > cadence · summary quality | 10 | Closed — feature removed |
 
 | **B9–B14** | Codex latency · protocol drift · Plus limits · lockdown · noisy questions · terms | 11–15 | New — see [SPEC-11](SPEC-11-interview-assist.md#blockers--risks) |
 
-Only **B2** blocks shipped phases (distribution). Spec 10 introduces its own risks (B6–B8);
+Only **B2** blocks shipped phases (distribution). Spec 10's risks (B6–B8) closed with its removal;
 Interview Assist (11–15) introduces B9–B14 and is gated on the S0 spike in SPEC-12.
 
 ---

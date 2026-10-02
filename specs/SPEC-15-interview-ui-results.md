@@ -28,7 +28,7 @@ width of the caption area:
 
 | Width | Layout |
 |---|---|
-| ≥ 820 pt | Captions left · Answers right (side by side, as today with Key points) |
+| ≥ 820 pt | Captions left · Answers right (side by side) |
 | 560 – 819 | **Stacked**: Answers on top (60 %), Captions below (40 %), draggable divider |
 | < 560 | **One pane** with a segmented toggle *Answers / Captions*; an Ask switches to Answers automatically |
 
@@ -121,7 +121,7 @@ A new section in `SettingsView`, mirroring the existing sections. All keys are S
 | **Screenshots** | Include clipboard images (off by default, with a one-line privacy note); remove them from the clipboard after sending. |
 | **Prompts** | Custom instructions (multi-line, prefilled into each new interview); quick prompts editor (add, remove, reorder; label + text). |
 | **Library** | *Open library…* (SPEC-13). |
-| **After the interview** | Summarize when the interview ends; show Key points in Interview mode. |
+| **After the interview** | Summarize when the interview ends. |
 | **Privacy** | What Interview mode sends to OpenAI, and *Show the notice again*. |
 
 Out-of-range values clamp, as in SPEC-07.

@@ -11,7 +11,7 @@ Status legend: ✅ done · 🟢 mostly · 🟡 partial · 🔴 barely · ⬜ not
 ## Current status
 
 Phases 1–5 are **built** in `../app/` (see [STATUS.md](STATUS.md)); 35 unit tests pass. Only
-distribution (09) and the new Live AI Summary (10) remain.
+distribution (09) remains; the Live AI Summary (10) was removed on 2026-10-02.
 
 | Spec | Status | What's left (summary) |
 |------|--------|-----------------------|
@@ -25,7 +25,7 @@ distribution (09) and the new Live AI Summary (10) remain.
 | [07 Settings](SPEC-07-settings.md) | ✅ | — |
 | [08 Window & Clipboard](SPEC-08-window-clipboard.md) | ✅ | auto-copy-on-selection (AppKit text view) |
 | [09 Packaging](SPEC-09-packaging.md) | 🟡 | Developer ID + notarization, DMG — blocked on **B2** |
-| [10 Live AI Summary](SPEC-10-live-summary.md) | ✅ | on-device 1B LLM (local mlx-lm server), "Key points" card every ~50 words; native MLX-Swift deferred |
+| [10 Live AI Summary](SPEC-10-live-summary.md) | ❌ removed | on-device 1B LLM (local mlx-lm server), "Key points" card every ~50 words; native MLX-Swift deferred |
 
 **What the app already delivers:** ScreenCaptureKit system-audio capture → WhisperKit
 dual-model hybrid (tiny.en + small.en) → decoupled real-time streaming with LocalAgreement-2
@@ -46,7 +46,7 @@ Phase 2  ✅  04         →  05-finish          sessions/lifecycle + caption co
 Phase 3  ✅  06         ‖  07                  session list ‖ settings (parallel)
 Phase 4  ✅  02-finish  ‖  03-finish          capture hardening ‖ ASR hybrid (parallel, independent)
 Phase 5  ✅  08                               window + clipboard
-Phase 7  ▶  10                               live AI summary (on-device MLX LLM)   ← next
+Phase 7  ❌  10                               live AI summary — removed 2026-10-02
 Phase 6  ▶  09                               sign + notarize + ship                 (blocked on B2)
 Phase 8  🟢  12-S0 → 11 → 12 → 13 → 14 → 15  interview assist (Codex)               built; in-call check pending
 ```
@@ -59,7 +59,7 @@ Phase 8  🟢  12-S0 → 11 → 12 → 13 → 14 → 15  interview assist (Codex
 > with S0) → 12 engine → 13 library & prep → 14 live ask → 15 window, results, Settings.
 > macOS first; the shared contract in SPEC-11 keeps the Windows port cheap.
 
-> **Phase 7 — Live AI Summary ([10](SPEC-10-live-summary.md)):** right-side "Key points" panel that
+> **Phase 7 — Live AI Summary ([10](SPEC-10-live-summary.md)) — removed 2026-10-02.** Was: a right-side "Key points" panel that
 > adds a short easy-English card every ~50 words of speech, produced by an on-device MLX LLM,
 > distilling captions into "what they want." Depends on 04 (finals) + 05 (layout) — both done — so
 > it can start now, independent of the 09 distribution blocker.
@@ -100,8 +100,7 @@ Phase 8  🟢  12-S0 → 11 → 12 → 13 → 14 → 15  interview assist (Codex
 - ⛔ **B2** (Apple Developer account) — still needed for Phase 6 notarization only.
 - ✅ **B4** (hybrid vs single model) — resolved, dual-model hybrid shipped.
 - ✅ **B5** (journal encryption, JSON sidecar, etc.) — resolved in Phase 2.
-- **B6–B8** (Phase 7 / spec 10) — local-LLM memory pressure, latency vs 10 s cadence, summary
-  quality on real speech. See [SPEC-10](SPEC-10-live-summary.md).
+- ✅ **B6–B8** (Phase 7 / spec 10) — closed: the feature was removed.
 
 ## Fastest-value shortcut
 If you want immediate usefulness before the full foundation: pull **04's "save transcript

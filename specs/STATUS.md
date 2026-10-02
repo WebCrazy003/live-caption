@@ -17,14 +17,12 @@ WhisperKit), and auto-saves transcripts. This document reflects what is actually
 | 4 | Dual-model ASR hybrid, LocalAgreement-2, metadata filters | ✅ Done |
 | 5 | Always-on-top overlay, opacity, window memory, clipboard | ✅ Done |
 | 6 | Developer ID signing + notarization + DMG | ⛔ Blocked on Apple Developer account (B2) |
-| 7 | Live AI Summary — on-device 1B LLM, right-side "Key points" card every ~50 words | ✅ Done — engine via local mlx-lm server ([SPEC-10](SPEC-10-live-summary.md)) |
+| 7 | Live AI Summary — on-device 1B LLM, right-side "Key points" card | ❌ Removed 2026-10-02 ([SPEC-10](SPEC-10-live-summary.md)) |
 | 8 | Interview Assist — F8 sends the interviewer's words to a locked-down Codex (ChatGPT) thread prepared with CV/JD/skill; answers stream beside captions; summary + history | 🟢 Built ([SPEC-11](SPEC-11-interview-assist.md)–[15](SPEC-15-interview-ui-results.md)); real-call check pending |
 
-**Phases 1–5 and 7 are built.** The app builds, runs, captions, saves, recovers, is locally
-signed, and now shows a **live AI summary** ("Key points", Phase 7 / [SPEC-10](SPEC-10-live-summary.md))
-— an on-device 1B LLM (served locally by mlx-lm) that distills the captions into short easy-English
-cards. Remaining: notarized distribution (Phase 6, blocked on B2), and swapping the summary engine
-to native MLX-Swift / Apple Foundation Models once the toolchain allows.
+**Phases 1–5 and 8 are built.** The app builds, runs, captions, saves, recovers, is locally
+signed, and has an opt-in **Interview mode** (Phase 8). The live AI summary ("Key points",
+Phase 7) was removed on 2026-10-02. Remaining: notarized distribution (Phase 6, blocked on B2).
 
 Verification: `swift build` clean; **35 unit tests** pass (`swift test`) covering the whole
 data/logic layer. Live captioning verified manually.

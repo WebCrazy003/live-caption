@@ -35,7 +35,7 @@ final class InterviewLibrary: ObservableObject {
 
     // MARK: Documents
 
-    /// Import a `.pdf`, `.docx`, `.md` or `.txt` file. Returns the new document.
+    /// Import a `.pdf`, `.md` or `.txt` file. Returns the new document.
     @discardableResult
     func importDocument(from url: URL, kind: InterviewLibraryIndex.DocumentKind) throws -> InterviewLibraryIndex.Document {
         let text = try DocumentText.extract(from: url)
@@ -222,7 +222,7 @@ enum DocumentText {
             switch self {
             case .scannedPDF: return "This PDF is a scanned image; paste the text instead."
             case .unreadable: return "Couldn't read that file."
-            case .unsupported(let ext): return "“.\(ext)” files aren't supported — use PDF, DOCX, Markdown or plain text."
+            case .unsupported(let ext): return "“.\(ext)” files aren't supported — use PDF, Markdown or plain text, or paste the text."
             }
         }
     }
@@ -236,10 +236,6 @@ enum DocumentText {
                 .filter { !$0.isEmpty }
             guard !pages.isEmpty else { throw Failure.scannedPDF }
             return normalize(pages.joined(separator: "\n\n"))
-        case "docx":
-            guard let s = try? NSAttributedString(url: url, options: [.documentType: NSAttributedString.DocumentType.officeOpenXML],
-                                                  documentAttributes: nil) else { throw Failure.unreadable }
-            return normalize(s.string)
         case "md", "markdown", "txt", "text":
             return normalize(try readText(url))
         case let ext:

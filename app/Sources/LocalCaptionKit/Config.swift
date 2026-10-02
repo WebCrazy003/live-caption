@@ -200,9 +200,9 @@ public struct Config: Codable, Equatable {
         }
     }
 
-    /// Live AI summary (SPEC-10). Runs on an on-device MLX model served over localhost by
-    /// `mlx_lm.server` (the native MLX-Swift path can't build the Metal lib from `swift build`
-    /// on this toolchain). A new card is produced every `wordsPerSummary` words of transcript.
+    /// Reserved: the Live AI Summary ("Key points", SPEC-10) was removed on 2026-10-02. The group
+    /// stays in the schema, unused, so `config.json` keeps round-tripping with the Windows build,
+    /// which keeps it for the same reason (SPEC-WINDOWS §9.2).
     public struct Summary: Codable, Equatable {
         public var enabled: Bool
         public var wordsPerSummary: Int
@@ -281,7 +281,6 @@ public struct Config: Codable, Equatable {
         public var clearClipboardImagesAfterSend: Bool
         public var busyPolicy: BusyPolicy
         public var summarizeOnEnd: Bool
-        public var showKeyPoints: Bool
 
         public init(mode: Mode = .caption,
                     privacyAcknowledged: Bool = false,
@@ -300,8 +299,7 @@ public struct Config: Codable, Equatable {
                     includeClipboardImages: Bool = false,
                     clearClipboardImagesAfterSend: Bool = true,
                     busyPolicy: BusyPolicy = .interrupt,
-                    summarizeOnEnd: Bool = true,
-                    showKeyPoints: Bool = false) {
+                    summarizeOnEnd: Bool = true) {
             self.mode = mode; self.privacyAcknowledged = privacyAcknowledged
             self.engine = engine; self.codexPath = codexPath; self.model = model
             self.reasoningEffort = reasoningEffort; self.prepReasoningEffort = prepReasoningEffort
@@ -311,7 +309,6 @@ public struct Config: Codable, Equatable {
             self.includeClipboardImages = includeClipboardImages
             self.clearClipboardImagesAfterSend = clearClipboardImagesAfterSend
             self.busyPolicy = busyPolicy; self.summarizeOnEnd = summarizeOnEnd
-            self.showKeyPoints = showKeyPoints
         }
 
         /// The model to request: the configured one, or the S0 default.
@@ -336,7 +333,6 @@ public struct Config: Codable, Equatable {
             case clearClipboardImagesAfterSend = "clear_clipboard_images_after_send"
             case busyPolicy = "busy_policy"
             case summarizeOnEnd = "summarize_on_end"
-            case showKeyPoints = "show_key_points"
         }
 
         public init(from d: Decoder) throws {
@@ -366,7 +362,6 @@ public struct Config: Codable, Equatable {
             clearClipboardImagesAfterSend = try c.decodeIfPresent(Bool.self, forKey: .clearClipboardImagesAfterSend) ?? x.clearClipboardImagesAfterSend
             busyPolicy = try value(.busyPolicy, x.busyPolicy)
             summarizeOnEnd = try c.decodeIfPresent(Bool.self, forKey: .summarizeOnEnd) ?? x.summarizeOnEnd
-            showKeyPoints = try c.decodeIfPresent(Bool.self, forKey: .showKeyPoints) ?? x.showKeyPoints
         }
     }
 }
