@@ -67,8 +67,8 @@ struct TranscriptViewer: View {
         record = try? env.store.fetch(id: sessionID)
         interview = nil
         guard let rec = record else { text = ""; loadError = nil; return }
-        if rec.isInterview, let dir = rec.interviewDir {
-            interview = try? InterviewController(env: env, existing: URL(fileURLWithPath: dir))
+        if rec.isInterview, let id = rec.id, let saved = try? env.store.interview(sessionId: id) {
+            interview = InterviewController(env: env, existing: saved)
         }
         if let path = rec.transcriptFile,
            let contents = try? String(contentsOfFile: path, encoding: .utf8) {

@@ -35,9 +35,10 @@ struct InterviewPanel: View {
             }
             cards
             Divider()
+            if !interview.pendingImages.isEmpty { screenshotTray }
             bottomBar
         }
-        .onReceive(clipboardPoll) { _ in interview.refreshClipboardBadge() }
+        .onReceive(clipboardPoll) { _ in interview.pollClipboard() }
         .onAppear { setupExpanded = !isLive }
         .onChange(of: isLive) { _, live in if live { setupExpanded = false } }
     }
@@ -122,7 +123,7 @@ struct InterviewPanel: View {
                         AnswerCard(turn: turn, isLatest: turn.n == interview.turns.last?.n,
                                    isExpanded: turn.n == interview.turns.last?.n || expanded.contains(turn.n),
                                    isStreaming: interview.streamingTurn == turn.n,
-                                   folder: interview.folder, fontSize: fontSize,
+                                   image: interview.image(named:), fontSize: fontSize,
                                    toggle: { if expanded.contains(turn.n) { expanded.remove(turn.n) } else { expanded.insert(turn.n) } },
                                    regenerate: turn.kind == .skill ? nil : { Task { await interview.regenerate() } })
                             .id(turn.n)
@@ -180,19 +181,40 @@ struct InterviewPanel: View {
                     Text("Ask")
                     Text(hotkeyLabel).font(.caption).foregroundStyle(.secondary)
                 }
-                if interview.clipboardImageCount > 0 {
-                    Label("\(interview.clipboardImageCount)", systemImage: "photo").font(.caption)
-                        .labelStyle(.titleAndIcon).foregroundStyle(.blue)
+                if !interview.pendingImages.isEmpty {
+                    Label("\(interview.pendingImages.count)", systemImage: "photo").font(.caption)
+                        .labelStyle(.titleAndIcon).foregroundStyle(.white)
                 }
             }
         }
         .buttonStyle(.borderedProminent)
-        .help("Send the interviewer's latest words (\(hotkeyLabel))")
+        .help(interview.pendingImages.isEmpty ? "Send the interviewer's latest words (\(hotkeyLabel))"
+              : "Send the interviewer's latest words and \(interview.pendingImages.count) screenshot(s) (\(hotkeyLabel))")
         .accessibilityLabel("Ask")
     }
 
+    /// Screenshots waiting in the current prompt; the next Ask or Send takes them all.
+    private var screenshotTray: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Label("\(interview.pendingImages.count) screenshot\(interview.pendingImages.count == 1 ? "" : "s") in this prompt",
+                      systemImage: "photo.on.rectangle").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Clear") { interview.clearPending() }.buttonStyle(.link).font(.caption)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(interview.pendingImages) { item in
+                        PendingThumbnail(item: item) { interview.removePending(item.id) }
+                    }
+                }
+            }
+        }
+    }
+
     private var typeField: some View {
-        TextField("Type to the coach…", text: $draft, axis: .vertical)
+        HStack(alignment: .bottom, spacing: 6) {
+            TextField("Type to the coach…", text: $draft, axis: .vertical)
             .lineLimit(1...4)
             .textFieldStyle(.roundedBorder)
             .onSubmit {
@@ -200,6 +222,14 @@ struct InterviewPanel: View {
                 draft = ""
                 Task { await interview.sendTyped(text) }
             }
+            Button {
+                let text = draft
+                draft = ""
+                Task { await interview.sendTyped(text) }
+            } label: { Image(systemName: "paperplane.fill") }
+            .help("Send" + (interview.pendingImages.isEmpty ? "" : " with \(interview.pendingImages.count) screenshot(s)"))
+            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && interview.pendingImages.isEmpty)
+        }
     }
 
     private var hotkeyLabel: String {
@@ -215,7 +245,8 @@ struct AnswerCard: View {
     let isLatest: Bool
     let isExpanded: Bool
     let isStreaming: Bool
-    let folder: URL?
+    /// Loads a stored screenshot by name (from the interview database).
+    let image: (String) -> NSImage?
     let fontSize: Double
     let toggle: () -> Void
     let regenerate: (() -> Void)?
@@ -292,8 +323,8 @@ struct AnswerCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Sent").font(.headline)
                 Text(turn.question).textSelection(.enabled).font(.callout)
-                ForEach(turn.images, id: \.self) { rel in
-                    if let folder, let img = NSImage(contentsOf: folder.appendingPathComponent(rel)) {
+                ForEach(turn.images, id: \.self) { name in
+                    if let img = image(name) {
                         Image(nsImage: img).resizable().scaledToFit().frame(maxHeight: 160)
                     }
                 }
@@ -328,5 +359,28 @@ struct AnswerCard: View {
         pb.setString(turn.answer, forType: .string)
         copied = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
+    }
+}
+
+/// One screenshot in the tray, with a remove button.
+private struct PendingThumbnail: View {
+    let item: InterviewController.PendingImage
+    let remove: () -> Void
+    @State private var image: NSImage?
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Group {
+                if let image { Image(nsImage: image).resizable().scaledToFill() } else { Color.secondary.opacity(0.2) }
+            }
+            .frame(width: 72, height: 48).clipShape(RoundedRectangle(cornerRadius: 4))
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(.quaternary))
+            Button(action: remove) {
+                Image(systemName: "xmark.circle.fill").symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, .black.opacity(0.6))
+            }
+            .buttonStyle(.plain).padding(2).help("Remove this screenshot")
+        }
+        .onAppear { if image == nil { image = NSImage(data: item.png) } }
     }
 }

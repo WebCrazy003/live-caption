@@ -42,7 +42,7 @@ public enum SessionSort
 /// </remarks>
 public sealed class Store : IDisposable
 {
-    private const int SchemaVersion = 2;
+    private const int SchemaVersion = 3;
 
     private readonly SqliteConnection _connection;
 
@@ -58,6 +58,7 @@ public sealed class Store : IDisposable
             Mode = SqliteOpenMode.ReadWriteCreate,
         }.ToString());
         _connection.Open();
+        Execute("PRAGMA foreign_keys = ON");
 
         Execute("PRAGMA journal_mode = WAL");
         Migrate();
@@ -89,6 +90,66 @@ public sealed class Store : IDisposable
             // macOS migration `v2_interview` (specs/SPEC-11 §SQLite): same columns, same default.
             Execute("ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT 'caption'");
             Execute("ALTER TABLE sessions ADD COLUMN interview_dir TEXT");
+        }
+
+        if (current < 3)
+        {
+            // macOS migration `v3_interview_store` (specs/SPEC-11 §SQLite): all interview data —
+            // record, turns, CV/JD/summary/transcript text, screenshots — in this database.
+            // Identical DDL, so a database file is readable by either build.
+            Execute("""
+                CREATE TABLE interviews (
+                    id TEXT PRIMARY KEY,
+                    session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+                    name TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    started_at TEXT,
+                    ended_at TEXT,
+                    capture_session_uuid TEXT,
+                    engine TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    reasoning_effort TEXT NOT NULL,
+                    thread_id TEXT,
+                    cv_document_id TEXT,
+                    cv_title TEXT,
+                    cv_text TEXT,
+                    jd_text TEXT,
+                    instructions TEXT NOT NULL DEFAULT '',
+                    answer_length TEXT NOT NULL DEFAULT 'medium',
+                    skill_ids TEXT NOT NULL DEFAULT '[]',
+                    legacy_briefing TEXT,
+                    summary_status TEXT NOT NULL DEFAULT 'pending',
+                    summary_text TEXT,
+                    summary_completed_at TEXT,
+                    transcript TEXT
+                );
+                CREATE INDEX idx_interviews_session ON interviews(session_id);
+                CREATE INDEX idx_interviews_capture ON interviews(capture_session_uuid);
+                CREATE TABLE interview_turns (
+                    interview_id TEXT NOT NULL REFERENCES interviews(id) ON DELETE CASCADE,
+                    n INTEGER NOT NULL,
+                    kind TEXT NOT NULL,
+                    question TEXT NOT NULL,
+                    answer TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL,
+                    error TEXT,
+                    audio_from_ms INTEGER,
+                    audio_to_ms INTEGER,
+                    images TEXT NOT NULL DEFAULT '[]',
+                    asked_at TEXT NOT NULL,
+                    ttft_ms INTEGER,
+                    total_ms INTEGER,
+                    PRIMARY KEY (interview_id, n)
+                );
+                CREATE TABLE interview_images (
+                    interview_id TEXT NOT NULL REFERENCES interviews(id) ON DELETE CASCADE,
+                    name TEXT NOT NULL,
+                    turn_n INTEGER,
+                    png BLOB NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (interview_id, name)
+                );
+                """);
         }
 
         Execute($"PRAGMA user_version = {SchemaVersion}");

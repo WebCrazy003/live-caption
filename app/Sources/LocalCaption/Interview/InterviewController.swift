@@ -52,7 +52,6 @@ final class InterviewController: ObservableObject {
     @Published private(set) var streamingTurn: Int?
     @Published private(set) var status: String?
 
-    private(set) var folder: URL?
     private var recordingStart: (uuid: UUID, date: Date)?
     private var opening: Task<String?, Never>?
 
@@ -66,25 +65,22 @@ final class InterviewController: ObservableObject {
         self.draft = Self.initialDraft(env: env)
     }
 
-    /// Reopen a saved interview (history viewer): its record, and the ability to (re)generate
-    /// the summary on the same thread — resumed first, since this app run may not know it.
-    init(env: AppEnvironment, existing folder: URL) throws {
+    /// Reopen a saved interview (history viewer) from the database: its record, and the ability to
+    /// (re)generate the summary on the same thread — resumed first, since this run may not know it.
+    init(env: AppEnvironment, existing rec: InterviewRecord) {
         self.env = env
-        let rec = try InterviewFiles.read(from: folder)
         self.draft = Draft(cvId: rec.setup.documentIds.first, jobDescription: rec.setup.jdTextInline ?? "")
-        self.folder = folder
         self.record = rec
         self.threadState = rec.threadId == nil ? .none : .open
         self.needsResume = true
-        self.summaryText = (try? String(contentsOf: folder.appendingPathComponent(InterviewFiles.summaryName),
-                                        encoding: .utf8)) ?? ""
+        self.summaryText = rec.summaryText ?? ""
     }
 
     /// The CV from the most recent interview, else the newest CV.
     private static func initialDraft(env: AppEnvironment) -> Draft {
         let lib = env.library
         var d = Draft()
-        if let last = InterviewFiles.all(in: env.interviewsRoot).first?.record {
+        if let last = (try? env.store.allInterviews())?.first {
             let ids = Set(last.setup.documentIds)
             d.cvId = lib.documents(of: .cv).first { ids.contains($0.id) }?.id
         }
@@ -145,14 +141,13 @@ final class InterviewController: ObservableObject {
             rec.captureSessionUUID = start.uuid.uuidString
         }
         do {
-            folder = try InterviewFiles.makeFolder(in: env.interviewsRoot, date: Date(), name: rec.name)
+            try env.store.saveInterview(rec)
         } catch {
-            let message = "Could not create the interview folder: \(error.localizedDescription)"
+            let message = "Could not save the interview: \(error.localizedDescription)"
             threadState = .failed(message); status = message
             return false
         }
         record = rec
-        persist()
         return true
     }
 
@@ -207,7 +202,7 @@ final class InterviewController: ObservableObject {
                 if record?.setup.documentIds.contains(id) == false { record?.setup.documentIds.insert(id, at: 0) }
                 // Snapshot it: history shows the CV the coach saw, whatever happens to the library.
                 record?.setup.cvTitle = library.document(id)?.title
-                if let folder { try? Data(text.utf8).write(to: folder.appendingPathComponent(InterviewFiles.cvName), options: .atomic) }
+                record?.cvText = text
             }
         case .discoveryJD:
             attachments.append(.init(title: "JOB DESCRIPTION", text: draft.jobDescription))
@@ -240,12 +235,7 @@ final class InterviewController: ObservableObject {
     }
 
     /// History and wrap-up: the CV and JD this interview used.
-    var cvText: String {
-        if let folder, let s = try? String(contentsOf: folder.appendingPathComponent(InterviewFiles.cvName), encoding: .utf8) {
-            return s
-        }
-        return record?.setup.documentIds.first.map(library.text(of:)) ?? ""
-    }
+    var cvText: String { record?.cvText ?? record?.setup.documentIds.first.map(library.text(of:)) ?? "" }
     var cvTitle: String? { record?.setup.cvTitle ?? record?.setup.documentIds.first.flatMap { library.document($0)?.title } }
     var jdText: String { record?.setup.jdTextInline ?? "" }
 
@@ -258,12 +248,12 @@ final class InterviewController: ObservableObject {
         draft.cvId = doc.id
     }
 
-    /// New Session: drop an interview that never started recording — folder and thread.
+    /// Start over: drop an interview that never started recording — its rows and its thread.
     func discardUnstarted() async {
         guard let rec = record, rec.startedAt == nil, recordingStart == nil else { return }
-        if let folder { try? FileManager.default.removeItem(at: folder) }
+        try? env.store.deleteInterview(id: rec.id)
         if let thread = rec.threadId { await engine.archiveThread(id: thread) }
-        record = nil; folder = nil; threadState = .none
+        record = nil; threadState = .none; pendingImages = []
     }
 
     // MARK: End of interview (SPEC-15)
@@ -277,15 +267,16 @@ final class InterviewController: ObservableObject {
 
     /// After End interview has saved the transcript: link the record to its session row and let a
     /// streaming answer finish (≤ 30 s). Never delays the save. Summarizing is the user's choice.
-    func sessionSaved(sessionId: Int64?) async {
+    func sessionSaved(sessionId: Int64?, transcript: String) async {
         guard record != nil else { return }
         record?.endedAt = TimeFormat.iso(Date())
         record?.sessionId = sessionId
-        if let sessionId, let folder {
-            try? env.store.setInterview(id: sessionId, dir: folder.path)
+        record?.transcript = transcript
+        persist()
+        if let sessionId {
+            try? env.store.markInterview(sessionId: sessionId)
             NotificationCenter.default.post(name: .sessionsChanged, object: nil)
         }
-        persist()
 
         queued = nil
         let deadline = Date().addingTimeInterval(30)
@@ -301,7 +292,7 @@ final class InterviewController: ObservableObject {
 
     /// The summary turn (SPEC-15 §Summary message) → `summary.md`. Retryable.
     func generateSummary(transcript: String) async {
-        guard let thread = record?.threadId, let folder, !summarizing else { return }
+        guard let thread = record?.threadId, !summarizing else { return }
         summarizing = true
         summaryError = nil
         summaryText = ""
@@ -328,13 +319,9 @@ final class InterviewController: ObservableObject {
             case .delta(let d): summaryText += d
             case .completed(let full):
                 summaryText = full
-                do {
-                    try Data(full.utf8).write(to: folder.appendingPathComponent(InterviewFiles.summaryName), options: .atomic)
-                    record?.summary = .init(status: .done, file: InterviewFiles.summaryName, completedAt: TimeFormat.iso(Date()))
-                    persist()
-                } catch {
-                    failSummary("Could not save the summary: \(error.localizedDescription)")
-                }
+                record?.summaryText = full
+                record?.summary = .init(status: .done, completedAt: TimeFormat.iso(Date()))
+                persist()
             case .interrupted:
                 failSummary("The summary was interrupted.")
             case .failed(let e, _):
@@ -353,7 +340,7 @@ final class InterviewController: ObservableObject {
 
     /// The session screen starts a new recording after Results: start a fresh interview.
     func resetForNewInterview() {
-        record = nil; folder = nil; threadState = .none; summaryText = ""; summaryError = nil
+        record = nil; threadState = .none; summaryText = ""; summaryError = nil; pendingImages = []
         mark = nil; queued = nil; recordingStart = nil; status = nil
         draft = Self.initialDraft(env: env)
     }
@@ -382,19 +369,25 @@ final class InterviewController: ObservableObject {
     /// Returns when the turn ends.
     @discardableResult
     func runTurn(kind: InterviewRecord.TurnKind, text: String, question: String,
-                 images: [URL] = [], span: (from: Int, to: Int)? = nil, effort: String? = nil,
+                 images pngs: [Data] = [], span: (from: Int, to: Int)? = nil, effort: String? = nil,
                  onAccepted: (() -> Void)? = nil) async -> InterviewRecord.TurnStatus? {
         guard let thread = await ensureThread(), var rec = record else { return nil }
         let n = rec.nextTurnNumber
-        let relImages = images.map { "\(InterviewFiles.attachmentsName)/\($0.lastPathComponent)" }
+        // Screenshots are kept in the database; Codex reads them from short-lived files.
+        let names = pngs.indices.map { Store.imageName(turn: n, index: $0 + 1) }
+        for (name, png) in zip(names, pngs) {
+            try? env.store.addInterviewImage(interviewId: rec.id, name: name, turn: n, png: png)
+        }
+        let files = Self.writeOutbox(pngs)
+        defer { files.forEach { try? FileManager.default.removeItem(at: $0) } }
         rec.turns.append(.init(n: n, kind: kind, question: question, audioFromMs: span?.from, audioToMs: span?.to,
-                               images: relImages, askedAt: TimeFormat.iso(Date())))
+                               images: names, askedAt: TimeFormat.iso(Date())))
         record = rec
         streamingTurn = n
         persist()
 
         let t0 = Date()
-        let input: [CodexRPC.Input] = [.text(text)] + images.map { .localImage(path: $0.path) }
+        let input: [CodexRPC.Input] = [.text(text)] + files.map { .localImage(path: $0.path) }
         var final: InterviewRecord.TurnStatus = .failed
         for await event in streamEvents(engine.send(threadId: thread, input: input,
                                                     effort: effort ?? env.config.interview.reasoningEffort)) {
@@ -434,8 +427,6 @@ final class InterviewController: ObservableObject {
 
     /// The live transcript at press time; set by the session screen.
     var transcriptSource: (() -> (segments: [AskSelection.Segment], interim: String, audioMs: Int))?
-    @Published private(set) var clipboardImageCount = 0
-    private var clipboardChangeCount = -1
     private var mark: AskSelection.Mark?
     private var queued: Request?
 
@@ -444,72 +435,99 @@ final class InterviewController: ObservableObject {
         var kind: InterviewRecord.TurnKind
         var text: String
         var question: String
-        var images: [URL] = []
+        var images: [Data] = []
         var span: (from: Int, to: Int)?
         var onAccepted: (() -> Void)?
         /// Skill steps use `prep_reasoning_effort`; nil = `reasoning_effort`.
         var effort: String?
-        /// For merging queued asks: the transcript text and screenshot count behind `text`.
+        /// For merging queued asks: the transcript text behind `text`.
         var askText = ""
     }
 
-    /// The Ask hotkey / button.
+    // MARK: Screenshots (SPEC-14 §Screenshots)
+
+    /// A screenshot waiting in the current prompt.
+    struct PendingImage: Identifiable, Equatable {
+        let id = UUID()
+        let png: Data
+    }
+
+    /// Screenshots added to the current prompt; the next Ask or Send takes them all.
+    @Published private(set) var pendingImages: [PendingImage] = []
+    static let maxPendingImages = 10
+    /// Where the clipboard is watched; injectable for tests.
+    var pasteboard: NSPasteboard = .general
+    private var seenChangeCount: Int?
+    private var capturedChangeCount: Int?
+
+    /// Called twice a second while the interview panel is on screen. With
+    /// `include_clipboard_images` on, every new image on the clipboard — a ⌘⌃⇧4 screenshot —
+    /// is added to the current prompt. What was already there when watching began is left alone.
+    func pollClipboard() {
+        let count = pasteboard.changeCount
+        guard let seen = seenChangeCount else { seenChangeCount = count; return }
+        guard count != seen else { return }
+        seenChangeCount = count
+        guard env.config.interview.includeClipboardImages else { return }
+        let room = Self.maxPendingImages - pendingImages.count
+        let snap = ClipboardImages.read(pasteboard)
+        guard !snap.images.isEmpty else { return }
+        guard room > 0 else { status = "The prompt already has \(Self.maxPendingImages) screenshots."; return }
+        let added = snap.images.prefix(room).map { PendingImage(png: $0) }
+        pendingImages += added
+        capturedChangeCount = count
+        status = "Screenshot added — \(pendingImages.count) in this prompt"
+    }
+
+    func removePending(_ id: UUID) { pendingImages.removeAll { $0.id == id } }
+    func clearPending() { pendingImages = [] }
+
+    /// Take the tray for a send: the images, plus a hook that clears the last screenshot from the
+    /// clipboard once Codex accepts the turn (if that setting is on and nothing new was copied).
+    private func takePending() -> (images: [Data], onAccepted: (() -> Void)?) {
+        let images = pendingImages.map(\.png)
+        pendingImages = []
+        guard !images.isEmpty else { return ([], nil) }
+        if !codex.acceptsImages(record?.model ?? env.config.interview.effectiveModel) {
+            status = "This model can't read images — sending the text only."
+            return ([], nil)
+        }
+        guard env.config.interview.clearClipboardImagesAfterSend, let captured = capturedChangeCount else { return (images, nil) }
+        let pb = pasteboard
+        return (images, { [weak self] in
+            guard pb.changeCount == captured else { return }
+            pb.clearContents()
+            self?.seenChangeCount = pb.changeCount
+        })
+    }
+
+    /// The Ask hotkey / button: the interviewer's latest words plus every pending screenshot.
     func ask() async {
         let cfg = env.config.interview
         let src = transcriptSource?() ?? (segments: [], interim: "", audioMs: 0)
         let sel = AskSelection.select(segments: src.segments, interim: src.interim, mode: cfg.askMode,
                                       mark: mark, pressAudioMs: src.audioMs, maxWords: cfg.clampedMaxWords)
         mark = sel.mark   // advances on every press, in both modes
-
-        var snapshot: ClipboardImages.Snapshot?
-        if cfg.includeClipboardImages {
-            let s = ClipboardImages.read()
-            if !s.images.isEmpty, !codex.acceptsImages(record?.model ?? cfg.effectiveModel) {
-                status = "This model can't read images — sending the text only."
-            } else if !s.images.isEmpty {
-                snapshot = s
-                if s.skipped > 0 { status = "\(s.skipped) image(s) left out (too large or over the limit of \(ClipboardImages.maxImages))." }
-            }
-        }
-        let images = snapshot?.images.count ?? 0
-        guard !sel.text.isEmpty || images > 0 else {
+        guard !sel.text.isEmpty || !pendingImages.isEmpty else {
             status = "Nothing new since your last ask"
             return
         }
         guard await ensureThread() != nil else { NSSound.beep(); return }
-
-        var urls: [URL] = []
-        if let snapshot, let folder {
-            let turn = record?.nextTurnNumber ?? 1   // a queued ask still becomes the next turn
-            let offset = queued?.images.count ?? 0
-            do {
-                urls = try ClipboardImages.save(snapshot, turn: turn, to: folder.appendingPathComponent(InterviewFiles.attachmentsName))
-                if offset > 0 {   // a merged queued ask keeps every file name unique
-                    urls = try urls.enumerated().map { i, u in
-                        let dest = u.deletingLastPathComponent().appendingPathComponent("\(turn)-\(offset + i + 1).png")
-                        try? FileManager.default.removeItem(at: dest)
-                        try FileManager.default.moveItem(at: u, to: dest)
-                        return dest
-                    }
-                }
-            } catch {
-                status = "Couldn't save the screenshot: \(error.localizedDescription)"
-                urls = []
-            }
-        }
-        let clear = cfg.clearClipboardImagesAfterSend
-        let accepted: (() -> Void)? = (snapshot != nil && clear && !urls.isEmpty) ? {
-            if ClipboardImages.removeImages(after: snapshot!) { self.clipboardImageCount = 0 }
-        } : nil
-        await submit(Request(kind: .ask, text: InterviewPrompt.ask(sel.text, imageCount: urls.count),
-                             question: sel.text.isEmpty ? "(screenshot)" : sel.text, images: urls,
-                             span: (sel.fromMs, sel.toMs), onAccepted: accepted, askText: sel.text))
+        let pending = takePending()
+        await submit(Request(kind: .ask, text: InterviewPrompt.ask(sel.text, imageCount: pending.images.count),
+                             question: sel.text.isEmpty ? "(screenshot)" : sel.text, images: pending.images,
+                             span: (sel.fromMs, sel.toMs), onAccepted: pending.onAccepted, askText: sel.text))
     }
 
+    /// The Send button: typed text plus every pending screenshot.
     func sendTyped(_ text: String) async {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty else { return }
-        await submit(Request(kind: .typed, text: t, question: t))
+        guard !t.isEmpty || !pendingImages.isEmpty else { return }
+        let pending = takePending()
+        let body = t.isEmpty ? "(see the attached screenshot(s))" : t
+        let message = pending.images.isEmpty ? body : body + "\n(\(pending.images.count) screenshot(s) attached.)"
+        await submit(Request(kind: .typed, text: message, question: t.isEmpty ? "(screenshot)" : t,
+                             images: pending.images, onAccepted: pending.onAccepted))
     }
 
     func sendQuick(_ prompt: Config.Interview.QuickPrompt) async {
@@ -559,18 +577,26 @@ final class InterviewController: ObservableObject {
                        onAccepted: both.isEmpty ? nil : { both.forEach { $0() } }, askText: text)
     }
 
-    /// Ask-button badge: image count from clipboard *types* only, re-read when the clipboard changes.
-    func refreshClipboardBadge() {
-        guard env.config.interview.includeClipboardImages else { clipboardImageCount = 0; return }
-        let pb = NSPasteboard.general
-        guard pb.changeCount != clipboardChangeCount else { return }
-        clipboardChangeCount = pb.changeCount
-        clipboardImageCount = min(ClipboardImages.imageCount(pb), ClipboardImages.maxImages)
-    }
-
     func stopStreaming() async {
         guard let thread = record?.threadId, isStreaming else { return }
         await engine.interrupt(threadId: thread)
+    }
+
+    /// Short-lived PNG files for Codex's `localImage` input; deleted when the turn ends.
+    private static func writeOutbox(_ pngs: [Data]) -> [URL] {
+        guard !pngs.isEmpty else { return [] }
+        let dir = AppPaths.interview.appendingPathComponent("outbox", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return pngs.compactMap { png in
+            let url = dir.appendingPathComponent("\(UUID().uuidString).png")
+            return (try? png.write(to: url, options: .atomic)) == nil ? nil : url
+        }
+    }
+
+    /// A screenshot stored with this interview, for thumbnails and "what was sent".
+    func image(named name: String) -> NSImage? {
+        guard let id = record?.id, let data = try? env.store.interviewImage(interviewId: id, name: name) else { return nil }
+        return NSImage(data: data)
     }
 
     private func update(_ n: Int, _ change: (inout InterviewRecord.Turn) -> Void) {
@@ -593,8 +619,8 @@ final class InterviewController: ObservableObject {
     // MARK: Persistence
 
     func persist() {
-        guard let rec = record, let folder else { return }
-        do { try InterviewFiles.write(rec, to: folder) }
+        guard let rec = record else { return }
+        do { try env.store.saveInterview(rec) }
         catch { status = "Could not save the interview record: \(error.localizedDescription)" }
     }
 }

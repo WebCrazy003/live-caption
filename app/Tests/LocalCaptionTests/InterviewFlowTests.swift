@@ -92,6 +92,11 @@ final class InterviewFlowTests: XCTestCase {
 
     override func tearDown() async throws { try? FileManager.default.removeItem(at: tmp) }
 
+    /// The interview as stored in the database.
+    private func saved(_ i: InterviewController) throws -> InterviewRecord {
+        try XCTUnwrap(env.store.interview(id: XCTUnwrap(i.record?.id)))
+    }
+
     private func write(_ text: String, _ name: String, in dir: URL) throws -> URL {
         let url = dir.appendingPathComponent(name)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -190,7 +195,7 @@ final class InterviewFlowTests: XCTestCase {
 
         XCTAssertEqual(engine.threads.count, 1)
         XCTAssertEqual(Set(engine.sent.map(\.threadId)), ["thr1"])
-        let rec = try InterviewFiles.read(from: XCTUnwrap(interview.folder))
+        let rec = try saved(interview)
         XCTAssertEqual(rec.turns.map(\.kind), Array(repeating: .skill, count: 6))
         XCTAssertEqual(rec.turns.map(\.question), ["/discovery-cv", "/discovery-cv", "/discovery-jd",
                                                    "/apply-instruction tech", "/live-coding-design", "/apply-instruction cultural"])
@@ -252,8 +257,7 @@ final class InterviewFlowTests: XCTestCase {
         await interview.run(.discoveryCV)
         await interview.run(.discoveryJD)
         env.library.deleteDocument(cv)                  // the library changes later…
-        let folder = try XCTUnwrap(interview.folder)
-        let reopened = try InterviewController(env: env, existing: folder)
+        let reopened = InterviewController(env: env, existing: try saved(interview))
         XCTAssertEqual(reopened.cvText, "Jane Doe\nSwift, 8 years.", "…history still shows the CV the coach saw")
         XCTAssertEqual(reopened.cvTitle, "Jane CV")
         XCTAssertEqual(reopened.jdText, "Role X")
@@ -272,7 +276,7 @@ final class InterviewFlowTests: XCTestCase {
         XCTAssertEqual(interview.threadState, .open)
         XCTAssertEqual(engine.threads[0].baseInstructions,
                        InterviewPrompt.baseInstructions(length: .short, custom: "Mention measurable results."))
-        let rec = try InterviewFiles.read(from: XCTUnwrap(interview.folder))
+        let rec = try saved(interview)
         XCTAssertNotNil(rec.startedAt)
         XCTAssertNotNil(rec.captureSessionUUID)
     }
@@ -292,10 +296,10 @@ final class InterviewFlowTests: XCTestCase {
     func testStartOverDiscardsAnUnstartedInterview() async throws {
         let interview = InterviewController(env: env)
         await interview.sendTyped("hello")
-        let folder = try XCTUnwrap(interview.folder)
+        let id = try XCTUnwrap(interview.record?.id)
         await interview.discardUnstarted()
         interview.resetForNewInterview()
-        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
+        XCTAssertNil(try env.store.interview(id: id), "its rows are deleted")
         XCTAssertEqual(engine.archived, ["thr1"])
         XCTAssertEqual(interview.threadState, .none)
         XCTAssertTrue(interview.turns.isEmpty)
@@ -307,6 +311,6 @@ final class InterviewFlowTests: XCTestCase {
         await interview.ensureThread()
         await interview.discardUnstarted()
         XCTAssertNotNil(interview.record)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(interview.folder).path))
+        XCTAssertNotNil(try saved(interview))
     }
 }

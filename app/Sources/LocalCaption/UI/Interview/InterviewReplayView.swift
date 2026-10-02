@@ -63,12 +63,6 @@ struct InterviewReplayView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
             } label: { Label(copied ? "Copied" : "Copy Q&A", systemImage: copied ? "checkmark" : "doc.on.doc") }
             .disabled(interview.turns.isEmpty)
-            if let folder = interview.folder {
-                Button { NSWorkspace.shared.activateFileViewerSelecting([folder]) } label: {
-                    Label("Reveal", systemImage: "folder")
-                }
-                .help("Reveal the interview folder in Finder")
-            }
         }
     }
 
@@ -192,7 +186,7 @@ struct InterviewReplayView: View {
                     AnswerCard(turn: turn, isLatest: false,
                                isExpanded: open.contains(turn.n) || interview.streamingTurn == turn.n,
                                isStreaming: interview.streamingTurn == turn.n,
-                               folder: interview.folder, fontSize: fontSize,
+                               image: interview.image(named:), fontSize: fontSize,
                                toggle: {
                                    var set = open
                                    if set.contains(turn.n) { set.remove(turn.n) } else { set.insert(turn.n) }

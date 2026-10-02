@@ -72,30 +72,33 @@ already-vectored function (`testdata/sentences/`).
 
 **Empty result and no images** → nothing is sent; status "Nothing new since your last ask".
 
-## Clipboard screenshots (opt-in)
+## Screenshots: auto-added to the current prompt (opt-in)
 
-Only when `interview.include_clipboard_images` is on. This is the **only** clipboard read in the
-app, and only in Interview mode (SPEC-11 §Privacy).
+Owner, 2026-10-02: with the setting on, *every* screenshot taken during the interview is added to
+the current prompt; several can pile up; the hotkey or Send sends the prompt with all of them.
+`interview.include_clipboard_images` turns this on. These are the **only** clipboard content
+reads in the app, and only in Interview mode (SPEC-11 §Privacy).
 
-- [ ] On Ask, read `NSPasteboard.general` items. Take an item if it has image data (`public.png`,
-      `public.tiff`, `public.jpeg`, `public.heic`) or is a file URL whose type conforms to
-      `public.image`. **Never read text** from the clipboard.
-- [ ] At most **4** images. Each re-encoded to PNG with the longest side ≤ 2048 px; skip any over
-      20 MB source size (with a note).
-- [ ] Model doesn't accept images (`acceptsImages == false`) → send the text only, status "This
-      model can't read images".
-- [ ] Save as `attachments/<turn>-<n>.png` in the interview folder; send as `localImage` with the
-      absolute path. (The attachments folder is outside Codex's `cwd` — the workspace stays empty.)
-- [ ] **Removal after send** (`clear_clipboard_images_after_send`, default on): once `turn/start`
-      is **accepted** (not before — a failed send must not lose the screenshot), and only if
-      the pasteboard `changeCount` is unchanged since the read (the user hasn't copied anything
-      new):
-  - if every item was an image → clear the clipboard;
-  - otherwise → rewrite the clipboard with the non-image items' data copied back **verbatim**
-    (never inspected, logged or sent).
-- [ ] Image-only ask (no new speech, ≥ 1 image) is allowed; see the message template.
-- [ ] While the setting is on, the Ask button shows a badge with the image count, from a 0.5 s
-      poll of `changeCount` and item **types** only.
+- [ ] While the interview panel is on screen, the pasteboard `changeCount` is polled every 0.5 s.
+      The first poll only records it, so an image already on the clipboard when the interview
+      opens is **not** added.
+- [ ] On each change, with the setting on: read the new items. Take an item if it has image data
+      (`public.png`, `public.tiff`, `public.jpeg`, `public.heic`) or is a file URL whose type
+      conforms to `public.image`. **Never read text.** Each image is re-encoded to PNG, longest
+      side ≤ 2048 px; sources over 20 MB are skipped.
+- [ ] Captured images go into the **screenshot tray** above the Ask bar — thumbnails, each with ×,
+      plus *Clear*. At most **10** per prompt (status says so beyond that). The Ask button shows
+      the count.
+- [ ] **Ask (F8 / button)** and **Send** (the type box, now with a Send button) take the whole tray:
+      the images go with that turn and the tray empties. Quick prompts and Regenerate don't take it.
+      Image-only asks and sends are allowed.
+- [ ] Model doesn't accept images → text only, status "This model can't read images".
+- [ ] Storage: each image is saved in the database (`interview_images`, `<turn>-<n>.png`) and
+      written to a short-lived file in `interview/outbox/` for Codex's `localImage` input — outside
+      Codex's `cwd`, deleted when the turn ends.
+- [ ] **Clearing after send** (`clear_clipboard_images_after_send`, default on): once `turn/start`
+      is **accepted**, and only if the clipboard still holds the last captured screenshot
+      (`changeCount` unchanged), the clipboard is cleared. Otherwise it is left alone.
 - Screenshot-to-clipboard: macOS ⌘⌃⇧4; Windows Win+Shift+S — both land on the clipboard, so the
   flow is the same on both platforms.
 
@@ -161,10 +164,10 @@ Right side of the caption area in Interview mode.
   answer starts streaming in the panel.
 - Pressing F8 twice quickly with `interrupt` → the first card shows *Interrupted*, the second
   answers the newer text; with `queue` → both complete in order.
-- With images enabled: a ⌘⌃⇧4 screenshot is sent with the next Ask, saved under `attachments/`,
-  and removed from the clipboard; if the user copied something else in between, the clipboard
-  is left untouched.
-- With images disabled, the app performs **no** pasteboard reads (verified by code review: one
-  call site, guarded by the setting and the mode).
+- With the setting on: three ⌘⌃⇧4 screenshots appear in the tray as they're taken; one can be
+  removed; F8 sends the question with the rest, stored in the database; the tray empties and the
+  clipboard is cleared if it still holds the last screenshot.
+- An image already on the clipboard when the interview opens is never added.
+- With the setting off, the app reads **no** clipboard content (only the change counter).
 - Typed messages and quick prompts go to the same thread and appear as cards.
 - Hotkey conflict shows the header warning; the on-screen Ask still works.

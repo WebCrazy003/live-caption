@@ -15,8 +15,8 @@ struct SessionListView: View {
     @State private var renameText = ""
     @State private var deleteTarget: SessionRecord?
     @State private var filter: ModeFilter = .all
-    /// Interview folder → "name company role", for search (SPEC-15 §History).
-    @State private var interviewText: [String: String] = [:]
+    /// Session id → the interview's name, JD and CV title, for the row subtitle and search.
+    @State private var interviewText: [Int64: String] = [:]
 
     enum ModeFilter: String, CaseIterable { case all = "All", captions = "Captions", interviews = "Interviews" }
 
@@ -99,7 +99,7 @@ struct SessionListView: View {
                 }
                 Text(rec.sessionName).font(.body)
             }
-            if rec.isInterview, let dir = rec.interviewDir, let name = interviewText[dir]?.components(separatedBy: "\n").first,
+            if rec.isInterview, let id = rec.id, let name = interviewText[id]?.components(separatedBy: "\n").first,
                !name.isEmpty {
                 Text(name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
@@ -150,12 +150,11 @@ struct SessionListView: View {
         guard let id = rec.id else { return }
         try? env.store.delete(id: id)
         if alsoFile, let path = rec.transcriptFile { SessionFiles.deleteTranscript(atTxtPath: path) }
-        if alsoInterview, let dir = rec.interviewDir {
-            let folder = URL(fileURLWithPath: dir)
-            let thread = (try? InterviewFiles.read(from: folder))?.threadId
-            try? FileManager.default.removeItem(at: folder)
-            // Don't leave the CV in Codex's session store either (SPEC-12 §Threads & turns).
-            if let thread { Task { await env.codex.engine.archiveThread(id: thread) } }
+        if alsoInterview, let saved = try? env.store.interview(sessionId: id) {
+            // Rows, turns and screenshots go together; the Codex thread is archived too, so the CV
+            // doesn't linger in its session store (SPEC-12 §Threads & turns).
+            try? env.store.deleteInterview(id: saved.id)
+            if let thread = saved.threadId { Task { await env.codex.engine.archiveThread(id: thread) } }
         }
         if selection == id { selection = nil }
         deleteTarget = nil
@@ -165,20 +164,16 @@ struct SessionListView: View {
     private func reload() {
         let mode: String? = filter == .all ? nil : (filter == .interviews ? SessionRecord.interviewMode : SessionRecord.captionMode)
         let rows = (try? env.store.all(sort: sort, mode: mode)) ?? []
-        var texts = interviewText
-        for rec in rows where rec.isInterview {
-            guard let dir = rec.interviewDir, texts[dir] == nil else { continue }
-            if let r = try? InterviewFiles.read(from: URL(fileURLWithPath: dir)) {
-                texts[dir] = [r.name, r.setup.company, r.setup.role].joined(separator: "\n")
-            } else {
-                texts[dir] = ""
-            }
+        var texts: [Int64: String] = [:]
+        for r in (try? env.store.allInterviews()) ?? [] {
+            guard let sid = r.sessionId, texts[sid] == nil else { continue }
+            texts[sid] = [r.name, r.setup.cvTitle ?? "", r.setup.jdTextInline ?? ""].joined(separator: "\n")
         }
         interviewText = texts
         let q = search.trimmingCharacters(in: .whitespacesAndNewlines)
         sessions = q.isEmpty ? rows : rows.filter { rec in
             rec.sessionName.localizedCaseInsensitiveContains(q)
-                || (rec.interviewDir.flatMap { texts[$0] }?.localizedCaseInsensitiveContains(q) ?? false)
+                || (rec.id.flatMap { texts[$0] }?.localizedCaseInsensitiveContains(q) ?? false)
         }
         if let sel = selection, !sessions.contains(where: { $0.id == sel }) { selection = nil }
     }

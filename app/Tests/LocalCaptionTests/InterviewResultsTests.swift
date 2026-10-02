@@ -27,6 +27,11 @@ final class InterviewResultsTests: XCTestCase {
 
     override func tearDown() async throws { try? FileManager.default.removeItem(at: tmp) }
 
+    /// The interview as stored in the database.
+    private func saved(_ i: InterviewController) throws -> InterviewRecord {
+        try XCTUnwrap(env.store.interview(id: XCTUnwrap(i.record?.id)))
+    }
+
     private let summaryMarkdown = "## Overview\nGood.\n## Questions asked\n- Why us\n## Follow-ups\n-\n## Prepare next time\n-\n## Thank-you note\nThanks!"
 
     /// Prepare, start recording, ask once — ready for Stop.
@@ -46,19 +51,19 @@ final class InterviewResultsTests: XCTestCase {
         engine.reply = { text in text.hasPrefix("INTERVIEW FINISHED") ? [.completed(self.summaryMarkdown)] : [] }
         let sentBefore = engine.sent.count
 
-        await interview.sessionSaved(sessionId: rowId)
+        await interview.sessionSaved(sessionId: rowId, transcript: "Thanks for joining. Why us?")
         XCTAssertEqual(engine.sent.count, sentBefore, "ending never summarizes on its own")
         XCTAssertEqual(interview.record?.summary.status, .pending)
 
         await interview.generateSummary(transcript: "Thanks for joining. Why us?")
 
-        let folder = try XCTUnwrap(interview.folder)
-        XCTAssertEqual(try String(contentsOf: folder.appendingPathComponent("summary.md"), encoding: .utf8), summaryMarkdown)
-        let rec = try InterviewFiles.read(from: folder)
+        let rec = try saved(interview)
+        XCTAssertEqual(rec.summaryText, summaryMarkdown, "the summary is stored in the database")
+        XCTAssertEqual(rec.transcript, "Thanks for joining. Why us?", "and the transcript")
         XCTAssertEqual(rec.sessionId, rowId)
         XCTAssertNotNil(rec.endedAt)
         XCTAssertEqual(rec.summary.status, .done)
-        XCTAssertEqual(rec.summary.file, "summary.md")
+        XCTAssertEqual(try env.store.interview(sessionId: rowId)?.id, rec.id)
 
         let summaryTurn = try XCTUnwrap(engine.sent.last)
         XCTAssertEqual(summaryTurn.threadId, "thr1", "prep, asks and summary share one thread")
@@ -67,14 +72,13 @@ final class InterviewResultsTests: XCTestCase {
 
         let row = try XCTUnwrap(env.store.fetch(id: rowId))
         XCTAssertEqual(row.mode, "interview")
-        XCTAssertEqual(row.interviewDir, folder.path)
         XCTAssertEqual(interview.summaryText, summaryMarkdown)
         XCTAssertTrue(interview.isFinished)
     }
 
     func testFollowUpAfterEndGoesToTheSameThread() async throws {
         let (interview, rowId) = try await runInterview()
-        await interview.sessionSaved(sessionId: rowId)
+        await interview.sessionSaved(sessionId: rowId, transcript: "x")
         engine.reply = { _ in [.completed("Dear Alex, thank you…")] }
         await interview.sendFollowUp("Draft a thank-you email")
         XCTAssertEqual(engine.sent.last?.threadId, "thr1")
@@ -86,7 +90,7 @@ final class InterviewResultsTests: XCTestCase {
     func testFailedSummaryCanBeGeneratedLater() async throws {
         let (interview, rowId) = try await runInterview()
         engine.reply = { _ in [.failed(.network("offline"), partial: "")] }
-        await interview.sessionSaved(sessionId: rowId)
+        await interview.sessionSaved(sessionId: rowId, transcript: "x")
         await interview.generateSummary(transcript: "x")
         XCTAssertEqual(interview.record?.summary.status, .failed)
         XCTAssertNotNil(interview.summaryError)
@@ -99,10 +103,10 @@ final class InterviewResultsTests: XCTestCase {
 
     func testReopeningFromHistoryResumesTheThreadBeforeSummarizing() async throws {
         let (live, rowId) = try await runInterview()
-        await live.sessionSaved(sessionId: rowId)
-        let folder = try XCTUnwrap(live.folder)
+        await live.sessionSaved(sessionId: rowId, transcript: "x")
+        let stored = try saved(live)
 
-        let reopened = try InterviewController(env: env, existing: folder)
+        let reopened = InterviewController(env: env, existing: stored)
         XCTAssertEqual(reopened.threadState, .open)
         XCTAssertEqual(reopened.record?.turns.count, 1)
         XCTAssertTrue(reopened.isFinished)
@@ -113,7 +117,7 @@ final class InterviewResultsTests: XCTestCase {
         XCTAssertEqual(reopened.record?.summary.status, .done)
 
         // And the next reopen shows the saved summary without asking Codex.
-        let again = try InterviewController(env: env, existing: folder)
+        let again = InterviewController(env: env, existing: try saved(reopened))
         XCTAssertEqual(again.summaryText, summaryMarkdown)
     }
 
@@ -123,11 +127,10 @@ final class InterviewResultsTests: XCTestCase {
         engine.holdIf = { _ in true }
         let turn = Task { await interview.sendTyped("left hanging") }
         try await Task.sleep(nanoseconds: 100_000_000)
-        let folder = try XCTUnwrap(interview.folder)
-        XCTAssertEqual(try InterviewFiles.read(from: folder).turns.last?.status, .streaming)
+        XCTAssertEqual(try saved(interview).turns.last?.status, .streaming)
 
         env.sweepInterviews()     // as on the next launch
-        let rec = try InterviewFiles.read(from: folder)
+        let rec = try saved(interview)
         XCTAssertEqual(rec.turns.last?.status, .failed)
         XCTAssertEqual(rec.turns.last?.error, "app closed")
         engine.release()
@@ -143,11 +146,9 @@ final class InterviewResultsTests: XCTestCase {
 
         env.linkRecoveredInterview(captureId: capture, sessionId: row.id)
 
-        let folder = try XCTUnwrap(interview.folder)
-        let rec = try InterviewFiles.read(from: folder)
+        let rec = try saved(interview)
         XCTAssertEqual(rec.sessionId, row.id)
         XCTAssertNotNil(rec.endedAt)
-        let linked = try XCTUnwrap(env.store.fetch(id: XCTUnwrap(row.id))?.interviewDir)
-        XCTAssertEqual(URL(fileURLWithPath: linked).resolvingSymlinksInPath(), folder.resolvingSymlinksInPath())
+        XCTAssertEqual(try env.store.fetch(id: XCTUnwrap(row.id))?.mode, "interview")
     }
 }

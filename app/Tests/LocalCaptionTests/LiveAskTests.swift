@@ -29,6 +29,11 @@ final class LiveAskTests: XCTestCase {
 
     override func tearDown() async throws { try? FileManager.default.removeItem(at: tmp) }
 
+    /// The interview as stored in the database.
+    private func saved(_ i: InterviewController) throws -> InterviewRecord {
+        try XCTUnwrap(env.store.interview(id: XCTUnwrap(i.record?.id)))
+    }
+
     private func preparedInterview() async -> InterviewController {
         let interview = InterviewController(env: env)
         interview.transcriptSource = { [unowned self] in self.transcript }
@@ -151,11 +156,90 @@ final class LiveAskTests: XCTestCase {
         XCTAssertEqual(interview.turns.map(\.kind), [.ask, .regenerate, .quick, .typed])
         XCTAssertEqual(askTexts.suffix(3), [InterviewPrompt.regenerate, Config.Interview.defaultQuickPrompts[0].text,
                                              "make it about Swift"])
-        let rec = try InterviewFiles.read(from: XCTUnwrap(interview.folder))
+        let rec = try XCTUnwrap(env.store.interview(id: XCTUnwrap(interview.record?.id)))
         XCTAssertEqual(rec.turns.count, 4)
     }
 
-    // MARK: Clipboard helpers
+    // MARK: Screenshot tray
+
+    private func copyImage(_ pb: NSPasteboard, side: Int = 20) {
+        pb.clearContents()
+        let item = NSPasteboardItem(); item.setData(pngData(width: side, height: side), forType: .png)
+        pb.writeObjects([item])
+    }
+
+    func testCopiedScreenshotsPileUpAndTheNextAskSendsThemAll() async throws {
+        env.config.interview.includeClipboardImages = true
+        let interview = await preparedInterview()
+        let pb = NSPasteboard(name: .init("lc-test-\(UUID().uuidString)"))
+        defer { pb.releaseGlobally() }
+        copyImage(pb)                                   // already there when watching starts
+        interview.pasteboard = pb
+        interview.pollClipboard()
+        XCTAssertTrue(interview.pendingImages.isEmpty, "an image already on the clipboard is ignored")
+
+        copyImage(pb); interview.pollClipboard()
+        interview.pollClipboard()                       // no change → nothing new
+        copyImage(pb, side: 30); interview.pollClipboard()
+        XCTAssertEqual(interview.pendingImages.count, 2)
+        interview.removePending(interview.pendingImages[0].id)
+        copyImage(pb, side: 40); interview.pollClipboard()
+        XCTAssertEqual(interview.pendingImages.count, 2)
+
+        transcript = ([], "can you walk me through this", 4000)
+        await interview.ask()
+
+        let sent = try XCTUnwrap(engine.sent.last)
+        XCTAssertEqual(sent.input.count, 3, "text + both screenshots")
+        XCTAssertEqual(sent.input.first, .text(InterviewPrompt.ask("can you walk me through this", imageCount: 2)))
+        XCTAssertTrue(interview.pendingImages.isEmpty, "the tray empties on send")
+        let turn = try XCTUnwrap(interview.turns.last)
+        XCTAssertEqual(turn.images, ["1-1.png", "1-2.png"])
+        let id = try XCTUnwrap(interview.record?.id)
+        XCTAssertNotNil(try env.store.interviewImage(interviewId: id, name: "1-2.png"), "stored in the database")
+        XCTAssertNotNil(interview.image(named: "1-1.png"))
+        XCTAssertEqual(ClipboardImages.imageCount(pb), 0, "cleared from the clipboard once accepted")
+        let outbox = AppPaths.interview.appendingPathComponent("outbox")
+        let leftovers = (try? FileManager.default.contentsOfDirectory(atPath: outbox.path)) ?? []
+        XCTAssertFalse(sent.input.dropFirst().contains { input in
+            if case .localImage(let path) = input { return leftovers.contains((path as NSString).lastPathComponent) }
+            return false
+        }, "temporary files are removed after the turn")
+    }
+
+    func testScreenshotOnlyAskAndTypedSendTakeTheTray() async throws {
+        env.config.interview.includeClipboardImages = true
+        let interview = await preparedInterview()
+        let pb = NSPasteboard(name: .init("lc-test-\(UUID().uuidString)"))
+        defer { pb.releaseGlobally() }
+        interview.pasteboard = pb
+        interview.pollClipboard()
+        copyImage(pb); interview.pollClipboard()
+        transcript = ([], "", 0)
+        await interview.ask()
+        XCTAssertEqual(askTexts.last, InterviewPrompt.ask("", imageCount: 1), "image-only ask")
+
+        copyImage(pb, side: 25); interview.pollClipboard()
+        await interview.sendTyped("solve it in Swift")
+        XCTAssertEqual(askTexts.last, "solve it in Swift\n(1 screenshot(s) attached.)")
+        XCTAssertEqual(engine.sent.last?.input.count, 2)
+    }
+
+    func testTrayIsOffWhenTheSettingIsOffAndCapped() async throws {
+        let interview = await preparedInterview()
+        let pb = NSPasteboard(name: .init("lc-test-\(UUID().uuidString)"))
+        defer { pb.releaseGlobally() }
+        interview.pasteboard = pb
+        interview.pollClipboard()
+        copyImage(pb); interview.pollClipboard()
+        XCTAssertTrue(interview.pendingImages.isEmpty, "setting off → nothing captured")
+
+        env.config.interview.includeClipboardImages = true
+        for i in 0..<(InterviewController.maxPendingImages + 2) { copyImage(pb, side: 10 + i); interview.pollClipboard() }
+        XCTAssertEqual(interview.pendingImages.count, InterviewController.maxPendingImages)
+    }
+
+
 
     private func pngData(width: Int, height: Int) -> Data {
         let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8,

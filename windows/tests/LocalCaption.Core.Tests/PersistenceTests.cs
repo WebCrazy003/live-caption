@@ -137,6 +137,20 @@ public sealed class PersistenceTests : IDisposable
         Assert.Equal("/tmp/acme", store.Fetch(added.Id.Value)?.InterviewDir);
     }
 
+    [Fact]
+    public void V3CreatesTheInterviewTables()
+    {
+        using var store = new Store(DbPath);
+        using var c = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={DbPath}");
+        c.Open();
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'interview%' ORDER BY name";
+        using var r = cmd.ExecuteReader();
+        var names = new List<string>();
+        while (r.Read()) names.Add(r.GetString(0));
+        Assert.Equal(["interview_images", "interview_turns", "interviews"], names);
+    }
+
     // ── Journal ──────────────────────────────────────────────────────────────────────────
 
     [Fact]

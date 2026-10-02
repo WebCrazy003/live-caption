@@ -19,7 +19,7 @@ final class AppEnvironment: ObservableObject {
 
     /// Interview Assist (SPEC-11): the user's library, and the one Codex engine for this app run.
     lazy var library = InterviewLibrary()
-    /// Where interview records live; injectable for tests.
+    /// Where earlier builds kept interview folders (imported once into the database); injectable.
     var interviewsRoot = AppPaths.interviews
 
     /// The live session and its interview. Held here, not by the session screen, so opening a
@@ -61,26 +61,36 @@ final class AppEnvironment: ObservableObject {
 
         self.pendingRecoveries = Journal.pending()
         codexPath.set(config.interview.codexPath)
+        importLegacyInterviews()
         sweepInterviews()
+    }
+
+    /// Interviews written as folders by earlier builds move into the database once; the folders
+    /// are left as they were.
+    func importLegacyInterviews() {
+        let dirs = (try? FileManager.default.contentsOfDirectory(at: interviewsRoot, includingPropertiesForKeys: nil)) ?? []
+        var imported = 0
+        for dir in dirs where (try? store.importLegacyInterview(folder: dir)) == true { imported += 1 }
+        if imported > 0 { NotificationCenter.default.post(name: .sessionsChanged, object: nil) }
     }
 
     /// On launch: answers, preps or summaries left `streaming`/`running` by a quit or crash
     /// are marked failed (SPEC-15 §History), so the UI never shows a spinner that can't finish.
     func sweepInterviews() {
-        for (folder, var rec) in InterviewFiles.all(in: interviewsRoot) where rec.failInterruptedTurns() {
-            try? InterviewFiles.write(rec, to: folder)
+        for var rec in (try? store.allInterviews()) ?? [] where rec.failInterruptedTurns() {
+            try? store.saveInterview(rec)
         }
     }
 
     /// Link a recovered capture to the interview recorded alongside it (SPEC-15 §History).
     func linkRecoveredInterview(captureId: UUID, sessionId: Int64?) {
         guard let sessionId else { return }
-        for (folder, var rec) in InterviewFiles.all(in: interviewsRoot)
+        for var rec in (try? store.allInterviews()) ?? []
         where rec.captureSessionUUID == captureId.uuidString && rec.sessionId == nil {
             rec.sessionId = sessionId
             rec.endedAt = rec.endedAt ?? TimeFormat.iso(Date())
-            try? InterviewFiles.write(rec, to: folder)
-            try? store.setInterview(id: sessionId, dir: folder.path)
+            try? store.saveInterview(rec)
+            try? store.markInterview(sessionId: sessionId)
         }
     }
 

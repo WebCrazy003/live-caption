@@ -62,7 +62,7 @@ struct ActiveSessionView: View {
     private func stopSession() async {
         await controller.stop()
         if isInterviewMode, controller.phase == .saved, interview.record != nil {
-            await interview.sessionSaved(sessionId: controller.savedSessionId)
+            await interview.sessionSaved(sessionId: controller.savedSessionId, transcript: controller.committedText)
             showingEndPrompt = true
         }
     }

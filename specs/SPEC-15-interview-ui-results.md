@@ -50,8 +50,8 @@ today's transport bar). No control is ever clipped or hidden without an alternat
 
 - [ ] In Interview mode the Stop button reads **End interview**. It runs the existing save path
       unchanged (transcript `.txt` + `.json` + DB row); the save **never waits** for anything here.
-- [ ] Then the DB row gets `mode = 'interview'` and `interview_dir`; `interview.json` gets
-      `session_id`, `ended_at`.
+- [ ] Then the session row gets `mode = 'interview'`, and the interview row gets `session_id`,
+      `ended_at` and a copy of the transcript (SPEC-11 §SQLite).
 - [ ] If an answer is streaming at Stop, let it finish (cap 30 s, then interrupt).
 - [ ] Then a sheet asks (owner, 2026-10-02): **Summarize the interview**, or **send a follow-up
       prompt** (e.g. "draft a thank-you email"), or *Not now*. Nothing is summarized
@@ -99,7 +99,8 @@ from the sessions list (owner, 2026-10-02: "restores transcript / AI Q&A history
       every turn as a read-only card: skill steps collapsed, questions and answers expanded,
       *Interrupted/Failed* marks, screenshot thumbnails, "what was sent". Narrower: a
       *Conversation / Transcript* toggle.
-- [ ] Toolbar: Read-only badge, active profile, Copy Q&A (Markdown), Reveal interview folder.
+- [ ] Toolbar: Read-only badge, active profile, Copy Q&A (Markdown). Everything shown comes from
+      the database, screenshots included.
 - [ ] Old records made with the Prepare button show their briefing above the conversation.
 
 ## History
@@ -111,7 +112,7 @@ from the sessions list (owner, 2026-10-02: "restores transcript / AI Q&A history
 - [ ] Opening a past session never disturbs the live one: the session and interview controllers
       belong to `AppEnvironment`, not to the session screen.
 - [ ] **Delete** (SPEC-06 confirm flow) offers, checked by default: *"Also delete the interview
-      data (CV text, Q&A, screenshots)"* → removes the interview folder and archives the Codex
+      data (CV text, Q&A, screenshots)"* → deletes the interview's rows and archives the Codex
       thread (SPEC-12).
 - [ ] **Crash recovery:** `interview.json` stores `capture_session_uuid` (the journal session id).
       When the existing recovery flow saves a recovered session, it links the matching interview
@@ -145,7 +146,7 @@ Out-of-range values clamp, as in SPEC-07.
 - Offline at Stop → transcript saved, summary *failed*, **Generate summary** later succeeds on
   the same thread.
 - The interview appears in the session list with the icon and filter; reopening shows Summary,
-  Q&A, Briefing and Transcript; deleting removes the interview folder.
+  Q&A, Briefing and Transcript; deleting removes the interview's rows.
 - Settings → Interview shows Codex status, both usage windows with reset times, and a model list
   read live from Codex; changing the hotkey takes effect without restarting.
 - Killing the app mid-answer, then relaunching: the session recovers as today, the interview

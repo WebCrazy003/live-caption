@@ -5,7 +5,8 @@ import GRDB
 /// `DatabaseMigrator` (the idiomatic equivalent of the spec's `PRAGMA user_version`
 /// versioning — GRDB records applied migrations in its own bookkeeping table).
 public final class Store {
-    private let dbQueue: DatabaseQueue
+    /// Internal so the interview tables (`InterviewStore.swift`) share the one database.
+    let dbQueue: DatabaseQueue
 
     public init(url: URL = AppPaths.databaseFile) throws {
         var config = Configuration()
@@ -39,6 +40,9 @@ public final class Store {
                 t.add(column: "interview_dir", .text)
             }
         }
+        // Interview data lives in the database (owner, 2026-10-02): the record, every turn, the
+        // CV/JD/summary/transcript text and the screenshots. Windows registers the same DDL.
+        m.registerMigration("v3_interview_store") { db in try InterviewTables.create(db) }
         return m
     }
 

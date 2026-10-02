@@ -114,6 +114,12 @@ public struct InterviewRecord: Codable, Equatable, Identifiable, Sendable {
     public var prep: Prep
     public var turns: [Turn]
     public var summary: Summary
+    /// The CV text Discovery CV sent (a snapshot, so history survives library changes).
+    public var cvText: String?
+    /// The summary Markdown, once generated.
+    public var summaryText: String?
+    /// The interviewer transcript, copied in when the interview ends.
+    public var transcript: String?
 
     public init(id: String = UUID().uuidString, name: String, createdAt: String, engine: String = "codex",
                 model: String, reasoningEffort: String, setup: Setup) {
@@ -125,7 +131,9 @@ public struct InterviewRecord: Codable, Equatable, Identifiable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, engine, model, setup, prep, turns, summary
+        case id, name, engine, model, setup, prep, turns, summary, transcript
+        case cvText = "cv_text"
+        case summaryText = "summary_text"
         case schemaVersion = "schema_version"
         case sessionId = "session_id"
         case captureSessionUUID = "capture_session_uuid"

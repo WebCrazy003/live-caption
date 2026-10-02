@@ -184,14 +184,16 @@ struct InterviewSettingsSections: View {
 
     private var screenshotSection: some View {
         Section {
-            Toggle("Send screenshots from the clipboard", isOn: cfg.includeClipboardImages)
-            Toggle("Remove them from the clipboard after sending", isOn: cfg.clearClipboardImagesAfterSend)
+            Toggle("Add screenshots to the current prompt automatically", isOn: cfg.includeClipboardImages)
+            Toggle("Clear the screenshot from the clipboard after sending", isOn: cfg.clearClipboardImagesAfterSend)
                 .disabled(!env.config.interview.includeClipboardImages)
         } header: {
             Text("Screenshots")
         } footer: {
-            Text("Off by default. When on, each Ask also sends up to \(ClipboardImages.maxImages) images on the clipboard "
-                 + "(⌘⌃⇧4 copies a screenshot) to OpenAI. Only images are read — never text.")
+            Text("When on, every screenshot you copy during an interview (⌘⌃⇧4) is added to the current "
+                 + "prompt — up to \(InterviewController.maxPendingImages). The next Ask (F8) or Send takes "
+                 + "them all to OpenAI. Images already on the clipboard when the interview opens are ignored; "
+                 + "only images are read, never text.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

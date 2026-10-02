@@ -178,10 +178,10 @@ LocalCaption/
     │   └── documents/<slug>/
     │       ├── original.<pdf|md|txt>
     │       └── text.txt                 ← extracted text the prompt actually uses
-    ├── interviews/<yyyy-MM-dd HHmm> <name>/
-    │   ├── interview.json               ← the record (schema below)
-    │   ├── summary.md
-    │   └── attachments/<turn>-<n>.png
+    ├── interviews/…                     ← legacy folders (earlier builds); imported once into
+    │                                       the database, then left untouched
+    ├── outbox/                          ← short-lived PNGs for Codex's localImage input,
+    │                                       deleted when each turn ends
     ├── workspace/                       ← Codex `cwd`. MUST stay empty.
     └── codex-home/                      ← dedicated CODEX_HOME (if S0 confirms; SPEC-12)
 ```
@@ -205,7 +205,11 @@ LocalCaption/
 `kind` ∈ `cv` | `jd` | `notes`. Unknown top-level keys are preserved on rewrite; a corrupt
 file is backed up to `index.json.bak-<ts>` and replaced with an empty index.
 
-### `interview.json` (schema 1)
+### `interview.json` (schema 1) — legacy
+
+**Since 2026-10-02 interviews live in the database** (§SQLite). `interview.json` is the shape
+earlier builds wrote to folders; it is still the in-memory model (`InterviewRecord`) and the
+import format for those folders.
 
 ```json
 {
@@ -245,9 +249,74 @@ file is backed up to `index.json.bak-<ts>` and replaced with an empty index.
 
 ### SQLite
 
-One migration, `v2_interview`, on the existing `sessions` table: `mode TEXT NOT NULL DEFAULT
-'caption'` and `interview_dir TEXT NULL`. Existing rows become `caption`. The Windows `Store`
-gets the same migration (same names) so databases stay comparable.
+Two migrations on the existing `localcaption.db`; the Windows `Store` applies the same DDL
+(`user_version` 2 and 3) so a database file is readable by either build.
+
+- **`v2_interview`** — `sessions` gains `mode TEXT NOT NULL DEFAULT 'caption'` and
+  `interview_dir TEXT NULL` (the latter unused since v3; the link is `interviews.session_id`).
+- **`v3_interview_store`** (owner, 2026-10-02: "a local DB storing all interview session data") —
+  every interview's record, turns, CV/JD/summary/transcript text and screenshots:
+
+```sql
+CREATE TABLE interviews (
+    id TEXT PRIMARY KEY,
+    session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    ended_at TEXT,
+    capture_session_uuid TEXT,
+    engine TEXT NOT NULL,
+    model TEXT NOT NULL,
+    reasoning_effort TEXT NOT NULL,
+    thread_id TEXT,
+    cv_document_id TEXT,
+    cv_title TEXT,
+    cv_text TEXT,
+    jd_text TEXT,
+    instructions TEXT NOT NULL DEFAULT '',
+    answer_length TEXT NOT NULL DEFAULT 'medium',
+    skill_ids TEXT NOT NULL DEFAULT '[]',
+    legacy_briefing TEXT,
+    summary_status TEXT NOT NULL DEFAULT 'pending',
+    summary_text TEXT,
+    summary_completed_at TEXT,
+    transcript TEXT
+);
+CREATE INDEX idx_interviews_session ON interviews(session_id);
+CREATE INDEX idx_interviews_capture ON interviews(capture_session_uuid);
+CREATE TABLE interview_turns (
+    interview_id TEXT NOT NULL REFERENCES interviews(id) ON DELETE CASCADE,
+    n INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL,
+    error TEXT,
+    audio_from_ms INTEGER,
+    audio_to_ms INTEGER,
+    images TEXT NOT NULL DEFAULT '[]',
+    asked_at TEXT NOT NULL,
+    ttft_ms INTEGER,
+    total_ms INTEGER,
+    PRIMARY KEY (interview_id, n)
+);
+CREATE TABLE interview_images (
+    interview_id TEXT NOT NULL REFERENCES interviews(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    turn_n INTEGER,
+    png BLOB NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (interview_id, name)
+);
+```
+
+- One row per interview; turns are replaced as a set on each save; screenshots are PNG bytes,
+  named `<turn>-<n>.png`, and are not touched by record saves.
+- Deleting an interview cascades to its turns and screenshots. Deleting its session leaves the
+  interview, unlinked.
+- On launch, folders under `interview/interviews/` that aren't in the database yet are imported
+  (`interview.json`, `summary.md`, `cv.txt`, `attachments/*.png`) and left in place.
 
 ---
 
