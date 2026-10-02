@@ -16,9 +16,11 @@
 #   BUILD           CFBundleVersion (default: git commit count)
 #   SIGN_IDENTITY   codesign identity; unset = ad-hoc ("-")
 #   NOTARY_PROFILE  notarytool keychain profile; set = notarize + staple (needs SIGN_IDENTITY)
+#   ARCHS           CPU architectures (default: "arm64 x86_64" = universal, runs on Apple Silicon
+#                   and Intel; "arm64" or "x86_64" for a single-arch build)
 #
 # Output: dist/LocalCaption.app and dist/LocalCaption-<version>.zip
-# Target Mac: macOS 14+, same CPU arch as this build (arm64 here). Whisper models download
+# Target Mac: macOS 14+, Apple Silicon or Intel (universal by default). Whisper models download
 # on first launch; Interview mode needs Codex installed there.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -30,21 +32,28 @@ APP="$DIST/$NAME.app"
 PLIST="$APP/Contents/Info.plist"
 SIGN_IDENTITY="${SIGN_IDENTITY:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
+ARCHS="${ARCHS:-arm64 x86_64}"
 
 if [ -n "$NOTARY_PROFILE" ] && [ -z "$SIGN_IDENTITY" ]; then
   echo "✗ NOTARY_PROFILE needs SIGN_IDENTITY (a Developer ID Application cert)." >&2
   exit 1
 fi
 
-echo "▶ Building (release)…"
-swift build -c release --product "$NAME"
-BIN_DIR="$(swift build -c release --show-bin-path)"
+# One native SwiftPM build per arch, then lipo. (A multi-`--arch` build switches SwiftPM to the
+# Xcode build system, which rejects swift-collections' language-version setting and exits 1.)
+echo "▶ Building (release, $ARCHS)…"
+SLICES=()
+for a in $ARCHS; do
+  swift build -c release --arch "$a" --product "$NAME"
+  BIN_DIR="$(swift build -c release --arch "$a" --show-bin-path)"
+  SLICES+=("$BIN_DIR/$NAME")
+done
 
 echo "▶ Bundling…"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Info.plist "$PLIST"
-cp "$BIN_DIR/$NAME" "$APP/Contents/MacOS/$NAME"
+lipo -create "${SLICES[@]}" -output "$APP/Contents/MacOS/$NAME"
 # SwiftPM resource bundles from dependencies (GRDB/swift-crypto privacy manifests, swift-transformers
 # fallback tokenizer configs). Contents/Resources is the only place codesign allows them.
 for b in "$BIN_DIR"/*.bundle; do
