@@ -1,6 +1,6 @@
 # SPEC-16 — Windows parity: what macOS has that Windows does not
 
-**Status:** ⏸ Paused by the owner — everything that can be built and verified on the Mac is done; Windows-only work remains (see *Progress* and [docs/WINDOWS-STATUS.md](../docs/WINDOWS-STATUS.md)) · **Written:** 2026-10-02, against `main` at `6608d48` (the merge of
+**Status:** 🟡 Resumed — Windows-only pieces are being drafted on the Mac (compile-checked, not yet run); see *Progress* and [docs/WINDOWS-STATUS.md](../docs/WINDOWS-STATUS.md) · **Written:** 2026-10-02, against `main` at `6608d48` (the merge of
 `windows/stage-b`) · **Depends on:** [SPEC-WINDOWS.md](../SPEC-WINDOWS.md) (the port, B0–B6 done),
 [SPEC-11](SPEC-11-interview-assist.md)–[15](SPEC-15-interview-ui-results.md) (Interview Assist on macOS)
 
@@ -35,6 +35,26 @@ it can be looked at as it is made. Testing is local on the G15 only — no remot
 
 Verified on the Mac at each step: `dotnet build LocalCaption.slnx -p:EnableWindowsTargeting=true`
 clean; Core, Asr and Interview suites green; the macOS Kit suite green on the shared vectors.
+
+---
+
+## Compatibility target (owner, 2026-10-02)
+
+**Any reasonable Windows PC, not just the G15.** Everything written from here on, and the existing
+app where it falls short, must hold on:
+
+| | Target | Notes |
+|---|---|---|
+| OS | Windows 10 version 1809 (build 17763) and later, Windows 11 | Windows-11-only features (rounded corners, Mica, Fluent icons, process loopback before build 20348) degrade gracefully, never fail |
+| CPU | x64 and ARM64 | publish both; no x64-only P/Invoke struct assumptions |
+| GPU | none required | CUDA is an optional speed-up; CPU always works |
+| Display | any scale 100–300 %, several monitors with different scales | per-monitor DPI v2 manifest; overlays and screenshots in physical pixels |
+| Input | any keyboard layout; laptops with Fn-lock | hotkeys by virtual key, never by character |
+| Audio | any output device; no meeting app required | process loopback when the OS supports it, endpoint loopback otherwise |
+| Locale | any UI culture | dates and numbers in the shared files stay invariant |
+
+This supersedes SPEC-WINDOWS §1.3's "Windows 10 … non-goal" and §0.5's single-machine assumptions.
+The G15 stays the first machine things are run on.
 
 ---
 
