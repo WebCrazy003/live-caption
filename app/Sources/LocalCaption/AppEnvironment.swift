@@ -63,6 +63,9 @@ final class AppEnvironment: ObservableObject {
         codexPath.set(config.interview.codexPath)
         importLegacyInterviews()
         sweepInterviews()
+        if ((try? store.importTranscriptFiles()) ?? 0) > 0 {
+            NotificationCenter.default.post(name: .sessionsChanged, object: nil)
+        }
     }
 
     /// Interviews written as folders by earlier builds move into the database once; the folders
@@ -83,7 +86,7 @@ final class AppEnvironment: ObservableObject {
     }
 
     /// Link a recovered capture to the interview recorded alongside it (SPEC-15 §History).
-    func linkRecoveredInterview(captureId: UUID, sessionId: Int64?) {
+    func linkRecoveredInterview(captureId: UUID, sessionId: Int64?, start: Date) {
         guard let sessionId else { return }
         for var rec in (try? store.allInterviews()) ?? []
         where rec.captureSessionUUID == captureId.uuidString && rec.sessionId == nil {
@@ -91,7 +94,36 @@ final class AppEnvironment: ObservableObject {
             rec.endedAt = rec.endedAt ?? TimeFormat.iso(Date())
             try? store.saveInterview(rec)
             try? store.markInterview(sessionId: sessionId)
+            if let name = rec.sessionName(date: start) { try? store.rename(id: sessionId, to: name + " (recovered)") }
         }
+    }
+
+    // MARK: Sessions window → interview panel
+
+    /// The first screen's mode choice has been made (owner, 2026-10-02); until then the main
+    /// window shows the chooser.
+    @Published var modeChosen = false
+
+    /// Why a saved session can't be opened in the main window right now, or nil when it can.
+    var openInPanelBlocker: String? {
+        if !session.canOpenSaved {
+            return session.hasUnsavedSession ? "Stop the current session first" : "Wait until the speech model is ready"
+        }
+        if interview.isBusy { return "Wait for the current answer to finish" }
+        return nil
+    }
+
+    /// Show a saved interview in the main window's interview panel (summary, follow-ups).
+    /// A preparation that never started recording is discarded first.
+    func openInPanel(sessionId: Int64) async {
+        guard openInPanelBlocker == nil, let rec = try? store.fetch(id: sessionId),
+              let saved = try? store.interview(sessionId: sessionId) else { return }
+        if interview.hasUnstartedPreparation { await interview.discardUnstarted() }
+        let segments = (try? store.segments(sessionId: sessionId)) ?? []
+        config.interview.mode = .interview
+        modeChosen = true
+        interview.load(saved)
+        session.openSaved(rec, segments: segments)
     }
 
     /// Explicit dependencies for previews/tests; does not read or persist user settings.
@@ -107,7 +139,7 @@ final class AppEnvironment: ObservableObject {
 
     // MARK: Crash recovery
 
-    /// Rebuild a transcript from a leftover journal, save it (`.txt` + `.json` + DB row),
+    /// Rebuild a transcript from a leftover journal, save it (DB row + segments, `.txt` + `.json`),
     /// then remove the journal.
     func recover(_ session: RecoveredSession) {
         let segs = session.segments
@@ -123,15 +155,17 @@ final class AppEnvironment: ObservableObject {
         let folder = URL(fileURLWithPath:
             (config.general.transcriptFolder as NSString).expandingTildeInPath)
 
-        if let result = try? TranscriptWriter.save(
-            transcript: transcript, folder: folder, sessionName: name,
-            start: start, end: end, durationSeconds: durationMs / 1000,
-            showTimestamps: config.caption.showTimestamps) {
-            let rec = SessionRecord(
-                sessionName: name, createdAt: TimeFormat.iso(start), endedAt: TimeFormat.iso(end),
-                durationSeconds: durationMs / 1000, transcriptFile: result.txtURL.path)
-            let inserted = try? store.insert(rec)
-            linkRecoveredInterview(captureId: session.sessionId, sessionId: inserted?.id)
+        let rec = SessionRecord(
+            sessionName: name, createdAt: TimeFormat.iso(start), endedAt: TimeFormat.iso(end),
+            durationSeconds: durationMs / 1000)
+        if let inserted = try? store.insert(rec, segments: segs), let id = inserted.id {
+            if let result = try? TranscriptWriter.save(
+                transcript: transcript, folder: folder, sessionName: name,
+                start: start, end: end, durationSeconds: durationMs / 1000,
+                showTimestamps: config.caption.showTimestamps) {
+                try? store.setTranscriptFile(id: id, path: result.txtURL.path)
+            }
+            linkRecoveredInterview(captureId: session.sessionId, sessionId: id, start: start)
             Journal.remove(at: session.url)
             pendingRecoveries.removeAll { $0.url == session.url }
             NotificationCenter.default.post(name: .sessionsChanged, object: nil)

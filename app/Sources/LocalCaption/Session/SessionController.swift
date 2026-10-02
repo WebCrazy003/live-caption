@@ -91,7 +91,8 @@ final class SessionController: ObservableObject {
         else { Task { await prepare() } }
     }
 
-    func start() async {
+    /// `name` overrides the default `<prefix><timestamp>` (Interview mode names its sessions).
+    func start(name: String? = nil) async {
         guard !transitioning, !hasUnsavedSession, orchestrator.modelReady,
               phase == .ready || phase == .saved || phase == .failed else { return }
         transitioning = true
@@ -103,7 +104,7 @@ final class SessionController: ObservableObject {
             interimIntervalMs: env.config.asr.interimIntervalMs,
             maxUtteranceS: env.config.asr.maxUtteranceS,
             vadSensitivity: env.config.audio.vadSensitivity)
-        sessionName = env.config.general.sessionNamePrefix + TimeFormat.fileStamp(startDate)
+        sessionName = name ?? (env.config.general.sessionNamePrefix + TimeFormat.fileStamp(startDate))
         transcript = Transcript(); paragraphs = []; current = ""
         savedTxtURL = nil; saveError = nil
         do { journal = try JournalWriter(sessionId: sessionId) }
@@ -214,12 +215,28 @@ final class SessionController: ObservableObject {
 
     // MARK: Save
 
-    /// Write `.txt` + `.json` and the DB row; delete the journal. Returns false on failure
-    /// (journal is kept so the session stays recoverable).
+    /// Write the DB row with its caption segments, then the `.txt` + `.json` export; delete the
+    /// journal. Returns false when the database write fails (the journal is kept, so the session
+    /// stays recoverable); a failed export only warns.
     private func save() async -> Bool {
         if !current.isEmpty { paragraphs.append(current); current = "" }
         let end = Date()
         let duration = orchestrator.recordedMs / 1000
+        let saved: SessionRecord
+        do {
+            saved = try env.store.insert(SessionRecord(
+                sessionName: sessionName,
+                createdAt: TimeFormat.iso(startDate),
+                endedAt: TimeFormat.iso(end),
+                durationSeconds: duration), segments: transcript.segments)
+        } catch {
+            saveError = "Could not save the session: \(error.localizedDescription)"
+            return false   // keep the journal for recovery
+        }
+        savedSessionId = saved.id
+        await journal?.deleteFile(); journal = nil
+        saveError = nil
+        savedTxtURL = nil
         let folder = URL(fileURLWithPath:
             (env.config.general.transcriptFolder as NSString).expandingTildeInPath)
         do {
@@ -227,22 +244,37 @@ final class SessionController: ObservableObject {
                 transcript: transcript, folder: folder, sessionName: sessionName,
                 start: startDate, end: end, durationSeconds: duration,
                 showTimestamps: env.config.caption.showTimestamps)
-            let rec = SessionRecord(
-                sessionName: sessionName,
-                createdAt: TimeFormat.iso(startDate),
-                endedAt: TimeFormat.iso(end),
-                durationSeconds: duration,
-                transcriptFile: result.txtURL.path)
-            savedSessionId = (try? env.store.insert(rec))?.id
-            await journal?.deleteFile(); journal = nil
+            if let id = saved.id { try? env.store.setTranscriptFile(id: id, path: result.txtURL.path) }
             savedTxtURL = result.txtURL
-            saveError = nil
-            NotificationCenter.default.post(name: .sessionsChanged, object: nil)
-            return true
         } catch {
-            saveError = "Could not save transcript: \(error.localizedDescription)"
-            return false   // keep the journal for recovery
+            saveError = "Saved, but the transcript file export failed: \(error.localizedDescription)"
         }
+        NotificationCenter.default.post(name: .sessionsChanged, object: nil)
+        return true
+    }
+
+    // MARK: Opening a saved session
+
+    /// Nothing live or unsaved, and the speech model has settled — a saved session can be shown.
+    var canOpenSaved: Bool {
+        !transitioning && !hasUnsavedSession && [.ready, .saved, .failed].contains(phase)
+    }
+
+    /// Sessions → Open in interview panel: show a saved session here as if it had just been saved.
+    /// Start then begins a new session, as usual.
+    func openSaved(_ rec: SessionRecord, segments: [TranscriptSegment]) {
+        guard canOpenSaved else { return }
+        transcript = Transcript(segments: segments)
+        paragraphs = []; current = ""
+        segments.forEach { addToParagraphs($0.text) }
+        if !current.isEmpty { paragraphs.append(current); current = "" }
+        sessionName = rec.sessionName
+        startDate = TimeFormat.parseISO(rec.createdAt) ?? Date()
+        elapsed = TimeFormat.clock(rec.durationSeconds)
+        savedSessionId = rec.id
+        savedTxtURL = rec.transcriptFile.map { URL(fileURLWithPath: $0) }
+        saveError = nil
+        phase = .saved
     }
 
     // MARK: Clock (sample-based; frozen during pause)

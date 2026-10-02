@@ -12,7 +12,11 @@ public struct InterviewRecord: Codable, Equatable, Identifiable, Sendable {
     public enum TurnStatus: String, Codable, Sendable { case streaming, completed, interrupted, failed }
 
     public struct Setup: Codable, Equatable, Sendable {
+        /// The interviewee — the person this interview is for.
+        public var candidate: String?
         public var company: String
+        /// Which round with this company: 1, 2, 3…
+        public var step: Int?
         public var role: String
         public var skillIds: [String]
         public var documentIds: [String]
@@ -27,7 +31,7 @@ public struct InterviewRecord: Codable, Equatable, Identifiable, Sendable {
             self.jdTextInline = jdTextInline; self.instructions = instructions; self.answerLength = answerLength
         }
         enum CodingKeys: String, CodingKey {
-            case company, role, instructions
+            case candidate, company, step, role, instructions
             case skillIds = "skill_ids"
             case documentIds = "document_ids"
             case jdTextInline = "jd_text_inline"
@@ -142,6 +146,21 @@ public struct InterviewRecord: Codable, Equatable, Identifiable, Sendable {
         case endedAt = "ended_at"
         case reasoningEffort = "reasoning_effort"
         case threadId = "thread_id"
+    }
+
+    /// `<interviewee>-<company>-<step>-<yyyy-MM-dd>` (owner, 2026-10-02), skipping empty parts;
+    /// nil when neither the interviewee nor the company is known.
+    public static func sessionName(candidate: String?, company: String?, step: Int?, date: Date) -> String? {
+        let clean = { (s: String?) in (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+        let who = clean(candidate), where_ = clean(company)
+        guard !who.isEmpty || !where_.isEmpty else { return nil }
+        let day = TimeFormat.day(date)
+        return [who, where_, step.map(String.init) ?? "", day].filter { !$0.isEmpty }.joined(separator: "-")
+    }
+
+    /// This interview's session name, from its setup.
+    public func sessionName(date: Date) -> String? {
+        Self.sessionName(candidate: setup.candidate, company: setup.company, step: setup.step, date: date)
     }
 
     /// Next turn number (1-based).

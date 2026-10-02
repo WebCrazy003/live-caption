@@ -1,8 +1,8 @@
 import Foundation
 import GRDB
 
-/// A row in the `sessions` table (SPEC.md §12.3). Metadata only — transcript text
-/// never lives in SQLite; it is written to a `.txt` file (Phase 2).
+/// A row in the `sessions` table (SPEC.md §12.3). Its caption segments are in `session_segments`
+/// (owner, 2026-10-02); the `.txt`/`.json` files are an export.
 public struct SessionRecord: Codable, Equatable, Identifiable,
                              FetchableRecord, MutablePersistableRecord {
     public var id: Int64?

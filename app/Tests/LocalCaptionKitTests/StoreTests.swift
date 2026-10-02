@@ -81,4 +81,52 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(try reopened.count(), 1)
         XCTAssertEqual(try reopened.all().first?.sessionName, "Persisted")
     }
+
+    // MARK: Caption segments (owner, 2026-10-02: everything in the database)
+
+    private let segs = [
+        TranscriptSegment(text: "Thanks for joining.", tStartMs: 0, tEndMs: 1200, createdAt: "2026-10-02T09:00:01Z"),
+        TranscriptSegment(text: "Tell me about yourself.", tStartMs: 1500, tEndMs: 3000, createdAt: "2026-10-02T09:00:03Z"),
+    ]
+
+    private func texts(_ list: [TranscriptSegment]) -> [String] { list.map(\.text) }
+
+    func testSegmentsAreSavedWithTheSessionAndDeletedWithIt() throws {
+        let store = try Store(url: dbURL)
+        let rec = try store.insert(makeRecord("A", created: "2026-10-02T09:00:00Z"), segments: segs)
+        let id = try XCTUnwrap(rec.id)
+        let back = try store.segments(sessionId: id)
+        XCTAssertEqual(texts(back), texts(segs))
+        XCTAssertEqual(back.map(\.tStartMs), [0, 1500])
+        XCTAssertEqual(back.map(\.tEndMs), [1200, 3000])
+        XCTAssertEqual(back.map(\.createdAt), segs.map(\.createdAt))
+
+        try store.delete(id: id)
+        XCTAssertEqual(try store.segmentCount(sessionId: id), 0, "segments go with their session")
+    }
+
+    func testOldTranscriptFilesAreImportedOnce() throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lc-import-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let start = Date(timeIntervalSince1970: 1_790_000_000)
+        // With a .json sidecar: its exact segments.
+        let a = try TranscriptWriter.save(transcript: Transcript(segments: segs), folder: dir, sessionName: "A",
+                                          start: start, end: start, durationSeconds: 3, showTimestamps: false)
+        // .txt only: one segment per body line, [HH:MM:SS] read as the start.
+        let b = dir.appendingPathComponent("b.txt")
+        try "Session: B\nStart: x\n\n[00:00:03] Hello there.\n[00:01:05] Second line.\n".write(to: b, atomically: true, encoding: .utf8)
+
+        let store = try Store(url: dbURL)
+        let ra = try store.insert(SessionRecord(sessionName: "A", createdAt: "2026-10-02T09:00:00Z", transcriptFile: a.txtURL.path))
+        let rb = try store.insert(SessionRecord(sessionName: "B", createdAt: "2026-10-02T10:00:00Z", transcriptFile: b.path))
+        let rc = try store.insert(SessionRecord(sessionName: "C", createdAt: "2026-10-02T11:00:00Z", transcriptFile: "/missing.txt"))
+
+        XCTAssertEqual(try store.importTranscriptFiles(), 2)
+        XCTAssertEqual(texts(try store.segments(sessionId: XCTUnwrap(ra.id))), texts(segs))
+        let fromTxt = try store.segments(sessionId: XCTUnwrap(rb.id))
+        XCTAssertEqual(texts(fromTxt), ["Hello there.", "Second line."])
+        XCTAssertEqual(fromTxt.map(\.tStartMs), [3000, 65000])
+        XCTAssertEqual(try store.segmentCount(sessionId: XCTUnwrap(rc.id)), 0)
+        XCTAssertEqual(try store.importTranscriptFiles(), 0, "already imported")
+    }
 }

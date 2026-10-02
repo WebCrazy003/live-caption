@@ -8,13 +8,14 @@ import AppKit
 struct WindowAccessor: NSViewRepresentable {
     var alwaysOnTop: Bool
     var opacity: Double
+    var autosaveName = "LocalCaptionMainWindow"
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         DispatchQueue.main.async {
             guard let window = view.window else { return }
             if !context.coordinator.didConfigure {
-                window.setFrameAutosaveName("LocalCaptionMainWindow")
+                window.setFrameAutosaveName(autosaveName)
                 context.coordinator.didConfigure = true
             }
             apply(to: window)

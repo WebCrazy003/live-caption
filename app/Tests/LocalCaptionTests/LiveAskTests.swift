@@ -166,6 +166,39 @@ final class LiveAskTests: XCTestCase {
         pb.writeObjects([item])
     }
 
+    func testScreenshotHotkeyAddsTheSelectedAreaToThePrompt() async throws {
+        let interview = await preparedInterview()   // works with clipboard auto-add off
+        var next: Data? = pngData(width: 24, height: 24)
+        interview.captureArea = { next }
+
+        await interview.takeScreenshot()
+        XCTAssertEqual(interview.pendingImages.count, 1)
+        XCTAssertEqual(interview.status, "Screenshot added — 1 in this prompt")
+        XCTAssertFalse(interview.capturing)
+
+        next = nil                                  // Esc: nothing added, no message
+        interview.clearPending()
+        await interview.takeScreenshot()
+        XCTAssertTrue(interview.pendingImages.isEmpty)
+
+        next = pngData(width: 24, height: 24)
+        for _ in 0..<InterviewController.maxPendingImages { await interview.takeScreenshot() }
+        var asked = false
+        interview.captureArea = { asked = true; return next }
+        await interview.takeScreenshot()
+        XCTAssertFalse(asked, "a full prompt doesn't open the selector")
+        XCTAssertEqual(interview.pendingImages.count, InterviewController.maxPendingImages)
+
+        interview.clearPending()
+        interview.captureArea = { next }
+        await interview.takeScreenshot()
+        transcript = ([], "what does this chart show", 4000)
+        await interview.ask()
+        let sent = try XCTUnwrap(engine.sent.last)
+        XCTAssertEqual(sent.input.count, 2, "text + the screenshot")
+        XCTAssertTrue(interview.pendingImages.isEmpty)
+    }
+
     func testCopiedScreenshotsPileUpAndTheNextAskSendsThemAll() async throws {
         env.config.interview.includeClipboardImages = true
         let interview = await preparedInterview()

@@ -39,6 +39,37 @@ final class InterviewKitTests: XCTestCase {
         XCTAssertEqual(InterviewFiles.all(in: dir).map(\.record.id), [rec.id])
     }
 
+    func testSessionNameIsIntervieweeCompanyStepDate() {
+        let date = Date(timeIntervalSince1970: 1_790_000_000)
+        let day = TimeFormat.day(date)
+        XCTAssertEqual(InterviewRecord.sessionName(candidate: "victor", company: "Peloton", step: 1, date: date),
+                       "victor-Peloton-1-\(day)")
+        XCTAssertEqual(InterviewRecord.sessionName(candidate: " victor ", company: "capital on tap", step: 2, date: date),
+                       "victor-capital on tap-2-\(day)", "trimmed, inner spaces kept")
+        XCTAssertEqual(InterviewRecord.sessionName(candidate: "victor", company: "", step: 1, date: date),
+                       "victor-1-\(day)", "empty parts are skipped")
+        XCTAssertNil(InterviewRecord.sessionName(candidate: "", company: "  ", step: 1, date: date))
+    }
+
+    func testScreenshotHotkeyDefaultsToF9() throws {
+        XCTAssertEqual(Config.Interview().screenshotHotkey, "F9")
+        let old = try JSONDecoder().decode(Config.Interview.self, from: Data(#"{"hotkey":"F7"}"#.utf8))
+        XCTAssertEqual(old.screenshotHotkey, "F9", "configs written before the key get the default")
+        XCTAssertEqual(old.hotkey, "F7")
+        XCTAssertEqual(Hotkey.resolve("nonsense", fallback: .defaultScreenshot), .defaultScreenshot)
+        XCTAssertEqual(Hotkey.resolve("Ctrl+Shift+S", fallback: .defaultScreenshot).description, "Ctrl+Shift+S")
+    }
+
+    func testPanelLayoutDefaultsToAutomaticAndToleratesUnknownValues() throws {
+        XCTAssertEqual(Config.Interview().panelLayout, .automatic)
+        let dec = { (json: String) in try JSONDecoder().decode(Config.Interview.self, from: Data(json.utf8)) }
+        XCTAssertEqual(try dec(#"{"panel_layout":"stacked"}"#).panelLayout, .stacked)
+        XCTAssertEqual(try dec(#"{"panel_layout":"side_by_side"}"#).panelLayout, .sideBySide)
+        XCTAssertEqual(try dec(#"{"panel_layout":"diagonal"}"#).panelLayout, .automatic, "a newer build's value falls back")
+        var c = Config.Interview(); c.panelLayout = .sideBySide
+        XCTAssertEqual(try JSONDecoder().decode(Config.Interview.self, from: JSONEncoder().encode(c)).panelLayout, .sideBySide)
+    }
+
     func testInterruptedTurnsFailOnRelaunch() {
         var rec = InterviewRecord(name: "x", createdAt: "t", model: "m", reasoningEffort: "low", setup: .init())
         rec.prep.status = .running

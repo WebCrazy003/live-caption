@@ -1,36 +1,30 @@
 import SwiftUI
 import LocalCaptionKit
 
-/// Top-level navigation shell: Session List (sidebar) ↔ Active Session / read-only viewer
-/// (detail), plus Settings via the ⌘, scene (SPEC-00, SPEC.md §13).
+/// The main window: the live session — captions, and the interview panel in Interview mode
+/// (SPEC-00, SPEC.md §13). Past sessions open in their own Sessions window (owner, 2026-10-02).
 struct RootView: View {
     @EnvironmentObject var env: AppEnvironment
-    @State private var selection: Int64?
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        NavigationSplitView {
-            SessionListView(selection: $selection)
-                .navigationSplitViewColumnWidth(min: 220, ideal: 280)
-        } detail: {
-            if let id = selection {
-                TranscriptViewer(sessionID: id)
-            } else {
-                ActiveSessionView(env: env)
-                    .id("active")   // fresh controller per New Session
+        ActiveSessionView(env: env)
+            .id("active")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { openWindow(id: SessionsWindow.id) } label: {
+                        Label("Sessions", systemImage: "list.bullet.rectangle")
+                    }
+                    .help("Past sessions and interviews (⌘L)")
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    SettingsLink { Label("Settings", systemImage: "gearshape") }
+                }
             }
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                SettingsLink { Label("Settings", systemImage: "gearshape") }
+            .sheet(isPresented: .constant(!env.pendingRecoveries.isEmpty)) {
+                RecoveryView()
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .newSession)) { _ in
-            selection = nil
-        }
-        .sheet(isPresented: .constant(!env.pendingRecoveries.isEmpty)) {
-            RecoveryView()
-        }
-        .background(WindowAccessor(alwaysOnTop: env.config.window.alwaysOnTop,
-                                   opacity: env.config.window.opacity))
+            .background(WindowAccessor(alwaysOnTop: env.config.window.alwaysOnTop,
+                                       opacity: env.config.window.opacity))
     }
 }

@@ -13,9 +13,13 @@ struct ActiveSessionView: View {
     @State private var showingIssues = false
     @State private var showingPrivacyNotice = false
     @State private var showingEndPrompt = false
-    @State private var narrowTab: NarrowTab = .answers
-
-    private enum NarrowTab: String, CaseIterable { case answers = "Answers", captions = "Captions" }
+    /// Interview mode layout (owner, 2026-10-02): captions can be hidden, and the border between
+    /// captions and answers is draggable. Both are remembered.
+    @AppStorage("interview.captionsHidden") private var captionsHidden = false
+    @AppStorage("interview.captionShareWide") private var captionShareWide = Self.defaultCaptionShareWide
+    @AppStorage("interview.answerShareStacked") private var answerShareStacked = Self.defaultAnswerShareStacked
+    private static let defaultCaptionShareWide = 0.58
+    private static let defaultAnswerShareStacked = 0.6
 
     init(env: AppEnvironment) {
         controller = env.session
@@ -23,13 +27,20 @@ struct ActiveSessionView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            header
-            modelStatusArea
-            if canChangeMode { modePicker }
-            Divider()
-            captionArea
-            transportBar
+        Group {
+            if !env.modeChosen {
+                ModeChooserView(lastMode: env.config.interview.mode, choose: chooseMode)
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    header
+                    modelStatusArea
+                    Divider()
+                    captionArea
+                    // Interview mode keeps the transport inside the captions panel, and the
+                    // preparation stage has none (owner, 2026-10-02).
+                    if !isInterviewMode || showsReplay { transportBar }
+                }
+            }
         }
         .padding()
         .navigationTitle(controller.displayName)
@@ -39,6 +50,7 @@ struct ActiveSessionView: View {
                 accept: {
                     env.config.interview.privacyAcknowledged = true
                     env.config.interview.mode = .interview
+                    env.modeChosen = true
                     showingPrivacyNotice = false
                 },
                 cancel: { showingPrivacyNotice = false })
@@ -52,7 +64,10 @@ struct ActiveSessionView: View {
         }
         .onChange(of: env.config.interview.mode) { _, _ in updateHotkey() }
         .onChange(of: env.config.interview.hotkey) { _, _ in updateHotkey() }
+        .onChange(of: env.config.interview.screenshotHotkey) { _, _ in updateHotkey() }
         .onChange(of: controller.phase) { _, _ in updateHotkey() }
+        .onChange(of: env.modeChosen) { _, _ in updateHotkey() }
+        .onChange(of: interview.showingPreparation) { _, _ in updateHotkey() }
 
     }
 
@@ -60,6 +75,8 @@ struct ActiveSessionView: View {
     /// interview links itself to the saved session and asks: summarize, or a follow-up prompt?
     /// (SPEC-15 §Ending the interview).
     private func stopSession() async {
+        // Details may have been corrected during the interview: name the session as they are now.
+        if isInterviewMode, let name = interview.sessionName(on: controller.startDate) { controller.sessionName = name }
         await controller.stop()
         if isInterviewMode, controller.phase == .saved, interview.record != nil {
             await interview.sessionSaved(sessionId: controller.savedSessionId, transcript: controller.committedText)
@@ -74,13 +91,18 @@ struct ActiveSessionView: View {
         isInterviewMode ? Label("End interview", systemImage: "flag.checkered") : Label("Stop", systemImage: "stop.fill")
     }
 
-    /// The Ask hotkey is live only on this screen, in Interview mode, until the session is
-    /// saved (SPEC-14 §Global hotkey).
+    /// The Ask and Screenshot hotkeys are live only on this screen, in Interview mode, until the
+    /// session is saved (SPEC-14 §Global hotkey).
     private func updateHotkey() {
-        let hk = GlobalHotkey.shared
-        guard isInterviewMode, controller.phase != .saved else { hk.unregister(); return }
-        hk.onPress = { [weak interview] in Task { await interview?.ask() } }
-        let wanted = Hotkey.resolve(env.config.interview.hotkey)
+        let ask = GlobalHotkey.shared, shot = GlobalHotkey.screenshot
+        guard env.modeChosen, isInterviewMode, !interview.showingPreparation, controller.phase != .saved else { ask.unregister(); shot.unregister(); return }
+        ask.onPress = { [weak interview] in Task { await interview?.ask() } }
+        shot.onPress = { [weak interview] in Task { await interview?.takeScreenshot() } }
+        register(ask, Hotkey.resolve(env.config.interview.hotkey))
+        register(shot, Hotkey.resolve(env.config.interview.screenshotHotkey, fallback: .defaultScreenshot))
+    }
+
+    private func register(_ hk: GlobalHotkey, _ wanted: Hotkey) {
         if case .registered(let current) = hk.state, current == wanted { return }
         hk.register(wanted)
     }
@@ -92,24 +114,25 @@ struct ActiveSessionView: View {
     /// The mode is fixed once a session is live or has unsaved data.
     private var canChangeMode: Bool { !isLive && !controller.hasUnsavedSession && controller.phase != .saving }
 
-    private var modePicker: some View {
-        Picker("Mode", selection: Binding(
-            get: { env.config.interview.mode },
-            set: { mode in
-                if mode == .interview && !env.config.interview.privacyAcknowledged { showingPrivacyNotice = true }
-                else { env.config.interview.mode = mode }
-            })) {
-            Label("Caption only", systemImage: "captions.bubble").tag(Config.Interview.Mode.caption)
-            Label("Interview", systemImage: "person.2.wave.2").tag(Config.Interview.Mode.interview)
+    /// The first screen's choice. Interview asks for the privacy notice once.
+    private func chooseMode(_ mode: Config.Interview.Mode) {
+        if mode == .interview && !env.config.interview.privacyAcknowledged { showingPrivacyNotice = true; return }
+        env.config.interview.mode = mode
+        env.modeChosen = true
+    }
+
+    /// Back to the first screen; only while nothing is recording or unsaved.
+    private var changeModeButton: some View {
+        Button { env.modeChosen = false } label: {
+            Label(isInterviewMode ? "Interview" : "Caption only", systemImage: "arrow.left.arrow.right")
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .frame(maxWidth: 320)
+        .buttonStyle(.bordered).controlSize(.small)
+        .help("Change mode — back to Caption only / Interview")
     }
 
     private func startSession() async {
         if interview.isFinished { interview.resetForNewInterview() }
-        await controller.start()
+        await controller.start(name: isInterviewMode ? interview.sessionName(on: Date()) : nil)
         if isInterviewMode, controller.phase == .recording {
             interview.recordingStarted(uuid: controller.sessionId, at: controller.startDate)
         }
@@ -119,6 +142,7 @@ struct ActiveSessionView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
+            if canChangeMode { changeModeButton }
             statusPill
             if controller.orchestrator.errorText != nil || controller.saveError != nil {
                 Button { showingIssues.toggle() } label: {
@@ -139,6 +163,26 @@ struct ActiveSessionView: View {
             if isLive {
                 Text(controller.elapsed).font(.headline).monospacedDigit()
             }
+            if showsInterviewLayout && !isLive && controller.phase != .saving {
+                Button { withAnimation { interview.showingPreparation = true } } label: {
+                    Label("Preparation", systemImage: "slider.horizontal.3")
+                }
+                .buttonStyle(.bordered).controlSize(.small)
+                .help("Back to the preparation (interview details, CV, JD, mode)")
+            }
+            // With captions hidden there's no captions panel to hold Start / Stop: keep them here.
+            if showsInterviewLayout && captionsHidden {
+                HStack(spacing: 6) { transportControls }.labelStyle(.iconOnly).controlSize(.small)
+            }
+            if showsInterviewLayout {
+                Button { withAnimation { captionsHidden.toggle() } } label: {
+                    Label("Captions", systemImage: captionsHidden ? "eye.slash" : "eye")
+                }
+                .buttonStyle(.bordered).controlSize(.small)
+                .help(captionsHidden ? "Show the caption panel" : "Hide the caption panel — answers get the whole width")
+                .accessibilityLabel(captionsHidden ? "Show captions" : "Hide captions")
+            }
+            if isInterviewMode { fontControls }
             Label(controller.orchestrator.modelLabel, systemImage: "waveform")
                 .font(.caption).foregroundStyle(.secondary)
                 .help("Speech model in use (on-device)")
@@ -160,10 +204,22 @@ struct ActiveSessionView: View {
         )
     }
 
+    /// The live interview layout (captions + answers), as opposed to the finished-interview replay.
+    private var showsInterviewLayout: Bool {
+        isInterviewMode && !showsReplay && !interview.showingPreparation
+    }
+
+    private var showsReplay: Bool { isInterviewMode && controller.phase == .saved && interview.isFinished }
+
+    /// Interview mode's first stage: the preparation alone (owner, 2026-10-02).
+    private var showsPreparation: Bool { isInterviewMode && !showsReplay && interview.showingPreparation }
+
     @ViewBuilder private var captionArea: some View {
-        if isInterviewMode && controller.phase == .saved && interview.isFinished {
+        if showsReplay {
             InterviewReplayView(interview: interview, interactive: true, transcript: controller.committedText,
                                 fontSize: Double(env.config.caption.fontSize))
+        } else if showsPreparation {
+            preparationStage
         } else if isInterviewMode {
             interviewLayout
         } else {
@@ -172,39 +228,76 @@ struct ActiveSessionView: View {
     }
 
     /// The interview window often sits in a narrow strip beside the call (SPEC-15 §Responsive
-    /// layout): side by side ≥ 820 pt, stacked 560–819, one pane with a toggle below 560.
+    /// layout): side by side ≥ 820 pt, stacked below. Never tabs: the divider is draggable in both,
+    /// and with captions hidden the answers fill the space.
     private var interviewLayout: some View {
         GeometryReader { geo in
             let w = geo.size.width
             Group {
-                if w >= 820 {
-                    HStack(alignment: .top, spacing: 12) {
-                        captionView.frame(maxWidth: .infinity)
-                        Divider()
-                        interviewPanel.frame(minWidth: 300, idealWidth: 400, maxWidth: 520)
-                    }
-                } else if w >= 560 {
-                    VSplitView {
-                        interviewPanel.frame(minHeight: 180, idealHeight: geo.size.height * 0.6)
-                        captionView.frame(minHeight: 100, idealHeight: geo.size.height * 0.4)
+                if captionsHidden {
+                    interviewPanel
+                } else if sideBySide(width: w) {
+                    ResizableSplit(axis: .horizontal, fraction: $captionShareWide,
+                                   defaultFraction: Self.defaultCaptionShareWide, minFirst: 220, minSecond: 300) {
+                        captionColumn.padding(.trailing, 6)
+                    } second: {
+                        interviewPanel.padding(.leading, 6)
                     }
                 } else {
-                    VStack(spacing: 8) {
-                        Picker("", selection: $narrowTab) {
-                            ForEach(NarrowTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                        }
-                        .pickerStyle(.segmented).labelsHidden()
-                        if narrowTab == .answers { interviewPanel } else { captionView }
+                    // Narrow: stacked, still two panels with a draggable border — never tabs.
+                    ResizableSplit(axis: .vertical, fraction: $answerShareStacked,
+                                   defaultFraction: Self.defaultAnswerShareStacked, minFirst: 160, minSecond: 120) {
+                        interviewPanel.padding(.bottom, 4)
+                    } second: {
+                        captionColumn.padding(.top, 4)
                     }
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
-        .onChange(of: interview.turns.count) { _, _ in narrowTab = .answers }
+    }
+
+    /// Settings → Interview → Layout; Automatic goes side by side from 820 pt.
+    private func sideBySide(width: CGFloat) -> Bool {
+        switch env.config.interview.panelLayout {
+        case .automatic: return width >= 820
+        case .sideBySide: return true
+        case .stacked: return false
+        }
+    }
+
+    /// The preparation on its own; completing it opens the captions and answers.
+    private var preparationStage: some View {
+        VStack(spacing: 8) {
+            ScrollView {
+                InterviewSetupSection(interview: interview, codex: env.codex, library: env.library)
+                    .frame(maxWidth: 760)
+                    .padding(.horizontal, 4)
+                    .frame(maxWidth: .infinity)
+            }
+            HStack {
+                Spacer()
+                Button(interview.isPrepared ? "Back to the interview" : "Skip preparation") {
+                    withAnimation { interview.showingPreparation = false }
+                }
+                .buttonStyle(.link)
+                .disabled(interview.preparing)
+                .help(interview.isPrepared ? "Show the captions and answers"
+                      : "Go to the captions and answers without preparing — the coach still works")
+            }
+        }
+    }
+
+    /// Interview mode: the captions with Start / Pause / Stop, Auto-copy and Copy last N under them.
+    private var captionColumn: some View {
+        VStack(spacing: 8) {
+            captionView
+            transportBar
+        }
     }
 
     private var interviewPanel: some View {
-        InterviewPanel(interview: interview, fontSize: Double(env.config.caption.fontSize), isLive: isLive)
+        InterviewPanel(interview: interview, fontSize: Double(env.config.caption.fontSize))
     }
 
     @ViewBuilder private var statusPill: some View {
@@ -286,41 +379,8 @@ struct ActiveSessionView: View {
 
     private func transportRow(_ density: BarDensity) -> some View {
         HStack(spacing: 12) {
-            Group {
-                switch controller.phase {
-                case .failed where controller.hasUnsavedSession:
-                    Button { Task { await controller.resume() } } label: {
-                        Label("Retry capture", systemImage: "play.fill")
-                    }
-                    .help("Retry capture")
-                    Button { Task { await stopSession() } } label: {
-                        Label("Retry save", systemImage: "square.and.arrow.down")
-                    }
-                    .help("Retry save")
-                case .ready, .saved, .failed:
-                    Button { Task { await startSession() } } label: {
-                        Label("Start", systemImage: "record.circle")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!controller.orchestrator.modelReady || skillsBlockStart)
-                    .help(skillsBlockStart ? "Load your 4 skills in Settings → Interview → Skills first" : "Start")
-                case .recording:
-                    Button { Task { await controller.pause() } } label: { Label("Pause", systemImage: "pause.fill") }
-                        .help("Pause")
-                    Button(role: .destructive) { Task { await stopSession() } } label: { stopLabel }
-                        .keyboardShortcut(".", modifiers: .command)
-                        .help("Stop")
-                case .paused:
-                    Button { Task { await controller.resume() } } label: { Label("Resume", systemImage: "play.fill") }
-                        .buttonStyle(.borderedProminent)
-                        .help("Resume")
-                    Button(role: .destructive) { Task { await stopSession() } } label: { stopLabel }
-                        .help("Stop")
-                case .preparing, .pausing, .saving:
-                    EmptyView()
-                }
-            }
-            .iconOnly(density.rawValue >= BarDensity.iconTransport.rawValue)
+            Group { transportControls }
+                .iconOnly(density.rawValue >= BarDensity.iconTransport.rawValue)
 
             Spacer()
 
@@ -337,14 +397,58 @@ struct ActiveSessionView: View {
             .help("Copy the last \(env.config.clipboard.recentSentences) sentences")
             .iconOnly(iconActions)
 
-            Divider().frame(height: 16)
-
-            // Font size (live-applies via config).
-            HStack(spacing: 4) {
-                Button { adjustFont(-1) } label: { Image(systemName: "textformat.size.smaller") }
-                Text("\(env.config.caption.fontSize)").font(.caption).monospacedDigit().frame(width: 22)
-                Button { adjustFont(1) } label: { Image(systemName: "textformat.size.larger") }
+            // Interview mode has the font size in the top bar instead.
+            if !isInterviewMode {
+                Divider().frame(height: 16)
+                fontControls
             }
+        }
+    }
+
+    /// Start / Pause / Resume / Stop (and the retry pair after a failed save).
+    @ViewBuilder private var transportControls: some View {
+        switch controller.phase {
+        case .failed where controller.hasUnsavedSession:
+            Button { Task { await controller.resume() } } label: {
+                Label("Retry capture", systemImage: "play.fill")
+            }
+            .help("Retry capture")
+            Button { Task { await stopSession() } } label: {
+                Label("Retry save", systemImage: "square.and.arrow.down")
+            }
+            .help("Retry save")
+        case .ready, .saved, .failed:
+            Button { Task { await startSession() } } label: {
+                Label("Start", systemImage: "record.circle")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!controller.orchestrator.modelReady || skillsBlockStart)
+            .help(skillsBlockStart ? "Load your 4 skills in Settings → Interview → Skills first" : "Start")
+        case .recording:
+            Button { Task { await controller.pause() } } label: { Label("Pause", systemImage: "pause.fill") }
+                .help("Pause")
+            Button(role: .destructive) { Task { await stopSession() } } label: { stopLabel }
+                .keyboardShortcut(".", modifiers: .command)
+                .help("Stop")
+        case .paused:
+            Button { Task { await controller.resume() } } label: { Label("Resume", systemImage: "play.fill") }
+                .buttonStyle(.borderedProminent)
+                .help("Resume")
+            Button(role: .destructive) { Task { await stopSession() } } label: { stopLabel }
+                .help("Stop")
+        case .preparing, .pausing, .saving:
+            EmptyView()
+        }
+    }
+
+    /// Font size (live-applies via config).
+    private var fontControls: some View {
+        HStack(spacing: 4) {
+            Button { adjustFont(-1) } label: { Image(systemName: "textformat.size.smaller") }
+                .help("Smaller text")
+            Text("\(env.config.caption.fontSize)").font(.caption).monospacedDigit().frame(width: 22)
+            Button { adjustFont(1) } label: { Image(systemName: "textformat.size.larger") }
+                .help("Larger text")
         }
     }
 
@@ -366,6 +470,7 @@ private struct InterviewHeaderChips: View {
     @ObservedObject var interview: InterviewController
     @ObservedObject var codex: CodexService
     @ObservedObject var hotkey = GlobalHotkey.shared
+    @ObservedObject var screenshotHotkey = GlobalHotkey.screenshot
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -388,6 +493,10 @@ private struct InterviewHeaderChips: View {
             if case .unavailable(let hk, let reason) = hotkey.state {
                 chip(compact ? "" : "\(hk) unavailable", icon: "keyboard.badge.exclamationmark", color: .orange)
                     .help("Hotkey \(hk) unavailable: \(reason) — change it in Settings. The Ask button still works.")
+            }
+            if case .unavailable(let hk, let reason) = screenshotHotkey.state {
+                chip(compact ? "" : "\(hk) unavailable", icon: "camera.badge.ellipsis", color: .orange)
+                    .help("Screenshot hotkey \(hk) unavailable: \(reason) — change it in Settings. The screenshot button still works.")
             }
         }
     }

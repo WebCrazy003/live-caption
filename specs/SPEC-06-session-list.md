@@ -2,6 +2,15 @@
 
 **Status:** Not started · **Depends on:** SPEC-01, SPEC-04 · **Full detail:** SPEC.md §10
 
+> **2026-10-02 (owner):** the list moved out of the main window into its own **Sessions** window
+> (toolbar button or **File → Sessions…**, ⌘L). Selecting a session shows its details on the
+> right — for interviews: interviewee, company, step, role, mode, CV, model, question count,
+> then the summary, conversation, transcript, CV and JD; for caption sessions the transcript.
+> Everything is read from the database. **Open in Interview Panel** shows the interview in the
+> main window as right after End interview (summary, follow-up prompts on its thread, resumed on
+> first use); it waits while a session is live or unsaved, and discards an unstarted preparation
+> after confirming. The main window is always the live session; New Session (⌘N) is gone.
+
 ## Goal
 The default screen: browse, create, open, rename, delete, search, and sort past sessions.
 

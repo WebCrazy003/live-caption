@@ -32,6 +32,9 @@ public struct Hotkey: Equatable, Hashable, Sendable, CustomStringConvertible {
 
     public static let defaultString = "F8"
     public static let `default` = Hotkey(key: "F8", modifiers: [])
+    /// The screenshot hotkey's default (owner, 2026-10-02).
+    public static let defaultScreenshotString = "F9"
+    public static let defaultScreenshot = Hotkey(key: "F9", modifiers: [])
 
     /// Canonical key name, e.g. `"F8"`, `"K"`, `"Space"`.
     public let key: String
@@ -71,8 +74,8 @@ public struct Hotkey: Equatable, Hashable, Sendable, CustomStringConvertible {
     }
 
     /// The configured hotkey, or the default when the string is empty or invalid.
-    public static func resolve(_ string: String) -> Hotkey {
-        (try? parse(string).get()) ?? .default
+    public static func resolve(_ string: String, fallback: Hotkey = .default) -> Hotkey {
+        (try? parse(string).get()) ?? fallback
     }
 
     // MARK: Tables

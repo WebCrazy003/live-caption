@@ -3,19 +3,17 @@ import AppKit
 import LocalCaptionKit
 
 /// Interview mode (SPEC-13 §Interview panel): a header with the apply-instruction profiles, the
-/// setup (CV, pasted JD, skill steps), the conversation — one card per turn, newest expanded —
-/// and the Ask bar (SPEC-14).
+/// conversation — one card per turn, newest expanded — and the Ask bar (SPEC-14). The
+/// preparation is a stage of its own before this panel appears (owner, 2026-10-02).
 struct InterviewPanel: View {
     @ObservedObject var interview: InterviewController
     @EnvironmentObject var env: AppEnvironment
     @ObservedObject var hotkey = GlobalHotkey.shared
+    @ObservedObject var screenshotHotkey = GlobalHotkey.screenshot
     let fontSize: Double
-    /// Recording or paused: the setup folds away once the interview is live.
-    let isLive: Bool
 
     @State private var expanded: Set<Int> = []
     @State private var draft = ""
-    @State private var setupExpanded = true
     @State private var showingTypeBox = false
     private let clipboardPoll = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
@@ -25,22 +23,12 @@ struct InterviewPanel: View {
             if let status = interview.status {
                 Text(status).font(.caption).foregroundStyle(.orange).lineLimit(2)
             }
-            if setupExpanded {
-                ScrollView {
-                    InterviewSetupSection(interview: interview, codex: env.codex, library: env.library)
-                        .padding(.trailing, 4)
-                }
-                .frame(maxHeight: interview.turns.isEmpty ? .infinity : 340)
-                Divider()
-            }
             cards
             Divider()
             if !interview.pendingImages.isEmpty { screenshotTray }
             bottomBar
         }
         .onReceive(clipboardPoll) { _ in interview.pollClipboard() }
-        .onAppear { setupExpanded = !isLive }
-        .onChange(of: isLive) { _, live in if live { setupExpanded = false } }
     }
 
     // MARK: Header (profiles stay reachable during the interview)
@@ -62,10 +50,6 @@ struct InterviewPanel: View {
                 Button { Task { await interview.stopStreaming() } } label: { Label("Stop", systemImage: "stop.circle") }
                     .labelStyle(.iconOnly).help("Stop this answer")
             }
-            Button { withAnimation { setupExpanded.toggle() } } label: {
-                Label("Setup", systemImage: setupExpanded ? "chevron.up.circle" : "slider.horizontal.3")
-            }
-            .labelStyle(.iconOnly).help(setupExpanded ? "Hide the setup" : "Show the setup (CV, JD, skill steps)")
         }
     }
 
@@ -115,7 +99,7 @@ struct InterviewPanel: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     if interview.turns.isEmpty {
-                        Text("Run the steps in the setup, then press \(hotkeyLabel) (or Ask) when the interviewer "
+                        Text("Press \(hotkeyLabel) (or Ask) when the interviewer "
                              + "finishes a question. You can also just start — the coach is ready either way.")
                             .font(.callout).foregroundStyle(.secondary).padding(.vertical, 12)
                     }
@@ -151,6 +135,7 @@ struct InterviewPanel: View {
     private func barRow(_ d: Density) -> some View {
         HStack(alignment: .bottom, spacing: 8) {
             askButton(iconOnly: d != .full)
+            screenshotButton
             if d == .iconEverything {
                 Spacer()
                 Button { showingTypeBox.toggle() } label: { Image(systemName: "keyboard") }
@@ -180,6 +165,21 @@ struct InterviewPanel: View {
         .help(interview.pendingImages.isEmpty ? "Send the interviewer's latest words (\(hotkeyLabel))"
               : "Send the interviewer's latest words and \(interview.pendingImages.count) screenshot(s) (\(hotkeyLabel))")
         .accessibilityLabel("Ask")
+    }
+
+    /// Select an area of the screen; it joins this prompt (owner, 2026-10-02).
+    private var screenshotButton: some View {
+        Button { Task { await interview.takeScreenshot() } } label: {
+            Image(systemName: "camera.viewfinder")
+        }
+        .disabled(interview.capturing)
+        .help("Select an area of the screen to add to this prompt (\(screenshotHotkeyLabel)) — Esc cancels")
+        .accessibilityLabel("Screenshot")
+    }
+
+    private var screenshotHotkeyLabel: String {
+        if case .registered(let hk) = screenshotHotkey.state { return hk.description }
+        return Hotkey.resolve(env.config.interview.screenshotHotkey, fallback: .defaultScreenshot).description
     }
 
     /// Screenshots waiting in the current prompt; the next Ask or Send takes them all.

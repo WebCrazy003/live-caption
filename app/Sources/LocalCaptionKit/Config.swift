@@ -247,6 +247,11 @@ public struct Config: Codable, Equatable {
             case lastSentences = "last_sentences"
         }
         public enum BusyPolicy: String, Codable, CaseIterable, Sendable { case interrupt, queue }
+        /// How the captions and answers panels sit (owner, 2026-10-02): side by side, stacked
+        /// (answers on top), or by window width.
+        public enum PanelLayout: String, Codable, CaseIterable, Sendable {
+            case automatic, sideBySide = "side_by_side", stacked
+        }
 
         /// The S0-recommended model, used when `model` is empty (SPEC-12 §S0).
         public static let recommendedModel = "gpt-6-luna"
@@ -261,12 +266,15 @@ public struct Config: Codable, Equatable {
         public var answerLength: AnswerLength
         public var customInstructions: String
         public var hotkey: String
+        /// Select an area of the screen and add it to the prompt (owner, 2026-10-02).
+        public var screenshotHotkey: String
         public var sendMode: SendMode
         public var sendSentences: Int
         public var maxWords: Int
         public var includeClipboardImages: Bool
         public var clearClipboardImagesAfterSend: Bool
         public var busyPolicy: BusyPolicy
+        public var panelLayout: PanelLayout
 
         public init(mode: Mode = .caption,
                     privacyAcknowledged: Bool = false,
@@ -278,21 +286,25 @@ public struct Config: Codable, Equatable {
                     answerLength: AnswerLength = .medium,
                     customInstructions: String = "",
                     hotkey: String = Hotkey.defaultString,
+                    screenshotHotkey: String = Hotkey.defaultScreenshotString,
                     sendMode: SendMode = .sinceLastAsk,
                     sendSentences: Int = 3,
                     maxWords: Int = 400,
                     includeClipboardImages: Bool = false,
                     clearClipboardImagesAfterSend: Bool = true,
-                    busyPolicy: BusyPolicy = .interrupt) {
+                    busyPolicy: BusyPolicy = .interrupt,
+                    panelLayout: PanelLayout = .automatic) {
             self.mode = mode; self.privacyAcknowledged = privacyAcknowledged
             self.engine = engine; self.codexPath = codexPath; self.model = model
             self.reasoningEffort = reasoningEffort; self.prepReasoningEffort = prepReasoningEffort
             self.answerLength = answerLength; self.customInstructions = customInstructions
             self.hotkey = hotkey
+            self.screenshotHotkey = screenshotHotkey
             self.sendMode = sendMode; self.sendSentences = sendSentences; self.maxWords = maxWords
             self.includeClipboardImages = includeClipboardImages
             self.clearClipboardImagesAfterSend = clearClipboardImagesAfterSend
             self.busyPolicy = busyPolicy
+            self.panelLayout = panelLayout
         }
 
         /// The model to request: the configured one, or the S0 default.
@@ -309,12 +321,14 @@ public struct Config: Codable, Equatable {
             case answerLength = "answer_length"
             case customInstructions = "custom_instructions"
             case hotkey
+            case screenshotHotkey = "screenshot_hotkey"
             case sendMode = "send_mode"
             case sendSentences = "send_sentences"
             case maxWords = "max_words"
             case includeClipboardImages = "include_clipboard_images"
             case clearClipboardImagesAfterSend = "clear_clipboard_images_after_send"
             case busyPolicy = "busy_policy"
+            case panelLayout = "panel_layout"
         }
 
         public init(from d: Decoder) throws {
@@ -336,12 +350,14 @@ public struct Config: Codable, Equatable {
             answerLength = try value(.answerLength, x.answerLength)
             customInstructions = try c.decodeIfPresent(String.self, forKey: .customInstructions) ?? x.customInstructions
             hotkey = try c.decodeIfPresent(String.self, forKey: .hotkey) ?? x.hotkey
+            screenshotHotkey = try c.decodeIfPresent(String.self, forKey: .screenshotHotkey) ?? x.screenshotHotkey
             sendMode = try value(.sendMode, x.sendMode)
             sendSentences = try c.decodeIfPresent(Int.self, forKey: .sendSentences) ?? x.sendSentences
             maxWords = try c.decodeIfPresent(Int.self, forKey: .maxWords) ?? x.maxWords
             includeClipboardImages = try c.decodeIfPresent(Bool.self, forKey: .includeClipboardImages) ?? x.includeClipboardImages
             clearClipboardImagesAfterSend = try c.decodeIfPresent(Bool.self, forKey: .clearClipboardImagesAfterSend) ?? x.clearClipboardImagesAfterSend
             busyPolicy = try value(.busyPolicy, x.busyPolicy)
+            panelLayout = try value(.panelLayout, x.panelLayout)
         }
     }
 }

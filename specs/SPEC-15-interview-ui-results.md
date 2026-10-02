@@ -28,9 +28,31 @@ width of the caption area:
 
 | Width | Layout |
 |---|---|
-| ≥ 820 pt | Captions left · Answers right (side by side) |
+| ≥ 820 pt | Captions left · Answers right (side by side), draggable divider |
 | 560 – 819 | **Stacked**: Answers on top (60 %), Captions below (40 %), draggable divider |
 | < 560 | **One pane** with a segmented toggle *Answers / Captions*; an Ask switches to Answers automatically |
+
+**2026-10-02 (owner):** the divider is draggable in both split layouts (side by side: captions
+≥ 220 pt, answers ≥ 300 pt; stacked: answers ≥ 180, captions ≥ 100); double-click resets it
+(58 % captions side by side, 60 % answers stacked). The header has a **Hide captions** button —
+answers then fill the area at any width. Both the position and the hidden state are remembered.
+
+**2026-10-02, later (owner):** in Interview mode Start / Pause / Stop, Auto-copy and Copy last N
+sit under the caption column (at the bottom when captions are hidden or in the one-pane layout);
+the font size is in the top bar, beside a labelled **Captions** show/hide button. The
+**Preparation** button shows the preparation in full — filling the answer panel — or hides it
+for the conversation; it hides itself when recording starts or an answer arrives.
+
+**2026-10-02, latest (owner):** no tabs at any width — below 820 pt the panels are stacked
+(answers on top) with a draggable border; the user narrows a panel or hides captions instead.
+Start / Pause / Stop, Auto-copy and Copy last N live only inside the captions panel; with
+captions hidden, compact Start / Pause / Stop move to the top bar. The *one pane with a toggle*
+row above no longer applies.
+
+**Settings → Interview → Layout** (`interview.panel_layout`: `automatic` | `side_by_side` |
+`stacked`, default `automatic`; unknown values fall back) fixes the arrangement regardless of
+width. The preparation shows the Codex row only when Codex isn't ready (not installed, signed
+out, signing in, failed); account and usage details are in Settings → Codex.
 
 ### Buttons shrink to icons
 

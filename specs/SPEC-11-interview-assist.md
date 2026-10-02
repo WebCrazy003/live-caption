@@ -315,6 +315,30 @@ CREATE TABLE interview_images (
   interview, unlinked.
 - On launch, folders under `interview/interviews/` that aren't in the database yet are imported
   (`interview.json`, `summary.md`, `cv.txt`, `attachments/*.png`) and left in place.
+- **`v4_segments_and_details`** (owner, 2026-10-02: "make sure all save on database") — every
+  session's caption segments, and the interview details (SPEC-13 §Interview panel):
+
+```sql
+CREATE TABLE session_segments (
+    session_id INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    n INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    t_start_ms INTEGER NOT NULL,
+    t_end_ms INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (session_id, n)
+);
+ALTER TABLE interviews ADD COLUMN candidate_name TEXT;
+ALTER TABLE interviews ADD COLUMN company TEXT;
+ALTER TABLE interviews ADD COLUMN interview_step INTEGER;
+```
+
+- Stop writes the session row and its segments in one transaction, then the `.txt`/`.json`
+  export; a failed export only warns (the database is the record), a failed database write keeps
+  the journal. Crash recovery saves the same way.
+- On launch, sessions without segments are filled once from their `.json` sidecar (else the
+  `.txt` body, one segment per line, `[HH:MM:SS]` read as the start); the files are left in place.
+- **Windows:** not yet migrated — its `Store` still stops at v3.
 
 ---
 

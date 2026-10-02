@@ -3,12 +3,14 @@ import AppKit
 import Carbon.HIToolbox
 import LocalCaptionKit
 
-/// The Ask hotkey, registered system-wide with Carbon's `RegisterEventHotKey` (SPEC-14 §Global
+/// A system-wide hotkey, registered with Carbon's `RegisterEventHotKey` (SPEC-14 §Global
 /// hotkey). It fires while Zoom/Meet/Teams has focus, and needs no Accessibility or Input
-/// Monitoring permission. One registration at a time.
+/// Monitoring permission. One instance per action: Ask (`shared`) and Screenshot.
 @MainActor
 final class GlobalHotkey: ObservableObject {
-    static let shared = GlobalHotkey()
+    static let shared = GlobalHotkey(id: 1)
+    /// Select an area of the screen and add it to the prompt (owner, 2026-10-02).
+    static let screenshot = GlobalHotkey(id: 2)
 
     enum State: Equatable {
         case off
@@ -20,22 +22,23 @@ final class GlobalHotkey: ObservableObject {
     @Published private(set) var state: State = .off
     var onPress: (() -> Void)?
 
+    private let id: UInt32
     private var hotKeyRef: EventHotKeyRef?
-    private var handlerRef: EventHandlerRef?
+    private static var handlerRef: EventHandlerRef?
     private static let signature: OSType = 0x4C43_4150   // 'LCAP'
 
-    private init() {}
+    private init(id: UInt32) { self.id = id }
 
     func register(_ hotkey: Hotkey) {
         unregister()
-        installHandlerIfNeeded()
+        Self.installHandlerIfNeeded()
         guard let code = HotkeyKeys.keyCode(for: hotkey.key) else {
             state = .unavailable(hotkey, reason: "\(hotkey.key) isn't on a Mac keyboard")
             return
         }
         var ref: EventHotKeyRef?
         let status = RegisterEventHotKey(UInt32(code), HotkeyKeys.carbonModifiers(hotkey.modifiers),
-                                         EventHotKeyID(signature: Self.signature, id: 1),
+                                         EventHotKeyID(signature: Self.signature, id: id),
                                          GetApplicationEventTarget(), 0, &ref)
         if status == noErr, let ref {
             hotKeyRef = ref
@@ -52,11 +55,21 @@ final class GlobalHotkey: ObservableObject {
         state = .off
     }
 
-    private func installHandlerIfNeeded() {
+    /// One handler for every instance; the event's hotkey id says which one was pressed.
+    private static func installHandlerIfNeeded() {
         guard handlerRef == nil else { return }
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        InstallEventHandler(GetApplicationEventTarget(), { _, _, _ -> OSStatus in
-            DispatchQueue.main.async { MainActor.assumeIsolated { GlobalHotkey.shared.onPress?() } }
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, _ -> OSStatus in
+            var hk = EventHotKeyID()
+            GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                              nil, MemoryLayout<EventHotKeyID>.size, nil, &hk)
+            let id = hk.id
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    let target = id == GlobalHotkey.screenshot.id ? GlobalHotkey.screenshot : GlobalHotkey.shared
+                    target.onPress?()
+                }
+            }
             return noErr
         }, 1, &spec, nil, &handlerRef)
     }

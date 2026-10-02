@@ -1,6 +1,7 @@
 import XCTest
 import Combine
 import LocalCaptionKit
+import GRDB
 @testable import LocalCaption
 
 @MainActor
@@ -25,11 +26,13 @@ final class CaptionObservationTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let blocked = directory.appendingPathComponent("not-a-directory")
-        try Data([0]).write(to: blocked)
         var config = Config()
-        config.general.transcriptFolder = blocked.path
-        let env = AppEnvironment(config: config, store: try Store(url: directory.appendingPathComponent("test.db")))
+        config.general.transcriptFolder = directory.appendingPathComponent("saved").path
+        let dbURL = directory.appendingPathComponent("test.db")
+        let env = AppEnvironment(config: config, store: try Store(url: dbURL))
+        // The database refuses new sessions, as a full disk would.
+        let side = try DatabaseQueue(path: dbURL.path)
+        try await side.write { try $0.execute(sql: "CREATE TRIGGER refuse BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT, 'disk full'); END") }
         let controller = SessionController(env: env)
         // Inject a completed decode; this never starts capture or reads user files.
         try await controller.orchestrator.onFinal?("Keep this final speech.", 0, 1000)
@@ -42,12 +45,40 @@ final class CaptionObservationTests: XCTestCase {
         XCTAssertEqual(controller.phase, .failed)
         XCTAssertNotNil(controller.saveError)
         XCTAssertTrue(controller.hasTranscript)
-        env.config.general.transcriptFolder = directory.appendingPathComponent("saved").path
+        try await side.write { try $0.execute(sql: "DROP TRIGGER refuse") }
         await controller.stop()
         XCTAssertEqual(controller.phase, .saved)
         XCTAssertFalse(controller.hasUnsavedSession)
+        let id = try XCTUnwrap(controller.savedSessionId)
+        XCTAssertEqual(try env.store.segments(sessionId: id).map(\.text), ["Keep this final speech."])
         let url = try XCTUnwrap(controller.savedTxtURL)
         XCTAssertTrue(try String(contentsOf: url).contains("Keep this final speech."))
+        XCTAssertEqual(try env.store.fetch(id: id)?.transcriptFile, url.path)
+    }
+
+    /// The database is the record; the .txt/.json export failing only warns.
+    func testExportFailureStillSavesToTheDatabase() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let blocked = directory.appendingPathComponent("not-a-directory")
+        try Data([0]).write(to: blocked)
+        var config = Config()
+        config.general.transcriptFolder = blocked.path
+        let env = AppEnvironment(config: config, store: try Store(url: directory.appendingPathComponent("test.db")))
+        let controller = SessionController(env: env)
+        try await controller.orchestrator.onFinal?("Keep this final speech.", 0, 1000)
+        controller.phase = .failed
+        controller.orchestrator.modelReady = true
+        await controller.start()
+        await controller.stop()
+        XCTAssertEqual(controller.phase, .saved)
+        XCTAssertFalse(controller.hasUnsavedSession)
+        XCTAssertNil(controller.savedTxtURL)
+        XCTAssertTrue(controller.saveError?.hasPrefix("Saved, but") ?? false)
+        let id = try XCTUnwrap(controller.savedSessionId)
+        XCTAssertEqual(try env.store.segments(sessionId: id).map(\.text), ["Keep this final speech."])
+        XCTAssertNil(try env.store.fetch(id: id)?.transcriptFile)
     }
 
     func testRepeatedAutomaticPauseRequestsFinishOnce() async throws {

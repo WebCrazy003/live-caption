@@ -12,6 +12,16 @@ layout, records), SPEC-12 (engine)
 
 ## Change log
 
+- **2026-10-02, final (owner):** Interview mode has two stages. **Preparation** fills the window
+  alone (no captions, answers, transport or hotkeys); when Start preparation completes every step
+  it switches to **captions + answers** only. *Skip preparation* goes there unprepared; the top
+  bar's **Preparation** button returns before recording (*Back to the interview* when prepared).
+  Start, a new interview and opening a saved one set the stage. The preparation is no longer
+  inside the answer panel.
+- **2026-10-02, newest (owner):** the preparation starts with **Interview** details — interviewee
+  name, company, interview step (1, 2, 3…). The interviewee and company are required for Start
+  preparation. The session is named `<interviewee>-<company>-<step>-<yyyy-MM-dd>`; the details
+  are stored on the interview row (SPEC-11 §SQLite).
 - **2026-10-02, latest (owner):** the four parts are configuration only; one **Start preparation**
   button runs them in order. Model and effort are chosen in the panel before starting. The
   quick-prompt buttons are removed.
@@ -29,6 +39,11 @@ layout, records), SPEC-12 (engine)
 ---
 
 ## Mode picker
+
+> **2026-10-02 (owner):** the segmented picker is replaced by a **first screen** that asks
+> *Caption only* or *Interview* (the last-used one is highlighted and is the default button).
+> The session screen's top bar shows the mode as a **Change mode** button while nothing is
+> recording or unsaved. Opening an interview from the Sessions window skips the question.
 
 - [ ] On the Active Session screen, before Start (phases `.ready` / `.saved` / `.failed` without
       an unsaved session), a segmented control: **Caption only | Interview**. Bound to
@@ -88,6 +103,11 @@ Right of the captions in Interview mode (layout rules in SPEC-15). Top to bottom
 2. **Preparation** (expanded before Start, collapsed once recording; the toggle reopens it):
    - Codex status / sign-in / Plus usage (`CodexStatusRow`).
    - If any of the four skills is missing: a banner naming them, with a link to Settings.
+   - **Interview** — Interviewee, Company, Step (1–20, default 1), with a preview of the session
+     name `<interviewee>-<company>-<step>-<yyyy-MM-dd>` (empty parts skipped; local date of the
+     recording). The interviewee is prefilled from the last interview. Start names the session
+     this way and End interview renames it if the details changed meanwhile; Caption only keeps
+     `<prefix><timestamp>`. Edits after the record exists are saved at once.
    - **① Discovery CV** — CV picker (uploaded CVs) + **Upload CV…** (`.pdf`/`.md`/`.txt`, added and
      selected).
    - **② Discovery JD** — paste box.
@@ -98,7 +118,7 @@ Right of the captions in Interview mode (layout rules in SPEC-15). Top to bottom
      (`interview.model`, `prep_reasoning_effort`, `reasoning_effort`).
    - **Start preparation** runs ① → ② → ③ → ④ (if ticked) as skill turns, in order, with a spinner
      on the running part and ✓ on finished ones. Disabled until the skills are loaded and ①, ②, ③
-     are set (the reason is shown); live coding without Tech is refused. A step that doesn't
+     are set and the interviewee and company are entered (the reason is shown); live coding without Tech is refused. A step that doesn't
      complete stops the run: the part is marked, and **Continue** resumes from that step (or
      **Start over** reruns everything). When every planned step has completed with the chosen
      mode and live-coding state, the panel shows **Prepared** and the button reads **Prepare

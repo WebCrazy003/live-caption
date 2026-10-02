@@ -42,6 +42,10 @@ final class InterviewController: ObservableObject {
 
     /// The preparation form (SPEC-13 §Preparation): what Start preparation will run.
     struct Draft: Equatable {
+        /// Who and where (owner, 2026-10-02) — they name the session.
+        var candidate = ""
+        var company = ""
+        var step = 1
         var cvId: String?
         var jobDescription = ""
         /// ③ — chosen here, applied by Start preparation.
@@ -73,18 +77,44 @@ final class InterviewController: ObservableObject {
     /// (re)generate the summary on the same thread — resumed first, since this run may not know it.
     init(env: AppEnvironment, existing rec: InterviewRecord) {
         self.env = env
-        self.draft = Draft(cvId: rec.setup.documentIds.first, jobDescription: rec.setup.jdTextInline ?? "")
+        self.draft = Self.draft(for: rec)
         self.record = rec
         self.threadState = rec.threadId == nil ? .none : .open
         self.needsResume = true
         self.summaryText = rec.summaryText ?? ""
     }
 
+    private static func draft(for rec: InterviewRecord) -> Draft {
+        Draft(candidate: rec.setup.candidate ?? "", company: rec.setup.company, step: rec.setup.step ?? 1,
+              cvId: rec.setup.documentIds.first, jobDescription: rec.setup.jdTextInline ?? "",
+              profile: rec.activeProfile.flatMap(Profile.init(rawValue:)), liveCoding: rec.liveCodingActive)
+    }
+
+    /// Sessions → Open in interview panel: show a saved interview here, as right after End
+    /// interview — summary and follow-ups continue its thread (resumed on first use).
+    func load(_ rec: InterviewRecord) {
+        record = rec
+        draft = Self.draft(for: rec)
+        threadState = rec.threadId == nil ? .none : .open
+        needsResume = rec.threadId != nil
+        summaryText = rec.summaryText ?? ""
+        summaryError = nil; pendingImages = []; mark = nil; queued = nil
+        recordingStart = nil; status = nil; preparationFailedAt = nil
+        showingPreparation = false
+    }
+
+    /// Nothing in flight, so the panel can switch to another interview.
+    var isBusy: Bool { isStreaming || preparing || summarizing }
+
+    /// A preparation that hasn't started recording yet — opening another interview discards it.
+    var hasUnstartedPreparation: Bool { record != nil && record?.startedAt == nil && recordingStart == nil }
+
     /// The CV from the most recent interview, else the newest CV.
     private static func initialDraft(env: AppEnvironment) -> Draft {
         let lib = env.library
         var d = Draft()
         if let last = (try? env.store.allInterviews())?.first {
+            d.candidate = last.setup.candidate ?? ""
             let ids = Set(last.setup.documentIds)
             d.cvId = lib.documents(of: .cv).first { ids.contains($0.id) }?.id
             d.profile = last.activeProfile.flatMap(Profile.init(rawValue:))
@@ -139,9 +169,12 @@ final class InterviewController: ObservableObject {
         var rec = InterviewRecord(
             name: Self.name(fromJD: draft.jobDescription), createdAt: TimeFormat.iso(Date()),
             model: codex.resolvedModel(cfg.model), reasoningEffort: cfg.reasoningEffort,
-            setup: .init(documentIds: draft.cvId.map { [$0] } ?? [],
+            setup: .init(company: draft.company.trimmingCharacters(in: .whitespacesAndNewlines),
+                         documentIds: draft.cvId.map { [$0] } ?? [],
                          jdTextInline: draft.jobDescription.isEmpty ? nil : draft.jobDescription,
                          instructions: cfg.customInstructions, answerLength: cfg.answerLength.rawValue))
+        rec.setup.candidate = Self.trimmed(draft.candidate)
+        rec.setup.step = draft.step
         if let start = recordingStart {
             rec.startedAt = TimeFormat.iso(start.date)
             rec.captureSessionUUID = start.uuid.uuidString
@@ -155,6 +188,29 @@ final class InterviewController: ObservableObject {
         }
         record = rec
         return true
+    }
+
+    // MARK: Interview details (owner, 2026-10-02)
+
+    /// `<interviewee>-<company>-<step>-<date>`, or nil until the interviewee or company is entered.
+    func sessionName(on date: Date) -> String? {
+        InterviewRecord.sessionName(candidate: draft.candidate, company: draft.company, step: draft.step, date: date)
+    }
+
+    /// The setup form changed: keep the record's interviewee, company and step in step with it.
+    func detailsChanged() {
+        guard var rec = record else { return }
+        rec.setup.candidate = Self.trimmed(draft.candidate)
+        rec.setup.company = draft.company.trimmingCharacters(in: .whitespacesAndNewlines)
+        rec.setup.step = draft.step
+        guard rec != record else { return }
+        record = rec
+        persist()
+    }
+
+    private static func trimmed(_ s: String) -> String? {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : t
     }
 
     /// "Interview", or the JD's first line (usually the role) — up to 60 characters.
@@ -232,6 +288,10 @@ final class InterviewController: ObservableObject {
     // MARK: Start preparation (owner, 2026-10-02)
 
     @Published private(set) var preparing = false
+    /// Interview mode shows the preparation alone until it's done, then only the captions and
+    /// answers (owner, 2026-10-02). Completing Start preparation, Skip, Start, or opening a saved
+    /// interview leaves it; the top bar's Preparation button returns before recording.
+    @Published var showingPreparation = true
     /// The step Start preparation stopped at, so Continue can resume there.
     @Published private(set) var preparationFailedAt: Step?
 
@@ -245,6 +305,8 @@ final class InterviewController: ObservableObject {
     /// Why Start preparation can't run yet, or nil when it can.
     var preparationBlocker: String? {
         if !allSkillsLoaded { return "Load the 4 skills in Settings → Interview → Skills" }
+        if Self.trimmed(draft.candidate) == nil { return "Enter the interviewee's name" }
+        if Self.trimmed(draft.company) == nil { return "Enter the company" }
         if draft.cvId == nil { return "Choose or upload a CV (①)" }
         if draft.jobDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Paste the job description (②)" }
         if draft.profile == nil { return "Choose a mode (③)" }
@@ -280,6 +342,7 @@ final class InterviewController: ObservableObject {
             }
         }
         status = nil
+        showingPreparation = false
     }
 
     /// Which part Start preparation is running now (for the panel's progress marks).
@@ -355,17 +418,7 @@ final class InterviewController: ObservableObject {
         persist()
         defer { summarizing = false }
 
-        if needsResume, let rec = record {
-            let length = Config.Interview.AnswerLength(rawValue: rec.setup.answerLength) ?? .medium
-            do {
-                try await engine.resumeThread(id: thread, ThreadConfig(
-                    model: rec.model,
-                    baseInstructions: InterviewPrompt.baseInstructions(length: length, custom: rec.setup.instructions)))
-                needsResume = false
-            } catch {
-                failSummary(error.localizedDescription); return
-            }
-        }
+        if let error = await resumeIfNeeded(thread) { failSummary(error); return }
 
         let message = InterviewPrompt.summary(transcript: transcript)
         for await event in streamEvents(engine.send(threadId: thread, input: [.text(message)],
@@ -388,6 +441,22 @@ final class InterviewController: ObservableObject {
         }
     }
 
+    /// A saved interview's thread may be unknown to this Codex run: resume it before the first
+    /// turn. Returns the error message when that fails.
+    private func resumeIfNeeded(_ thread: String) async -> String? {
+        guard needsResume, let rec = record else { return nil }
+        let length = Config.Interview.AnswerLength(rawValue: rec.setup.answerLength) ?? .medium
+        do {
+            try await engine.resumeThread(id: thread, ThreadConfig(
+                model: rec.model,
+                baseInstructions: InterviewPrompt.baseInstructions(length: length, custom: rec.setup.instructions)))
+            needsResume = false
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
     private func failSummary(_ message: String) {
         summaryError = message
         record?.summary.status = .failed
@@ -398,6 +467,7 @@ final class InterviewController: ObservableObject {
     func resetForNewInterview() {
         record = nil; threadState = .none; summaryText = ""; summaryError = nil; pendingImages = []
         mark = nil; queued = nil; recordingStart = nil; status = nil
+        showingPreparation = true
         draft = Self.initialDraft(env: env)
     }
 
@@ -407,6 +477,7 @@ final class InterviewController: ObservableObject {
     /// is paid before the first question (SPEC-13 §The thread).
     func recordingStarted(uuid: UUID, at date: Date) {
         recordingStart = (uuid, date)
+        showingPreparation = false
         if record != nil {
             record?.startedAt = TimeFormat.iso(date)
             record?.captureSessionUUID = uuid.uuidString
@@ -427,7 +498,9 @@ final class InterviewController: ObservableObject {
     func runTurn(kind: InterviewRecord.TurnKind, text: String, question: String,
                  images pngs: [Data] = [], span: (from: Int, to: Int)? = nil, effort: String? = nil,
                  onAccepted: (() -> Void)? = nil) async -> InterviewRecord.TurnStatus? {
-        guard let thread = await ensureThread(), var rec = record else { return nil }
+        guard let thread = await ensureThread() else { return nil }
+        if let error = await resumeIfNeeded(thread) { status = "Could not reopen this interview's conversation: \(error)"; return .failed }
+        guard var rec = record else { return nil }
         let n = rec.nextTurnNumber
         // Screenshots are kept in the database; Codex reads them from short-lived files.
         let names = pngs.indices.map { Store.imageName(turn: n, index: $0 + 1) }
@@ -533,6 +606,28 @@ final class InterviewController: ObservableObject {
         let added = snap.images.prefix(room).map { PendingImage(png: $0) }
         pendingImages += added
         capturedChangeCount = count
+        status = "Screenshot added — \(pendingImages.count) in this prompt"
+    }
+
+    // MARK: Screenshot hotkey (owner, 2026-10-02)
+
+    /// The area selector is on screen.
+    @Published private(set) var capturing = false
+    /// Drag-to-select capture; injectable for tests.
+    var captureArea: () async -> Data? = { await ScreenshotCapture.selectArea() }
+
+    /// The screenshot hotkey or button: select an area; it joins the current prompt, and the next
+    /// Ask or Send takes it. Esc cancels quietly.
+    func takeScreenshot() async {
+        guard !capturing else { return }
+        guard pendingImages.count < Self.maxPendingImages else {
+            status = "The prompt already has \(Self.maxPendingImages) screenshots."
+            return
+        }
+        capturing = true
+        defer { capturing = false }
+        guard let png = await captureArea() else { return }
+        pendingImages.append(PendingImage(png: png))
         status = "Screenshot added — \(pendingImages.count) in this prompt"
     }
 

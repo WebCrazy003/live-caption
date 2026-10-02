@@ -17,6 +17,9 @@ public enum TimeFormat {
     /// `yyyy-MM-dd HH:mm:ss` — human header timestamp.
     public static func human(_ date: Date) -> String { fmt("yyyy-MM-dd HH:mm:ss", date) }
 
+    /// `yyyy-MM-dd` (local) — the date part of interview session names.
+    public static func day(_ date: Date) -> String { fmt("yyyy-MM-dd", date) }
+
     /// `yyyy-MM-dd HH:mm` — short form for auto session names.
     public static func humanShort(_ date: Date) -> String { fmt("yyyy-MM-dd HH:mm", date) }
 

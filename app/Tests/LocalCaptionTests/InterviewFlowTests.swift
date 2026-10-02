@@ -242,6 +242,8 @@ final class InterviewFlowTests: XCTestCase {
     // MARK: Start preparation
 
     private func readyDraft(_ interview: InterviewController, liveCoding: Bool = false) throws {
+        interview.draft.candidate = "victor"
+        interview.draft.company = "Peloton"
         interview.draft.cvId = try importCV()
         interview.draft.jobDescription = "Senior iOS Engineer"
         interview.draft.profile = .tech
@@ -269,6 +271,12 @@ final class InterviewFlowTests: XCTestCase {
         let interview = InterviewController(env: env)
         XCTAssertEqual(interview.preparationBlocker, "Load the 4 skills in Settings → Interview → Skills")
         try importSkills()
+        XCTAssertEqual(interview.preparationBlocker, "Enter the interviewee's name")
+        interview.draft.candidate = "  "
+        XCTAssertEqual(interview.preparationBlocker, "Enter the interviewee's name", "blank doesn't count")
+        interview.draft.candidate = "victor"
+        XCTAssertEqual(interview.preparationBlocker, "Enter the company")
+        interview.draft.company = "Peloton"
         XCTAssertEqual(interview.preparationBlocker, "Choose or upload a CV (①)")
         interview.draft.cvId = try importCV()
         XCTAssertEqual(interview.preparationBlocker, "Paste the job description (②)")
@@ -291,6 +299,7 @@ final class InterviewFlowTests: XCTestCase {
         XCTAssertEqual(interview.preparationFailedAt, .discoveryJD)
         XCTAssertEqual(interview.turns.map(\.question), ["/discovery-cv", "/discovery-jd"], "stops at the failure")
         XCTAssertFalse(interview.isPrepared)
+        XCTAssertTrue(interview.showingPreparation, "a failed preparation stays on screen")
 
         engine.reply = { _ in [.completed("ok")] }
         await interview.startPreparation(resume: true)
@@ -298,6 +307,13 @@ final class InterviewFlowTests: XCTestCase {
                        "Continue resumes at the failed step, not from the start")
         XCTAssertTrue(interview.isPrepared)
         XCTAssertNil(interview.preparationFailedAt)
+        XCTAssertFalse(interview.showingPreparation, "completing it opens the captions and answers")
+
+        interview.showingPreparation = true          // back via the top bar
+        interview.recordingStarted(uuid: UUID(), at: Date())
+        XCTAssertFalse(interview.showingPreparation, "Start leaves the preparation")
+        interview.resetForNewInterview()
+        XCTAssertTrue(interview.showingPreparation, "a new interview begins with the preparation")
     }
 
     func testChangingTheModelSwitchesTheNextTurn() async throws {

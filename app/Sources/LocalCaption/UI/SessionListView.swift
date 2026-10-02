@@ -2,8 +2,8 @@ import SwiftUI
 import AppKit
 import LocalCaptionKit
 
-/// Session List (SPEC.md §10 / SPEC-06): browse, open (read-only), rename, delete, search,
-/// and sort. Backed by the SQLite store.
+/// Session List (SPEC.md §10 / SPEC-06), the Sessions window's sidebar: browse, select (details
+/// on the right), rename, delete, search, and sort. Backed by the SQLite store.
 struct SessionListView: View {
     @EnvironmentObject var env: AppEnvironment
     @Binding var selection: Int64?
@@ -15,7 +15,9 @@ struct SessionListView: View {
     @State private var renameText = ""
     @State private var deleteTarget: SessionRecord?
     @State private var filter: ModeFilter = .all
-    /// Session id → the interview's name, JD and CV title, for the row subtitle and search.
+    /// Session id → the interview's row subtitle (interviewee · company · step, else its name).
+    @State private var interviewSubtitle: [Int64: String] = [:]
+    /// Session id → the interview's searchable text (details, name, JD, CV title).
     @State private var interviewText: [Int64: String] = [:]
 
     enum ModeFilter: String, CaseIterable { case all = "All", captions = "Captions", interviews = "Interviews" }
@@ -30,7 +32,7 @@ struct SessionListView: View {
             } else {
                 ForEach(sessions) { rec in
                     row(rec)
-                        .tag(rec.id)
+                        .tag(rec.id ?? -1)
                         .contextMenu { rowMenu(rec) }
                 }
             }
@@ -48,17 +50,11 @@ struct SessionListView: View {
                     }
                 } label: { Label("Sort & filter", systemImage: filter == .all ? "arrow.up.arrow.down" : "line.3.horizontal.decrease.circle.fill") }
             }
-            ToolbarItem(placement: .primaryAction) {
-                Button { NotificationCenter.default.post(name: .newSession, object: nil) } label: {
-                    Label("New Session", systemImage: "plus")
-                }
-            }
         }
         .onAppear(perform: reload)
         .onChange(of: search) { reload() }
         .onChange(of: sort) { reload() }
         .onChange(of: filter) { reload() }
-        .onReceive(NotificationCenter.default.publisher(for: .newSession)) { _ in reload() }
         .onReceive(NotificationCenter.default.publisher(for: .sessionsChanged)) { _ in reload() }
         // ⌫ on the selected session, and the viewer's Delete… button, open the same confirmation.
         .onDeleteCommand { if let id = selection { deleteTarget = sessions.first { $0.id == id } } }
@@ -104,9 +100,8 @@ struct SessionListView: View {
                 }
                 Text(rec.sessionName).font(.body)
             }
-            if rec.isInterview, let id = rec.id, let name = interviewText[id]?.components(separatedBy: "\n").first,
-               !name.isEmpty {
-                Text(name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            if rec.isInterview, let id = rec.id, let subtitle = interviewSubtitle[id], !subtitle.isEmpty {
+                Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             HStack(spacing: 6) {
                 Text(rec.createdAt.prefix(19).replacingOccurrences(of: "T", with: " "))
@@ -170,11 +165,17 @@ struct SessionListView: View {
         let mode: String? = filter == .all ? nil : (filter == .interviews ? SessionRecord.interviewMode : SessionRecord.captionMode)
         let rows = (try? env.store.all(sort: sort, mode: mode)) ?? []
         var texts: [Int64: String] = [:]
+        var subtitles: [Int64: String] = [:]
         for r in (try? env.store.allInterviews()) ?? [] {
             guard let sid = r.sessionId, texts[sid] == nil else { continue }
-            texts[sid] = [r.name, r.setup.cvTitle ?? "", r.setup.jdTextInline ?? ""].joined(separator: "\n")
+            let who = [r.setup.candidate ?? "", r.setup.company, r.setup.step.map { "step \($0)" } ?? ""]
+                .filter { !$0.isEmpty }
+            subtitles[sid] = who.count > 1 ? who.joined(separator: " · ") : r.name
+            texts[sid] = [r.setup.candidate ?? "", r.setup.company, r.name, r.setup.cvTitle ?? "",
+                          r.setup.jdTextInline ?? ""].joined(separator: "\n")
         }
         interviewText = texts
+        interviewSubtitle = subtitles
         let q = search.trimmingCharacters(in: .whitespacesAndNewlines)
         sessions = q.isEmpty ? rows : rows.filter { rec in
             rec.sessionName.localizedCaseInsensitiveContains(q)

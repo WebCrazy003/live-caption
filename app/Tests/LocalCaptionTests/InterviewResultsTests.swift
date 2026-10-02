@@ -139,16 +139,78 @@ final class InterviewResultsTests: XCTestCase {
 
     func testRecoveredCaptureIsLinkedToItsInterview() async throws {
         let interview = InterviewController(env: env)
+        interview.draft.candidate = "victor"
+        interview.draft.company = "Peloton"
+        interview.draft.step = 2
         let capture = UUID()
-        interview.recordingStarted(uuid: capture, at: Date())
+        let start = Date()
+        interview.recordingStarted(uuid: capture, at: start)
         await interview.ensureThread()
-        let row = try env.store.insert(SessionRecord(sessionName: "Recovered", createdAt: TimeFormat.iso(Date())))
+        let row = try env.store.insert(SessionRecord(sessionName: "Recovered", createdAt: TimeFormat.iso(start)))
 
-        env.linkRecoveredInterview(captureId: capture, sessionId: row.id)
+        env.linkRecoveredInterview(captureId: capture, sessionId: row.id, start: start)
 
         let rec = try saved(interview)
         XCTAssertEqual(rec.sessionId, row.id)
         XCTAssertNotNil(rec.endedAt)
-        XCTAssertEqual(try env.store.fetch(id: XCTUnwrap(row.id))?.mode, "interview")
+        let session = try env.store.fetch(id: XCTUnwrap(row.id))
+        XCTAssertEqual(session?.mode, "interview")
+        XCTAssertEqual(session?.sessionName, "victor-Peloton-2-\(TimeFormat.day(start)) (recovered)")
+    }
+
+    // MARK: Sessions window → Open in interview panel (owner, 2026-10-02)
+
+    func testOpenInPanelShowsTheSavedInterviewAndContinuesItsThread() async throws {
+        let (finished, _) = try await runInterview()
+        let segments = [TranscriptSegment(text: "Thanks for joining.", tStartMs: 0, tEndMs: 900, createdAt: "t1"),
+                        TranscriptSegment(text: "Why us?", tStartMs: 1000, tEndMs: 1800, createdAt: "t2")]
+        let row = try env.store.insert(SessionRecord(sessionName: "victor-Peloton-1-2026-10-02",
+                                                     createdAt: TimeFormat.iso(Date()), durationSeconds: 95),
+                                       segments: segments)
+        let rowId = try XCTUnwrap(row.id)
+        await finished.sessionSaved(sessionId: rowId, transcript: "Thanks for joining. Why us?")
+
+        env.session.phase = .ready            // the speech model has loaded
+        env.config.interview.mode = .caption
+        XCTAssertNil(env.openInPanelBlocker)
+        await env.openInPanel(sessionId: rowId)
+
+        XCTAssertEqual(env.config.interview.mode, .interview)
+        XCTAssertTrue(env.modeChosen, "opening from Sessions skips the first screen's mode choice")
+        XCTAssertEqual(env.interview.record?.id, finished.record?.id)
+        XCTAssertTrue(env.interview.isFinished)
+        XCTAssertEqual(env.session.phase, .saved)
+        XCTAssertEqual(env.session.sessionName, "victor-Peloton-1-2026-10-02")
+        XCTAssertEqual(env.session.committedText, "Thanks for joining. Why us?")
+        XCTAssertEqual(env.session.elapsed, "00:01:35")
+
+        engine.reply = { _ in [.completed("Sure.")] }
+        await env.interview.sendFollowUp("Draft a thank-you email")
+        XCTAssertEqual(engine.resumed, [try XCTUnwrap(finished.record?.threadId)], "the saved thread is resumed first")
+        XCTAssertEqual(env.interview.turns.last?.status, .completed)
+    }
+
+    func testOpenInPanelIsBlockedWhileTheModelLoads() {
+        XCTAssertEqual(env.session.phase, .preparing)
+        XCTAssertEqual(env.openInPanelBlocker, "Wait until the speech model is ready")
+    }
+
+    func testInterviewDetailsAreStoredAndNameTheSession() async throws {
+        let interview = InterviewController(env: env)
+        interview.draft.candidate = " victor "
+        interview.draft.company = "Capital on Tap"
+        interview.draft.step = 3
+        await interview.ensureThread()
+        let day = TimeFormat.day(Date())
+        XCTAssertEqual(interview.sessionName(on: Date()), "victor-Capital on Tap-3-\(day)")
+        var rec = try saved(interview)
+        XCTAssertEqual(rec.setup.candidate, "victor")
+        XCTAssertEqual(rec.setup.company, "Capital on Tap")
+        XCTAssertEqual(rec.setup.step, 3)
+
+        interview.draft.step = 4               // corrected in the form after the record exists
+        interview.detailsChanged()
+        rec = try saved(interview)
+        XCTAssertEqual(rec.setup.step, 4)
     }
 }

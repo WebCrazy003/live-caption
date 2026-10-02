@@ -74,8 +74,9 @@ extension Store {
                 INSERT INTO interviews (id, session_id, name, created_at, started_at, ended_at,
                     capture_session_uuid, engine, model, reasoning_effort, thread_id, cv_document_id,
                     cv_title, cv_text, jd_text, instructions, answer_length, skill_ids, legacy_briefing,
-                    summary_status, summary_text, summary_completed_at, transcript)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    summary_status, summary_text, summary_completed_at, transcript,
+                    candidate_name, company, interview_step)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     session_id = excluded.session_id, name = excluded.name, started_at = excluded.started_at,
                     ended_at = excluded.ended_at, capture_session_uuid = excluded.capture_session_uuid,
@@ -85,7 +86,9 @@ extension Store {
                     instructions = excluded.instructions, answer_length = excluded.answer_length,
                     skill_ids = excluded.skill_ids, legacy_briefing = excluded.legacy_briefing,
                     summary_status = excluded.summary_status, summary_text = excluded.summary_text,
-                    summary_completed_at = excluded.summary_completed_at, transcript = excluded.transcript
+                    summary_completed_at = excluded.summary_completed_at, transcript = excluded.transcript,
+                    candidate_name = excluded.candidate_name, company = excluded.company,
+                    interview_step = excluded.interview_step
                 """, arguments: [
                     r.id, r.sessionId, r.name, r.createdAt, r.startedAt, r.endedAt,
                     r.captureSessionUUID, r.engine, r.model, r.reasoningEffort, r.threadId,
@@ -93,6 +96,7 @@ extension Store {
                     r.setup.instructions, r.setup.answerLength, Self.json(r.setup.skillIds),
                     r.prep.briefing.isEmpty ? nil : r.prep.briefing,
                     r.summary.status.rawValue, r.summaryText, r.summary.completedAt, r.transcript,
+                    r.setup.candidate, r.setup.company.isEmpty ? nil : r.setup.company, r.setup.step,
                 ])
             try db.execute(sql: "DELETE FROM interview_turns WHERE interview_id = ?", arguments: [r.id])
             for t in r.turns {
@@ -224,6 +228,9 @@ extension Store {
                          jdTextInline: row["jd_text"], instructions: row["instructions"],
                          answerLength: row["answer_length"]))
         r.setup.cvTitle = row["cv_title"]
+        r.setup.candidate = row["candidate_name"]
+        r.setup.company = row["company"] ?? ""
+        r.setup.step = row["interview_step"]
         r.sessionId = row["session_id"]
         r.startedAt = row["started_at"]
         r.endedAt = row["ended_at"]

@@ -21,7 +21,7 @@ struct InterviewSettingsSections: View {
     var body: some View {
         Group {
             switch page {
-            case .interview: skillsSection; modelSection; privacySection
+            case .interview: skillsSection; modelSection; layoutSection; privacySection
             case .asking: hotkeySection; sendingSection; screenshotSection
             case .prompts: promptsSection
             case .codex: codexSection; usageSection
@@ -127,6 +127,24 @@ struct InterviewSettingsSections: View {
 
     // MARK: Model
 
+    // MARK: Layout (owner, 2026-10-02)
+
+    private var layoutSection: some View {
+        Section {
+            Picker("Captions and answers", selection: cfg.panelLayout) {
+                Text("Automatic (by window width)").tag(Config.Interview.PanelLayout.automatic)
+                Text("Side by side").tag(Config.Interview.PanelLayout.sideBySide)
+                Text("Stacked (answers on top)").tag(Config.Interview.PanelLayout.stacked)
+            }
+        } header: {
+            Text("Layout")
+        } footer: {
+            Text("Automatic puts them side by side from 820 pt wide and stacks them below that. Either way, "
+                 + "drag the border between them, or hide the captions from the top bar. Applied live.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
     private var modelSection: some View {
         Section {
             Picker("Model", selection: cfg.model) {
@@ -169,17 +187,31 @@ struct InterviewSettingsSections: View {
 
     private var hotkeySection: some View {
         Section {
-            HotkeyRecorder(hotkey: cfg.hotkey)
+            HotkeyRecorder(title: "Ask hotkey", hotkey: cfg.hotkey, defaultHotkey: .default,
+                           registration: GlobalHotkey.shared,
+                           other: ("Screenshot", screenshotHotkey))
+            HotkeyRecorder(title: "Screenshot hotkey", hotkey: cfg.screenshotHotkey, defaultHotkey: .defaultScreenshot,
+                           registration: GlobalHotkey.screenshot,
+                           other: ("Ask", Hotkey.resolve(env.config.interview.hotkey)))
         } header: {
-            Text("Hotkey")
+            Text("Hotkeys")
+        } footer: {
+            Text("Screenshot: drag to select an area of the screen; it's added to the current prompt and the "
+                 + "next Ask or Send takes it. Esc cancels; Space switches to picking a window. LocalCaption "
+                 + "hides while you select. Both hotkeys work in Interview mode, even while the call app has focus.")
+                .font(.caption).foregroundStyle(.secondary)
         }
+    }
+
+    private var screenshotHotkey: Hotkey {
+        Hotkey.resolve(env.config.interview.screenshotHotkey, fallback: .defaultScreenshot)
     }
 
     private var sendingSection: some View {
         Section {
             Picker("Send", selection: cfg.sendMode) {
                 Text("Everything since my last ask").tag(Config.Interview.SendMode.sinceLastAsk)
-                Text("The last few sentences").tag(Config.Interview.SendMode.lastSentences)
+                Text("The latest \(env.config.interview.clampedSendSentences) sentences").tag(Config.Interview.SendMode.lastSentences)
             }
             if env.config.interview.sendMode == .lastSentences {
                 Stepper(value: cfg.sendSentences, in: 1...20) {
@@ -210,7 +242,7 @@ struct InterviewSettingsSections: View {
             Text("Screenshots")
         } footer: {
             Text("When on, every screenshot you copy during an interview (⌘⌃⇧4) is added to the current "
-                 + "prompt — up to \(InterviewController.maxPendingImages). The next Ask (F8) or Send takes "
+                 + "prompt — up to \(InterviewController.maxPendingImages). The next Ask or Send takes "
                  + "them all to OpenAI. Images already on the clipboard when the interview opens are ignored; "
                  + "only images are read, never text.")
                 .font(.caption).foregroundStyle(.secondary)

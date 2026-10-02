@@ -3,9 +3,9 @@ import AppKit
 import UniformTypeIdentifiers
 import LocalCaptionKit
 
-/// The preparation panel (SPEC-13 §Preparation): set up the four parts — ① CV, ② JD, ③ mode,
-/// ④ optional live coding — pick the model and effort, then **Start preparation** runs the skills
-/// in that order. The four skills themselves are loaded in Settings → Interview → Skills.
+/// The preparation panel (SPEC-13 §Preparation): who and where (interviewee, company, step — they
+/// name the session), then the four parts — ① CV, ② JD, ③ mode, ④ optional live coding — pick the
+/// model and effort, then **Start preparation** runs the skills in that order. The four skills themselves are loaded in Settings → Interview → Skills.
 struct InterviewSetupSection: View {
     @ObservedObject var interview: InterviewController
     @ObservedObject var codex: CodexService
@@ -16,8 +16,11 @@ struct InterviewSetupSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            CodexStatusRow(codex: codex)
+            // Account details live in Settings → Codex; here only what blocks the interview.
+            if !codex.isReady || codex.signIn != nil || codex.signInError != nil { CodexStatusRow(codex: codex) }
             if !interview.allSkillsLoaded { missingSkillsBanner }
+
+            detailsBox
 
             part(1, "Discovery CV", step: .discoveryCV) {
                 HStack {
@@ -69,6 +72,7 @@ struct InterviewSetupSection: View {
                 }
             }
         }
+        .onChange(of: interview.draft) { _, _ in interview.detailsChanged() }
         .confirmationDialog("Start over?", isPresented: $confirmingStartOver) {
             Button("Discard the preparation", role: .destructive) {
                 Task { await interview.discardUnstarted(); interview.resetForNewInterview() }
@@ -76,6 +80,38 @@ struct InterviewSetupSection: View {
         } message: {
             Text("The steps run so far are deleted. Your uploaded CVs and skills stay.")
         }
+    }
+
+    // MARK: Interview details (owner, 2026-10-02)
+
+    private var detailsBox: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 6) {
+                Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+                    GridRow {
+                        Text("Interviewee").gridColumnAlignment(.trailing)
+                        TextField("Name", text: $interview.draft.candidate).textFieldStyle(.roundedBorder)
+                    }
+                    GridRow {
+                        Text("Company")
+                        TextField("Company", text: $interview.draft.company).textFieldStyle(.roundedBorder)
+                    }
+                    GridRow {
+                        Text("Step")
+                        Stepper(value: $interview.draft.step, in: 1...20) {
+                            Text("\(interview.draft.step)").monospacedDigit()
+                        }
+                    }
+                }
+                Text(interview.sessionName(on: Date()).map { "Session name: \($0)" }
+                     ?? "The session is named <interviewee>-<company>-<step>-<date>.")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            }
+            .padding(4)
+        } label: {
+            Text("Interview").font(.subheadline.weight(.semibold))
+        }
+        .disabled(interview.preparing)
     }
 
     // MARK: Model + Start preparation

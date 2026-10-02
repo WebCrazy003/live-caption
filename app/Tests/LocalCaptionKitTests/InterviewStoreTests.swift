@@ -20,6 +20,9 @@ final class InterviewStoreTests: XCTestCase {
                                 setup: .init(skillIds: ["s1"], documentIds: ["cv1"], jdTextInline: "JD text",
                                              instructions: "Be brief.", answerLength: "short"))
         r.setup.cvTitle = "Jane CV"
+        r.setup.candidate = "Jane"
+        r.setup.company = "Acme"
+        r.setup.step = 2
         r.cvText = "Jane Doe\nSwift."
         r.threadId = "thr1"
         r.captureSessionUUID = "cap-1"

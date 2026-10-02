@@ -356,7 +356,11 @@ and write defaults. Atomic writes (temp + rename).
 ```
 (Mic-related keys removed vs v1.)
 
-### 12.3 SQLite (metadata only)
+### 12.3 SQLite
+**2026-10-02 (owner):** everything is in the database — caption segments in `session_segments`,
+interview data in the `interviews*` tables (SPEC-11 §SQLite); the `.txt`/`.json` are an export.
+The rest of this section is the original v1 schema.
+
 Location `…/localcaption.db`. Swift: GRDB or SQLite.swift. WAL mode.
 
 ```sql
