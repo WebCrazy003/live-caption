@@ -114,8 +114,9 @@ Right of the captions in Interview mode (layout rules in SPEC-15). Top to bottom
   attachment and command.
 - Order is the user's: the panel suggests the sequence above but doesn't enforce it.
 - New interviews prefill the CV from the most recent interview (else the newest CV).
-- **New Session** discards an interview that never started recording; switching to a past
-  session in the sidebar does **not** (the active session and its interview survive).
+- **Start over** (in the setup, shown until recording starts) discards an interview that never
+  started — its folder and thread. Nothing else discards it: switching to a past session in the
+  sidebar keeps the active session and its interview.
 
 ## Prompts (Kit `InterviewPrompt`, golden-tested, shared with Windows)
 
