@@ -1,8 +1,12 @@
 import SwiftUI
 import LocalCaptionKit
 
-/// Settings → Interview (SPEC-15 §Settings → Interview). Every key is SPEC-11's `interview` group.
+/// The Interview Assist settings (SPEC-15 §Settings → Interview), one Settings tab per `Page`.
+/// Every key is SPEC-11's `interview` group.
 struct InterviewSettingsSections: View {
+    enum Page { case interview, asking, prompts, codex }
+
+    let page: Page
     @EnvironmentObject var env: AppEnvironment
     @ObservedObject var codex: CodexService
     @State private var showingLibrary = false
@@ -11,15 +15,12 @@ struct InterviewSettingsSections: View {
 
     var body: some View {
         Group {
-            codexSection
-            usageSection
-            modelSection
-            hotkeySection
-            sendingSection
-            screenshotSection
-            promptsSection
-            afterSection
-            privacySection
+            switch page {
+            case .interview: modelSection; afterSection; librarySection; privacySection
+            case .asking: hotkeySection; sendingSection; screenshotSection
+            case .prompts: promptsSection
+            case .codex: codexSection; usageSection
+            }
         }
         .sheet(isPresented: $showingLibrary) { LibraryView(library: env.library) }
     }
@@ -32,15 +33,25 @@ struct InterviewSettingsSections: View {
             LabeledContent("Codex path") {
                 TextField("Auto-detect", text: cfg.codexPath).multilineTextAlignment(.trailing)
             }
-            HStack {
-                Button("Check again") { Task { await codex.refresh() } }.disabled(codex.checking)
-                Button("Open interview library…") { showingLibrary = true }
-            }
+            Button("Check again") { Task { await codex.refresh() } }.disabled(codex.checking)
         } header: {
-            Text("Interview — Codex")
+            Text("Codex")
         } footer: {
             Text("Interview mode answers live questions with ChatGPT through the Codex app, with its own "
                  + "sign-in (separate from your Codex terminal). Codex is locked down: no files, commands or web.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: Library
+
+    private var librarySection: some View {
+        Section {
+            Button("Open interview library…") { showingLibrary = true }
+        } header: {
+            Text("Library")
+        } footer: {
+            Text("Your CVs, job descriptions, notes and interview skills.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -80,7 +91,7 @@ struct InterviewSettingsSections: View {
                 }
             }
         } header: {
-            Text("Interview — Plus usage")
+            Text("Plus usage")
         }
         .task { if codex.isReady { await codex.refreshUsage() } }
     }
@@ -111,7 +122,7 @@ struct InterviewSettingsSections: View {
             }
             .pickerStyle(.segmented)
         } header: {
-            Text("Interview — Model")
+            Text("Model & answers")
         } footer: {
             Text("Low effort answers fastest (about 1–2 s to first words with \(Config.Interview.recommendedModel)). "
                  + "Changes apply to the next interview you prepare.")
@@ -131,7 +142,7 @@ struct InterviewSettingsSections: View {
         Section {
             HotkeyRecorder(hotkey: cfg.hotkey)
         } header: {
-            Text("Interview — Hotkey")
+            Text("Hotkey")
         }
     }
 
@@ -154,7 +165,7 @@ struct InterviewSettingsSections: View {
                 Text("Queue the new question").tag(Config.Interview.BusyPolicy.queue)
             }
         } header: {
-            Text("Interview — Sending")
+            Text("What to send")
         } footer: {
             Text("The live, not-yet-final caption line is always included, so you can press right as the interviewer stops.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -167,7 +178,7 @@ struct InterviewSettingsSections: View {
             Toggle("Remove them from the clipboard after sending", isOn: cfg.clearClipboardImagesAfterSend)
                 .disabled(!env.config.interview.includeClipboardImages)
         } header: {
-            Text("Interview — Screenshots")
+            Text("Screenshots")
         } footer: {
             Text("Off by default. When on, each Ask also sends up to \(ClipboardImages.maxImages) images on the clipboard "
                  + "(⌘⌃⇧4 copies a screenshot) to OpenAI. Only images are read — never text.")
@@ -210,7 +221,7 @@ struct InterviewSettingsSections: View {
             }
             .buttonStyle(.borderless)
         } header: {
-            Text("Interview — Prompts")
+            Text("Prompts")
         }
     }
 
@@ -233,7 +244,7 @@ struct InterviewSettingsSections: View {
         Section {
             Toggle("Summarize when the interview ends", isOn: cfg.summarizeOnEnd)
         } header: {
-            Text("Interview — After the interview")
+            Text("After the interview")
         }
     }
 
@@ -246,7 +257,7 @@ struct InterviewSettingsSections: View {
             Button("Show the notice again next time") { env.config.interview.privacyAcknowledged = false }
                 .disabled(!env.config.interview.privacyAcknowledged)
         } header: {
-            Text("Interview — Privacy")
+            Text("Privacy")
         }
     }
 }
