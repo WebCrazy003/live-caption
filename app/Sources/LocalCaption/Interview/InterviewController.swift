@@ -175,9 +175,13 @@ final class InterviewController: ObservableObject {
     var activeProfile: Profile? { record?.activeProfile.flatMap(Profile.init(rawValue:)) }
     var liveCodingActive: Bool { record?.liveCodingActive ?? false }
 
+    /// The four skills must be loaded in Settings → Skills before an interview (owner, 2026-10-02).
+    var missingSkills: [Step] { Step.allCases.filter { skill(for: $0) == nil } }
+    var allSkillsLoaded: Bool { missingSkills.isEmpty }
+
     /// Why a step can't run right now, or nil when it can.
     func blocker(_ step: Step) -> String? {
-        if skill(for: step) == nil { return "Import the \(step.rawValue) skill in the library" }
+        if skill(for: step) == nil { return "Load the \(step.rawValue) skill in Settings → Skills" }
         switch step {
         case .discoveryCV: return draft.cvId == nil ? "Select or upload a CV" : nil
         case .discoveryJD:
@@ -198,8 +202,12 @@ final class InterviewController: ObservableObject {
         switch step {
         case .discoveryCV:
             if let id = draft.cvId {
-                attachments.append(.init(title: "MY CV", text: library.text(of: id)))
+                let text = library.text(of: id)
+                attachments.append(.init(title: "MY CV", text: text))
                 if record?.setup.documentIds.contains(id) == false { record?.setup.documentIds.insert(id, at: 0) }
+                // Snapshot it: history shows the CV the coach saw, whatever happens to the library.
+                record?.setup.cvTitle = library.document(id)?.title
+                if let folder { try? Data(text.utf8).write(to: folder.appendingPathComponent(InterviewFiles.cvName), options: .atomic) }
             }
         case .discoveryJD:
             attachments.append(.init(title: "JOB DESCRIPTION", text: draft.jobDescription))
@@ -219,6 +227,30 @@ final class InterviewController: ObservableObject {
     private func definitionSkillId(_ skill: InterviewLibraryIndex.Skill) -> String? {
         (record?.setup.skillIds.contains(skill.id) ?? true) ? nil : skill.id
     }
+
+    /// Part ④ checkbox: on runs `/live-coding-design`; off re-applies the current profile, which
+    /// (per the apply-instruction skill) replaces the live-coding activation.
+    func setLiveCoding(_ on: Bool) async {
+        if on {
+            guard !liveCodingActive else { return }
+            await run(.liveCoding)
+        } else if liveCodingActive, let profile = activeProfile {
+            await run(.applyInstruction, profile: profile)
+        }
+    }
+
+    /// History and wrap-up: the CV and JD this interview used.
+    var cvText: String {
+        if let folder, let s = try? String(contentsOf: folder.appendingPathComponent(InterviewFiles.cvName), encoding: .utf8) {
+            return s
+        }
+        return record?.setup.documentIds.first.map(library.text(of:)) ?? ""
+    }
+    var cvTitle: String? { record?.setup.cvTitle ?? record?.setup.documentIds.first.flatMap { library.document($0)?.title } }
+    var jdText: String { record?.setup.jdTextInline ?? "" }
+
+    /// After End interview: a follow-up prompt on the same thread (SPEC-15 §Ending the interview).
+    func sendFollowUp(_ text: String) async { await sendTyped(text) }
 
     /// Setup → Upload…: import a CV file into the library and select it.
     func uploadCV(from url: URL) throws {
@@ -243,9 +275,9 @@ final class InterviewController: ObservableObject {
 
     var isFinished: Bool { record?.endedAt != nil }
 
-    /// After Stop has saved the transcript: link the record to its session row, let a streaming
-    /// answer finish (≤ 30 s), then summarize on the same thread. Never delays the save.
-    func sessionSaved(sessionId: Int64?, transcript: String) async {
+    /// After End interview has saved the transcript: link the record to its session row and let a
+    /// streaming answer finish (≤ 30 s). Never delays the save. Summarizing is the user's choice.
+    func sessionSaved(sessionId: Int64?) async {
         guard record != nil else { return }
         record?.endedAt = TimeFormat.iso(Date())
         record?.sessionId = sessionId
@@ -264,13 +296,7 @@ final class InterviewController: ObservableObject {
             while isStreaming, Date() < grace { try? await Task.sleep(nanoseconds: 50_000_000) }
         }
 
-        if env.config.interview.summarizeOnEnd, record?.threadId != nil, !turns.isEmpty {
-            await generateSummary(transcript: transcript)
-        } else {
-            record?.summary.status = .skipped
-            persist()
-        }
-        await engine.shutdown()
+        // No automatic summary: End interview asks the user to summarize or send a follow-up.
     }
 
     /// The summary turn (SPEC-15 §Summary message) → `summary.md`. Retryable.

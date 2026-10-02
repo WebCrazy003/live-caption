@@ -12,6 +12,11 @@ layout, records), SPEC-12 (engine)
 
 ## Change log
 
+- **2026-10-02, later (owner):** the preparation panel is four numbered parts — ① Discovery CV
+  (includes the CV upload), ② Discovery JD (paste), ③ Apply instruction (one of three modes),
+  ④ Live coding & design (optional, a checkbox). The four skill `.md` files are loaded in
+  **Settings → Interview → Skills** and are required before an interview; Settings does not
+  handle CVs or JDs.
 - **2026-10-02 (owner):** no dedicated Prepare button — each skill step is run manually; the CV is
   picked or uploaded in the setup; the JD is pasted; `apply-instruction` takes `intro` / `tech` /
   `cultural` (shown as Behavioral); `live-coding-design` is optional and has no attachment;
@@ -32,7 +37,8 @@ layout, records), SPEC-12 (engine)
 
 ## Library
 
-Managed from **Settings → Interview → Library…** and from the interview setup ("Manage library…"). CVs can also be uploaded straight from the setup (below). Stored
+Skills are loaded in **Settings → Interview → Skills** (four fixed slots, below). CVs are uploaded
+in part ① of the preparation panel. There is no separate library window. Stored
 as SPEC-11 §On-disk layout.
 
 ### Skills
@@ -76,18 +82,30 @@ Right of the captions in Interview mode (layout rules in SPEC-15). Top to bottom
    `/apply-instruction <profile>`; the active one is highlighted; usable before and during the
    interview), **Live coding** (runs `/live-coding-design`; enabled once Tech is active, shown as
    active until another profile is applied), Setup toggle, Stop (while streaming).
-2. **Setup** (expanded before Start, collapsed once recording; the toggle reopens it):
+2. **Preparation** (expanded before Start, collapsed once recording; the toggle reopens it):
    - Codex status / sign-in / Plus usage (`CodexStatusRow`).
-   - **CV**: picker of library CVs + **Upload…** (imports a `.pdf`/`.md`/`.txt` as a CV and selects
-     it) + **Paste…**. Then **Run Discovery CV** — enabled when a CV is selected.
-   - **Job description**: a paste box. Then **Run Discovery JD** — enabled when it has text.
-   - Each step shows ✓ once it has completed, and can be run again.
-   - A step whose skill isn't in the library is disabled with "Import the `<name>` skill in the
-     library". Skills are found by slug: `discovery-cv`, `discovery-jd`, `apply-instruction`,
-     `live-coding-design`.
+   - If any of the four skills is missing: a banner naming them, with a link to Settings.
+   - **① Discovery CV** — CV picker (uploaded CVs) + **Upload CV…** (`.pdf`/`.md`/`.txt`, added and
+     selected) + **Run Discovery CV** (enabled when a CV is selected).
+   - **② Discovery JD** — paste box + **Run Discovery JD** (enabled when it has text).
+   - **③ Apply instruction** — three mode buttons *Intro · Tech · Behavioral*; choosing one applies
+     it (`/apply-instruction intro|tech|cultural`); the active one is marked.
+   - **④ Live coding & design (optional)** — a checkbox, enabled once Tech is active. Ticking runs
+     `/live-coding-design`; unticking re-applies the current profile (which, per the skill,
+     replaces the live-coding activation).
+   - Each part shows ✓ once done; ① and ② can be run again.
+   - **Start over** (until recording starts) discards the preparation.
+   - In Interview mode **Start is disabled until all four skills are loaded** (tooltip says why).
 3. **Conversation** — one card per turn (skill steps, asks, typed, quick, regenerate; SPEC-14).
    Skill cards are collapsed except the newest.
 4. **Bottom bar** — Ask, quick prompts, "Type to the coach…" (SPEC-14).
+
+### Settings → Interview → Skills
+
+Four fixed slots — `discovery-cv`, `discovery-jd`, `apply-instruction`, `live-coding-design` —
+each showing what's loaded, with **Load… / Replace… / Remove**. Load accepts a `SKILL.md`, any
+`.md` file, or a skill folder; the slot name becomes the skill's slug whatever the file was
+called, and loading again replaces the slot. All four are required before an interview.
 
 ### The thread
 

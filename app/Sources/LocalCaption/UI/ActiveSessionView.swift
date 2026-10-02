@@ -12,6 +12,7 @@ struct ActiveSessionView: View {
     @ObservedObject private var interview: InterviewController
     @State private var showingIssues = false
     @State private var showingPrivacyNotice = false
+    @State private var showingEndPrompt = false
     @State private var narrowTab: NarrowTab = .answers
 
     private enum NarrowTab: String, CaseIterable { case answers = "Answers", captions = "Captions" }
@@ -42,6 +43,10 @@ struct ActiveSessionView: View {
                 },
                 cancel: { showingPrivacyNotice = false })
         }
+        .sheet(isPresented: $showingEndPrompt) {
+            EndInterviewSheet(interview: interview, transcript: controller.committedText,
+                              dismiss: { showingEndPrompt = false })
+        }
         .onAppear {
             updateHotkey()
         }
@@ -51,13 +56,22 @@ struct ActiveSessionView: View {
 
     }
 
-    /// Stop saves the transcript exactly as before; only then does the interview link itself to
-    /// the saved session and summarize (SPEC-15 §Ending the interview).
+    /// Stop — "End interview" in Interview mode — saves the transcript exactly as before; then the
+    /// interview links itself to the saved session and asks: summarize, or a follow-up prompt?
+    /// (SPEC-15 §Ending the interview).
     private func stopSession() async {
         await controller.stop()
-        if isInterviewMode, controller.phase == .saved {
-            await interview.sessionSaved(sessionId: controller.savedSessionId, transcript: controller.committedText)
+        if isInterviewMode, controller.phase == .saved, interview.record != nil {
+            await interview.sessionSaved(sessionId: controller.savedSessionId)
+            showingEndPrompt = true
         }
+    }
+
+    /// In Interview mode the four skills must be loaded before Start (owner, 2026-10-02).
+    private var skillsBlockStart: Bool { isInterviewMode && !interview.allSkillsLoaded }
+
+    private var stopLabel: some View {
+        isInterviewMode ? Label("End interview", systemImage: "flag.checkered") : Label("Stop", systemImage: "stop.fill")
     }
 
     /// The Ask hotkey is live only on this screen, in Interview mode, until the session is
@@ -148,7 +162,7 @@ struct ActiveSessionView: View {
 
     @ViewBuilder private var captionArea: some View {
         if isInterviewMode && controller.phase == .saved && interview.isFinished {
-            InterviewReplayView(interview: interview, transcript: controller.committedText,
+            InterviewReplayView(interview: interview, interactive: true, transcript: controller.committedText,
                                 fontSize: Double(env.config.caption.fontSize))
         } else if isInterviewMode {
             interviewLayout
@@ -288,19 +302,19 @@ struct ActiveSessionView: View {
                         Label("Start", systemImage: "record.circle")
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(!controller.orchestrator.modelReady)
-                    .help("Start")
+                    .disabled(!controller.orchestrator.modelReady || skillsBlockStart)
+                    .help(skillsBlockStart ? "Load your 4 skills in Settings → Interview → Skills first" : "Start")
                 case .recording:
                     Button { Task { await controller.pause() } } label: { Label("Pause", systemImage: "pause.fill") }
                         .help("Pause")
-                    Button(role: .destructive) { Task { await stopSession() } } label: { Label("Stop", systemImage: "stop.fill") }
+                    Button(role: .destructive) { Task { await stopSession() } } label: { stopLabel }
                         .keyboardShortcut(".", modifiers: .command)
                         .help("Stop")
                 case .paused:
                     Button { Task { await controller.resume() } } label: { Label("Resume", systemImage: "play.fill") }
                         .buttonStyle(.borderedProminent)
                         .help("Resume")
-                    Button(role: .destructive) { Task { await stopSession() } } label: { Label("Stop", systemImage: "stop.fill") }
+                    Button(role: .destructive) { Task { await stopSession() } } label: { stopLabel }
                         .help("Stop")
                 case .preparing, .pausing, .saving:
                     EmptyView()

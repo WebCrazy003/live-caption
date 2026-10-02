@@ -21,7 +21,6 @@
     "interview.max_words": 400,
     "interview.include_clipboard_images": false,
     "interview.clear_clipboard_images_after_send": true,
-    "interview.busy_policy": "interrupt",
-    "interview.summarize_on_end": true
+    "interview.busy_policy": "interrupt"
   }
 }

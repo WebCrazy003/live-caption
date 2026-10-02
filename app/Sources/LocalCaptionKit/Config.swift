@@ -280,7 +280,6 @@ public struct Config: Codable, Equatable {
         public var includeClipboardImages: Bool
         public var clearClipboardImagesAfterSend: Bool
         public var busyPolicy: BusyPolicy
-        public var summarizeOnEnd: Bool
 
         public init(mode: Mode = .caption,
                     privacyAcknowledged: Bool = false,
@@ -298,8 +297,7 @@ public struct Config: Codable, Equatable {
                     maxWords: Int = 400,
                     includeClipboardImages: Bool = false,
                     clearClipboardImagesAfterSend: Bool = true,
-                    busyPolicy: BusyPolicy = .interrupt,
-                    summarizeOnEnd: Bool = true) {
+                    busyPolicy: BusyPolicy = .interrupt) {
             self.mode = mode; self.privacyAcknowledged = privacyAcknowledged
             self.engine = engine; self.codexPath = codexPath; self.model = model
             self.reasoningEffort = reasoningEffort; self.prepReasoningEffort = prepReasoningEffort
@@ -308,7 +306,7 @@ public struct Config: Codable, Equatable {
             self.sendMode = sendMode; self.sendSentences = sendSentences; self.maxWords = maxWords
             self.includeClipboardImages = includeClipboardImages
             self.clearClipboardImagesAfterSend = clearClipboardImagesAfterSend
-            self.busyPolicy = busyPolicy; self.summarizeOnEnd = summarizeOnEnd
+            self.busyPolicy = busyPolicy
         }
 
         /// The model to request: the configured one, or the S0 default.
@@ -332,7 +330,6 @@ public struct Config: Codable, Equatable {
             case includeClipboardImages = "include_clipboard_images"
             case clearClipboardImagesAfterSend = "clear_clipboard_images_after_send"
             case busyPolicy = "busy_policy"
-            case summarizeOnEnd = "summarize_on_end"
         }
 
         public init(from d: Decoder) throws {
@@ -361,7 +358,6 @@ public struct Config: Codable, Equatable {
             includeClipboardImages = try c.decodeIfPresent(Bool.self, forKey: .includeClipboardImages) ?? x.includeClipboardImages
             clearClipboardImagesAfterSend = try c.decodeIfPresent(Bool.self, forKey: .clearClipboardImagesAfterSend) ?? x.clearClipboardImagesAfterSend
             busyPolicy = try value(.busyPolicy, x.busyPolicy)
-            summarizeOnEnd = try c.decodeIfPresent(Bool.self, forKey: .summarizeOnEnd) ?? x.summarizeOnEnd
         }
     }
 }

@@ -17,6 +17,8 @@ public struct InterviewRecord: Codable, Equatable, Identifiable, Sendable {
         public var skillIds: [String]
         public var documentIds: [String]
         public var jdTextInline: String?
+        /// The CV's title when Discovery CV ran; its text is snapshotted to `cv.txt` in the folder.
+        public var cvTitle: String?
         public var instructions: String
         public var answerLength: String
         public init(company: String = "", role: String = "", skillIds: [String] = [], documentIds: [String] = [],
@@ -29,6 +31,7 @@ public struct InterviewRecord: Codable, Equatable, Identifiable, Sendable {
             case skillIds = "skill_ids"
             case documentIds = "document_ids"
             case jdTextInline = "jd_text_inline"
+            case cvTitle = "cv_title"
             case answerLength = "answer_length"
         }
     }
@@ -182,6 +185,8 @@ public enum InterviewFiles {
     public static let recordName = "interview.json"
     public static let summaryName = "summary.md"
     public static let attachmentsName = "attachments"
+    /// The CV as Discovery CV sent it, so history shows it even after the library changes.
+    public static let cvName = "cv.txt"
 
     /// `yyyy-MM-dd HHmm <name>`, made filesystem-safe on both platforms.
     public static func folderName(date: Date, name: String) -> String {

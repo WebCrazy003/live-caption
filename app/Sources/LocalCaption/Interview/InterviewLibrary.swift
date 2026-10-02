@@ -153,6 +153,33 @@ final class InterviewLibrary: ObservableObject {
         return SkillImport(skill: skill, ignored: ignored)
     }
 
+    /// Settings → Skills: load a `.md` file or a skill folder into a fixed slot (`discovery-cv`,
+    /// `discovery-jd`, `apply-instruction`, `live-coding-design`), replacing what was there. The
+    /// slot name becomes the slug, so steps find it whatever the file was called.
+    @discardableResult
+    func loadSkill(slot: String, from url: URL) throws -> SkillImport {
+        let previous = index.skills.filter { $0.slug == slot }
+        let result = try importSkill(from: url)          // slug follows the file's title for now
+        let fm = FileManager.default
+        for old in previous {
+            try? fm.removeItem(at: skillsDir.appendingPathComponent(old.slug))
+            index.skills.removeAll { $0.id == old.id }
+        }
+        guard let j = index.skills.firstIndex(where: { $0.id == result.skill.id }) else { return result }
+        if index.skills[j].slug != slot {
+            let to = skillsDir.appendingPathComponent(slot)
+            try? fm.removeItem(at: to)
+            try fm.moveItem(at: skillsDir.appendingPathComponent(index.skills[j].slug), to: to)
+            index.skills[j].slug = slot
+        }
+        save()
+        return SkillImport(skill: index.skills[j], ignored: result.ignored)
+    }
+
+    func removeSkill(slot: String) {
+        for s in index.skills where s.slug == slot { deleteSkill(s.id) }
+    }
+
     /// The skill's definition as a skill step sends it (SPEC-13 §Skill message).
     func promptSkill(_ id: String) -> InterviewPrompt.Skill? {
         guard let s = skill(id) else { return nil }

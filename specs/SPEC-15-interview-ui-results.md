@@ -48,17 +48,20 @@ today's transport bar). No control is ever clipped or hidden without an alternat
 
 ## Ending the interview
 
-- [ ] **Stop** runs the existing save path unchanged (transcript `.txt` + `.json` + DB row). The
-      transcript save **never waits** for anything in this spec.
+- [ ] In Interview mode the Stop button reads **End interview**. It runs the existing save path
+      unchanged (transcript `.txt` + `.json` + DB row); the save **never waits** for anything here.
 - [ ] Then the DB row gets `mode = 'interview'` and `interview_dir`; `interview.json` gets
       `session_id`, `ended_at`.
 - [ ] If an answer is streaming at Stop, let it finish (cap 30 s, then interrupt).
-- [ ] If `summarize_on_end`: send the **summary turn** on the same thread with
-      `prep_reasoning_effort`; stream into the replay view; write `summary.md`;
-      `summary.status = "done"`. Then shut the engine down.
-- [ ] Summary failure (offline, usage limit) → `summary.status = "failed"` and a **Generate summary**
-      button in Results and in the history viewer. Retrying restarts the engine and
-      `thread/resume`s the same `thread_id`.
+- [ ] Then a sheet asks (owner, 2026-10-02): **Summarize the interview**, or **send a follow-up
+      prompt** (e.g. "draft a thank-you email"), or *Not now*. Nothing is summarized
+      automatically (the `summarize_on_end` setting is gone).
+- [ ] The session area then shows the replay view in **wrap-up** mode: the conversation keeps a
+      follow-up box, and **Summarize interview** stays available. Follow-ups are `typed` turns on
+      the same thread.
+- [ ] Summarizing sends the **summary turn** with `prep_reasoning_effort`, streams into the replay
+      view, writes `summary.md`, `summary.status = "done"`. Failure → `failed`, retryable; from
+      history it first `thread/resume`s the same `thread_id`.
 
 ### Summary message (Kit `InterviewPrompt`, golden-tested)
 
@@ -90,7 +93,9 @@ Shown in the Active Session area after Stop in Interview mode, and when an inter
 from the sessions list (owner, 2026-10-02: "restores transcript / AI Q&A history, read only").
 
 - [ ] **Summary** on top (collapsible; streams in; **Generate summary** when missing or failed).
-- [ ] Below, side by side ≥ 700 pt: the **transcript** (left) and the **AI conversation** (right) —
+- [ ] Below, side by side ≥ 700 pt: **Transcript · CV · JD** (left, switchable; the CV is the
+      `cv.txt` snapshot Discovery CV saved, so it survives library changes) and the **AI
+      conversation** (right) —
       every turn as a read-only card: skill steps collapsed, questions and answers expanded,
       *Interrupted/Failed* marks, screenshot thumbnails, "what was sent". Narrower: a
       *Conversation / Transcript* toggle.
@@ -127,7 +132,6 @@ A new section in `SettingsView`, mirroring the existing sections. All keys are S
 | **Screenshots** | Include clipboard images (off by default, with a one-line privacy note); remove them from the clipboard after sending. |
 | **Prompts** | Custom instructions (multi-line, prefilled into each new interview); quick prompts editor (add, remove, reorder; label + text). |
 | **Library** | *Open library…* (SPEC-13). |
-| **After the interview** | Summarize when the interview ends. |
 | **Privacy** | What Interview mode sends to OpenAI, and *Show the notice again*. |
 
 Out-of-range values clamp, as in SPEC-07.

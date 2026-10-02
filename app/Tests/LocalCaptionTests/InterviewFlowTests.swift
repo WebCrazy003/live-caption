@@ -199,12 +199,64 @@ final class InterviewFlowTests: XCTestCase {
 
     func testStepBlockers() throws {
         let interview = InterviewController(env: env)
-        XCTAssertEqual(interview.blocker(.discoveryCV), "Import the discovery-cv skill in the library")
+        XCTAssertEqual(interview.blocker(.discoveryCV), "Load the discovery-cv skill in Settings → Skills")
+        XCTAssertFalse(interview.allSkillsLoaded)
+        XCTAssertEqual(interview.missingSkills.count, 4)
         try importSkills()
+        XCTAssertTrue(interview.allSkillsLoaded)
         XCTAssertEqual(interview.blocker(.discoveryCV), "Select or upload a CV")
         XCTAssertEqual(interview.blocker(.discoveryJD), "Paste the job description")
         XCTAssertNil(interview.blocker(.applyInstruction))
         XCTAssertEqual(interview.blocker(.liveCoding), "Apply the Tech profile first")
+    }
+
+    // MARK: Settings → Skills slots
+
+    func testSkillSlotsTakeAnyFileNameAndReplace() throws {
+        let src = tmp.appendingPathComponent("src")
+        let first = try write("---\nname: My CV analyser\n---\nv1", "whatever.md", in: src)
+        let loaded = try env.library.loadSkill(slot: "discovery-cv", from: first)
+        XCTAssertEqual(loaded.skill.slug, "discovery-cv", "the slot name becomes the slug")
+        XCTAssertEqual(env.library.promptSkill(loaded.skill.id)?.text, "---\nname: My CV analyser\n---\nv1")
+
+        let second = try write("---\nname: discovery-cv\n---\nv2", "SKILL.md", in: src.appendingPathComponent("folder"))
+        try env.library.loadSkill(slot: "discovery-cv", from: second.deletingLastPathComponent())
+        XCTAssertEqual(env.library.skills.filter { $0.slug == "discovery-cv" }.count, 1, "replaced, not added")
+        XCTAssertEqual(env.library.promptSkill(try XCTUnwrap(env.library.skill(slug: "discovery-cv")).id)?.text,
+                       "---\nname: discovery-cv\n---\nv2")
+
+        env.library.removeSkill(slot: "discovery-cv")
+        XCTAssertNil(env.library.skill(slug: "discovery-cv"))
+        let reloaded = InterviewLibrary(root: tmp.appendingPathComponent("library"))
+        XCTAssertTrue(reloaded.skills.isEmpty)
+    }
+
+    func testLiveCodingCheckboxAppliesAndReappliesTheProfile() async throws {
+        try importSkills()
+        let interview = InterviewController(env: env)
+        await interview.run(.applyInstruction, profile: .tech)
+        await interview.setLiveCoding(true)
+        XCTAssertTrue(interview.liveCodingActive)
+        await interview.setLiveCoding(false)
+        XCTAssertFalse(interview.liveCodingActive)
+        XCTAssertEqual(interview.activeProfile, .tech)
+        XCTAssertEqual(sentTexts.last, "/apply-instruction tech", "unticking re-applies the current profile")
+    }
+
+    func testDiscoveryCVSnapshotsTheCVForHistory() async throws {
+        try importSkills()
+        let interview = InterviewController(env: env)
+        let cv = try importCV()
+        interview.draft.cvId = cv
+        interview.draft.jobDescription = "Role X"
+        await interview.run(.discoveryCV)
+        await interview.run(.discoveryJD)
+        env.library.deleteDocument(cv)                  // the library changes later…
+        let folder = try XCTUnwrap(interview.folder)
+        let reopened = try InterviewController(env: env, existing: folder)
+        XCTAssertEqual(reopened.cvText, "Jane Doe\nSwift, 8 years.", "…history still shows the CV the coach saw")
+        XCTAssertEqual(reopened.cvTitle, "Jane CV")
+        XCTAssertEqual(reopened.jdText, "Role X")
     }
 
     // MARK: The coach without any step

@@ -108,8 +108,9 @@ Mode = Interview
                step has, so Ask works with no setup at all
   → Ask (F8):  AskSelection(text since last ask | last N sentences) + clipboard images
                → turn/start on the same thread → answer streams into the Answers panel
-  → Stop:      transcript saved as today
-               → summary turn on the same thread → summary.md → read-only replay
+  → End:       "End interview" (Stop in Interview mode) saves the transcript as today, then
+               asks: Summarize (summary turn → summary.md) or a follow-up prompt — both
+               on the same thread; nothing is summarized automatically
 ```
 
 ---
@@ -140,7 +141,6 @@ a string this build doesn't know falls back to that key's default (no repair); a
 | `include_clipboard_images` | bool | `false` | Read images from the clipboard on Ask. |
 | `clear_clipboard_images_after_send` | bool | `true` | Remove those images from the clipboard once sent. |
 | `busy_policy` | `"interrupt"` \| `"queue"` | `"interrupt"` | What an Ask does while an answer is still streaming. |
-| `summarize_on_end` | bool | `true` | Run the summary turn on Stop. |
 
 **Default `quick_prompts`:** `Shorter` → "Make that answer shorter — two sentences I can say.",
 `Example` → "Give me one concrete example from my CV that supports that answer.",

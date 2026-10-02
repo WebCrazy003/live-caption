@@ -41,11 +41,16 @@ final class InterviewResultsTests: XCTestCase {
         return (interview, try XCTUnwrap(row.id))
     }
 
-    func testStopLinksTheSessionAndSummarizesOnTheSameThread() async throws {
+    func testEndLinksTheSessionAndSummarizesOnlyWhenAsked() async throws {
         let (interview, rowId) = try await runInterview()
         engine.reply = { text in text.hasPrefix("INTERVIEW FINISHED") ? [.completed(self.summaryMarkdown)] : [] }
+        let sentBefore = engine.sent.count
 
-        await interview.sessionSaved(sessionId: rowId, transcript: "Thanks for joining. Why us?")
+        await interview.sessionSaved(sessionId: rowId)
+        XCTAssertEqual(engine.sent.count, sentBefore, "ending never summarizes on its own")
+        XCTAssertEqual(interview.record?.summary.status, .pending)
+
+        await interview.generateSummary(transcript: "Thanks for joining. Why us?")
 
         let folder = try XCTUnwrap(interview.folder)
         XCTAssertEqual(try String(contentsOf: folder.appendingPathComponent("summary.md"), encoding: .utf8), summaryMarkdown)
@@ -59,7 +64,6 @@ final class InterviewResultsTests: XCTestCase {
         XCTAssertEqual(summaryTurn.threadId, "thr1", "prep, asks and summary share one thread")
         XCTAssertEqual(summaryTurn.input, [.text(InterviewPrompt.summary(transcript: "Thanks for joining. Why us?"))])
         XCTAssertEqual(summaryTurn.effort, "medium", "summary uses prep_reasoning_effort")
-        XCTAssertEqual(engine.shutdowns, 1)
 
         let row = try XCTUnwrap(env.store.fetch(id: rowId))
         XCTAssertEqual(row.mode, "interview")
@@ -68,19 +72,22 @@ final class InterviewResultsTests: XCTestCase {
         XCTAssertTrue(interview.isFinished)
     }
 
-    func testSummaryOffIsSkipped() async throws {
-        env.config.interview.summarizeOnEnd = false
+    func testFollowUpAfterEndGoesToTheSameThread() async throws {
         let (interview, rowId) = try await runInterview()
-        let sentBefore = engine.sent.count
-        await interview.sessionSaved(sessionId: rowId, transcript: "x")
-        XCTAssertEqual(engine.sent.count, sentBefore)
-        XCTAssertEqual(interview.record?.summary.status, .skipped)
+        await interview.sessionSaved(sessionId: rowId)
+        engine.reply = { _ in [.completed("Dear Alex, thank you…")] }
+        await interview.sendFollowUp("Draft a thank-you email")
+        XCTAssertEqual(engine.sent.last?.threadId, "thr1")
+        XCTAssertEqual(interview.turns.last?.kind, .typed)
+        XCTAssertEqual(interview.turns.last?.answer, "Dear Alex, thank you…")
+        XCTAssertTrue(interview.isFinished)
     }
 
     func testFailedSummaryCanBeGeneratedLater() async throws {
         let (interview, rowId) = try await runInterview()
         engine.reply = { _ in [.failed(.network("offline"), partial: "")] }
-        await interview.sessionSaved(sessionId: rowId, transcript: "x")
+        await interview.sessionSaved(sessionId: rowId)
+        await interview.generateSummary(transcript: "x")
         XCTAssertEqual(interview.record?.summary.status, .failed)
         XCTAssertNotNil(interview.summaryError)
 
@@ -91,9 +98,8 @@ final class InterviewResultsTests: XCTestCase {
     }
 
     func testReopeningFromHistoryResumesTheThreadBeforeSummarizing() async throws {
-        env.config.interview.summarizeOnEnd = false
         let (live, rowId) = try await runInterview()
-        await live.sessionSaved(sessionId: rowId, transcript: "x")
+        await live.sessionSaved(sessionId: rowId)
         let folder = try XCTUnwrap(live.folder)
 
         let reopened = try InterviewController(env: env, existing: folder)

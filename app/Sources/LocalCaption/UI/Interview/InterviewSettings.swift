@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 import LocalCaptionKit
 
 /// The Interview Assist settings (SPEC-15 §Settings → Interview), one Settings tab per `Page`.
@@ -9,20 +11,20 @@ struct InterviewSettingsSections: View {
     let page: Page
     @EnvironmentObject var env: AppEnvironment
     @ObservedObject var codex: CodexService
-    @State private var showingLibrary = false
+    @State private var skillError: String?
+    @State private var skillNotice: String?
 
     private var cfg: Binding<Config.Interview> { $env.config.interview }
 
     var body: some View {
         Group {
             switch page {
-            case .interview: modelSection; afterSection; librarySection; privacySection
+            case .interview: skillsSection; modelSection; privacySection
             case .asking: hotkeySection; sendingSection; screenshotSection
             case .prompts: promptsSection
             case .codex: codexSection; usageSection
             }
         }
-        .sheet(isPresented: $showingLibrary) { LibraryView(library: env.library) }
     }
 
     // MARK: Codex
@@ -44,15 +46,22 @@ struct InterviewSettingsSections: View {
         }
     }
 
-    // MARK: Library
+    // MARK: Skills (required before an interview)
 
-    private var librarySection: some View {
+    private var skillsSection: some View {
         Section {
-            Button("Open interview library…") { showingLibrary = true }
+            ForEach(InterviewController.Step.allCases) { step in
+                SkillSlotRow(step: step, library: env.library, error: $skillError, notice: $skillNotice)
+            }
+            if let message = skillError ?? skillNotice {
+                Text(message).font(.caption).foregroundStyle(skillError != nil ? .orange : .secondary)
+            }
         } header: {
-            Text("Library")
+            Text("Skills")
         } footer: {
-            Text("Your CVs, job descriptions, notes and interview skills.")
+            Text("Load all four before an interview: a SKILL.md file, any .md file, or a skill folder. "
+                 + "Its text is sent the first time that step runs. CVs are uploaded and JDs pasted in "
+                 + "the preparation panel, not here.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -241,14 +250,6 @@ struct InterviewSettingsSections: View {
 
     // MARK: After + privacy
 
-    private var afterSection: some View {
-        Section {
-            Toggle("Summarize when the interview ends", isOn: cfg.summarizeOnEnd)
-        } header: {
-            Text("After the interview")
-        }
-    }
-
     private var privacySection: some View {
         Section {
             Text("Interview mode sends your CV, the job description and your skills (when you run a skill step), "
@@ -259,6 +260,51 @@ struct InterviewSettingsSections: View {
                 .disabled(!env.config.interview.privacyAcknowledged)
         } header: {
             Text("Privacy")
+        }
+    }
+}
+
+/// One Settings → Skills slot: what's loaded, and Load / Replace / Remove.
+private struct SkillSlotRow: View {
+    let step: InterviewController.Step
+    @ObservedObject var library: InterviewLibrary
+    @Binding var error: String?
+    @Binding var notice: String?
+
+    var body: some View {
+        let skill = library.skill(slug: step.rawValue)
+        HStack(spacing: 8) {
+            Image(systemName: skill == nil ? "circle.dashed" : "checkmark.circle.fill")
+                .foregroundStyle(skill == nil ? Color.orange : Color.green)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(step.rawValue).font(.system(.body, design: .monospaced))
+                Text(skill.map { "\($0.title) · \($0.chars.formatted()) characters" } ?? (step == .liveCoding ? "Not loaded (used only if you tick it)" : "Not loaded"))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(skill == nil ? "Load…" : "Replace…") { load() }
+            if skill != nil {
+                Button(role: .destructive) { library.removeSkill(slot: step.rawValue) } label: { Image(systemName: "trash") }
+                    .buttonStyle(.borderless).help("Remove")
+            }
+        }
+    }
+
+    private func load() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText, .folder]
+        panel.message = "Choose the \(step.rawValue) skill — a SKILL.md / .md file or its folder"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let result = try library.loadSkill(slot: step.rawValue, from: url)
+            error = nil
+            notice = result.ignored.isEmpty ? "Loaded \(step.rawValue)."
+                : "Loaded \(step.rawValue). Left out (Codex can't use them): \(result.ignored.joined(separator: ", "))"
+        } catch let e {
+            notice = nil
+            error = e.localizedDescription
         }
     }
 }
