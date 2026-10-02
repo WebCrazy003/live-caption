@@ -1,6 +1,7 @@
 using LocalCaption.Core;
 using LocalCaption.Core.Data;
 using LocalCaption.Core.Transcripts;
+using LocalCaption.Interview;
 
 namespace LocalCaption.Session;
 
@@ -34,6 +35,9 @@ public sealed class AppEnvironment : IDisposable
         if (store is null)
         {
             Store = new Store();
+            // An answer that was streaming when the app last closed will never finish, and its
+            // outbox screenshots were never deleted. Never throws (it logs instead).
+            InterviewRecovery.SweepInterrupted(Store, AppPaths.Outbox);
             // Sessions saved before captions moved into the database get them copied in from
             // their transcript files (specs/SPEC-16 §2.3). Off the UI thread and on its own
             // connection, because a file on an offline network drive can block for seconds.
@@ -131,6 +135,10 @@ public sealed class AppEnvironment : IDisposable
                                 Config.General.TranscriptFolder, Config.Caption.ShowTimestamps);
         }
         catch (Exception) { /* saved; only the export is missing */ }
+
+        // A capture recorded in Interview mode: attach its interview to the recovered session.
+        // Never throws (it logs instead).
+        InterviewRecovery.Link(Store, session.SessionId, saved.Id, start);
 
         Journal.Remove(session.Path);
         _pending.RemoveAll(p => p.Path == session.Path);

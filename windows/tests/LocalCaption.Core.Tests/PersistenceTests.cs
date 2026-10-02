@@ -339,4 +339,15 @@ public sealed class PersistenceTests : IDisposable
         Assert.Single(SessionFiles.DeleteTranscript(txt));
         Assert.False(File.Exists(txt));
     }
+
+    [Fact]
+    public void WriteAllBytesAtomicCreatesTheFolderAndReplacesWhole()
+    {
+        var path = Path.Combine(_dir, "outbox", "nested", "A.png");
+        Files.WriteAllBytesAtomic(path, [1, 2, 3]);
+        Assert.Equal([1, 2, 3], File.ReadAllBytes(path));
+        Files.WriteAllBytesAtomic(path, [9]);
+        Assert.Equal([9], File.ReadAllBytes(path));
+        Assert.Equal(["A.png"], Directory.GetFiles(Path.GetDirectoryName(path)!).Select(Path.GetFileName));   // no temp left
+    }
 }

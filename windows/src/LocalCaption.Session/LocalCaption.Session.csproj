@@ -4,6 +4,7 @@
     <ProjectReference Include="..\LocalCaption.Asr\LocalCaption.Asr.csproj" />
     <ProjectReference Include="..\LocalCaption.Audio\LocalCaption.Audio.csproj" />
     <ProjectReference Include="..\LocalCaption.Core\LocalCaption.Core.csproj" />
+    <ProjectReference Include="..\LocalCaption.Interview\LocalCaption.Interview.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

@@ -31,6 +31,32 @@ public static class Files
     }
 
     /// <summary>
+    /// Write bytes atomically (Swift's <c>Data.write(to:options: .atomic)</c>): the directory is
+    /// created, the bytes go to a temp file, which is then renamed over the destination — a
+    /// reader never sees half a file.
+    /// </summary>
+    /// <exception cref="IOException">The file or its directory cannot be written.</exception>
+    /// <exception cref="UnauthorizedAccessException">Access is denied.</exception>
+    public static void WriteAllBytesAtomic(string path, byte[] contents)
+    {
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+
+        var temp = path + ".tmp";
+        try
+        {
+            File.WriteAllBytes(temp, contents);
+            File.Move(temp, path, overwrite: true);
+        }
+        catch
+        {
+            try { File.Delete(temp); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+            throw;
+        }
+    }
+
+    /// <summary>
     /// Keep an unreadable file as <c>&lt;name&gt;.bak-&lt;stamp&gt;</c> before it is replaced, so
     /// a repair never destroys the user's data. A backup that already exists is kept.
     /// </summary>

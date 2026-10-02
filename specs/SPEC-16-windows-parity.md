@@ -1,6 +1,6 @@
 # SPEC-16 — Windows parity: what macOS has that Windows does not
 
-**Status:** 🟡 In progress — everything that can be built and verified on the Mac is done or under way; Windows-only work remains (see *Progress*) · **Written:** 2026-10-02, against `main` at `6608d48` (the merge of
+**Status:** ⏸ Paused by the owner — everything that can be built and verified on the Mac is done; Windows-only work remains (see *Progress* and [docs/WINDOWS-STATUS.md](../docs/WINDOWS-STATUS.md)) · **Written:** 2026-10-02, against `main` at `6608d48` (the merge of
 `windows/stage-b`) · **Depends on:** [SPEC-WINDOWS.md](../SPEC-WINDOWS.md) (the port, B0–B6 done),
 [SPEC-11](SPEC-11-interview-assist.md)–[15](SPEC-15-interview-ui-results.md) (Interview Assist on macOS)
 
@@ -27,7 +27,7 @@ it can be looked at as it is made. Testing is local on the G15 only — no remot
 | P0 shared DB, captions in DB, config keys, auto-copy fix, `.gitattributes` | ✅ done (`4f20c7e`) | Core `Store`, `TranscriptFileReader`, `SessionFiles`; Session save/recover |
 | P1 Kit port + shared vectors (hotkey, ask, prompts, codex, records, library) | ✅ done (`3f4c36f`, `7d42846`) | `LocalCaption.Core.Interview`, `Data/InterviewStore.cs`; 75 new shared vector cases |
 | P2 Codex engine, CV/skill library, PDF text | ✅ done (`369bc84`) | new `LocalCaption.Interview` project (net10.0) |
-| Interview flow logic (§5.2–§5.5 without the screens) | 🟡 in progress on the Mac | `LocalCaption.Interview/InterviewController` |
+| Interview flow logic (§5.2–§5.5 without the screens) | ✅ done | `LocalCaption.Interview/InterviewController`, `InterviewRecovery` |
 | P2 Win32: global hotkeys (§4.2), region screenshot (§4.3), clipboard images (§4.4) | ⬜ on the G15 | implement the controller's `IScreenCapture` / `IClipboardImages` |
 | P3 WPF screens (§5.1–§5.7) | ⬜ on the G15 | bind to `InterviewController`, `CodexService`, `InterviewLibrary` |
 | P4 caption-side C1–C12 | C10 ✅ (`7d42846`); C7 is the Settings input limits (the segmenter already enforces the Mac's own); rest ⬜ on the G15 | |

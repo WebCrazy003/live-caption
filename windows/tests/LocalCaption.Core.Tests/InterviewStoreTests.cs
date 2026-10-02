@@ -184,4 +184,55 @@ public sealed class InterviewStoreTests : IDisposable
         Assert.Throws<SqliteException>(() => _store.SaveInterview(broken));
         Assert.Equal(Json(r), Json(_store.Interview(r.Id)));   // nothing of the failed save remains
     }
+    [Fact]
+    public void LatestInterviewIsTheNewest()
+    {
+        Assert.Null(_store.LatestInterview());
+        var older = Sample();
+        older.CreatedAt = "2026-10-01T09:00:00Z";
+        var newer = Sample();
+        var sameTimeLater = Sample();   // same created_at as `newer`, saved after it: rowid breaks the tie
+        _store.SaveInterview(newer);
+        _store.SaveInterview(older);
+        _store.SaveInterview(sameTimeLater);
+        Assert.Equal(_store.AllInterviews()[0].Id, _store.LatestInterview()?.Id);
+        Assert.Equal(sameTimeLater.Id, _store.LatestInterview()?.Id);
+        Assert.Equal(Json(sameTimeLater), Json(_store.LatestInterview()));   // turns included
+    }
+
+    [Fact]
+    public void InterviewsByCaptureMatchAnyCaseAndOnlyUnlinked()
+    {
+        var capture = Guid.NewGuid();
+        var mac = Sample();
+        mac.CaptureSessionUuid = capture.ToString("D").ToUpperInvariant();   // as the Mac writes it
+        var linked = Sample();
+        linked.CaptureSessionUuid = mac.CaptureSessionUuid;
+        linked.SessionId = _store.Insert(new SessionRecord { SessionName = "S", CreatedAt = "2026-10-02T09:00:00Z" }).Id;
+        var other = Sample();
+        other.CaptureSessionUuid = Guid.NewGuid().ToString("D");
+        _store.SaveInterview(mac);
+        _store.SaveInterview(linked);
+        _store.SaveInterview(other);
+
+        Assert.Equal([mac.Id], _store.InterviewsByCapture(capture.ToString("D")).Select(i => i.Id));   // lower-case query
+        Assert.Equal([mac.Id], _store.InterviewsByCapture(capture.ToString("D").ToUpperInvariant()).Select(i => i.Id));
+        Assert.Empty(_store.InterviewsByCapture(Guid.NewGuid().ToString("D")));
+        Assert.Equal(Json(mac), Json(_store.InterviewsByCapture(capture.ToString("D"))[0]));
+    }
+
+    [Fact]
+    public void InterviewsInFlightAreTheOnesWithAStreamingTurnOrARunningSummary()
+    {
+        var done = Sample();
+        var streaming = Sample();
+        streaming.Turns[^1].Status = InterviewTurnStatus.Streaming;
+        var summarizing = Sample();
+        summarizing.Summary.Status = InterviewStatus.Running;
+        var failedSummary = Sample();
+        failedSummary.Summary.Status = InterviewStatus.Failed;
+        foreach (var r in new[] { done, streaming, summarizing, failedSummary }) _store.SaveInterview(r);
+
+        Assert.Equal(new[] { streaming.Id, summarizing.Id }.Order(), _store.InterviewsInFlight().Select(i => i.Id).Order());
+    }
 }

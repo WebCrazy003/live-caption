@@ -134,6 +134,36 @@ public sealed partial class Store
     public IReadOnlyList<InterviewRecord> AllInterviews() =>
         Interviews("SELECT * FROM interviews ORDER BY created_at DESC, rowid DESC", null);
 
+    /// <summary>The newest interview (the first of <see cref="AllInterviews"/>), or null when there is none.</summary>
+    public InterviewRecord? LatestInterview() =>
+        Interviews("SELECT * FROM interviews ORDER BY created_at DESC, rowid DESC LIMIT 1", null).FirstOrDefault();
+
+    /// <summary>
+    /// The interviews recorded alongside capture <paramref name="captureSessionUuid"/> that no
+    /// saved session claims yet (<c>session_id IS NULL</c>), newest first. The uuid matches
+    /// whatever its case: the Mac writes <c>uuidString</c> upper-case.
+    /// </summary>
+    public IReadOnlyList<InterviewRecord> InterviewsByCapture(string captureSessionUuid) =>
+        Interviews("""
+            SELECT * FROM interviews
+            WHERE capture_session_uuid = $key COLLATE NOCASE AND session_id IS NULL
+            ORDER BY created_at DESC, rowid DESC
+            """, captureSessionUuid);
+
+    /// <summary>
+    /// The interviews a quit or crash may have cut off: a turn still <c>streaming</c>, or a
+    /// summary still <c>running</c> — what the launch sweep fails. (A running prep is not
+    /// stored: its status is not a column.)
+    /// </summary>
+    public IReadOnlyList<InterviewRecord> InterviewsInFlight() =>
+        Interviews($"""
+            SELECT * FROM interviews
+            WHERE summary_status = '{InterviewRecord.Raw(InterviewStatus.Running)}'
+               OR id IN (SELECT interview_id FROM interview_turns
+                         WHERE status = '{InterviewRecord.Raw(InterviewTurnStatus.Streaming)}')
+            ORDER BY created_at DESC, rowid DESC
+            """, null);
+
     /// <summary>Deletes the interview and, by cascade, its turns and its screenshots.</summary>
     public void DeleteInterview(string id)
     {

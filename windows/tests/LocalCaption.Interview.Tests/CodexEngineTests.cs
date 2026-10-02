@@ -104,6 +104,18 @@ public sealed class CodexEngineTests : IDisposable
         while (!condition() && DateTime.UtcNow < deadline) await Task.Delay(10);
     }
 
+    private static async Task<EngineStatus> StatusUntil(CodexAppServerEngine e, Func<EngineStatus, bool> done)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        var status = await e.StatusAsync();
+        while (!done(status) && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(10);
+            status = await e.StatusAsync();
+        }
+        return status;
+    }
+
     private static IReadOnlyList<CodexRpc.Input> Text(string s) => [new CodexRpc.Input.Text(s)];
 
     // ── Tests ───────────────────────────────────────────────────────────────────────────
@@ -306,13 +318,15 @@ public sealed class CodexEngineTests : IDisposable
     {
         var e = Engine(s => Healthy(s));
         Assert.True((await e.StatusAsync()).IsReady);
+        // Poll the status rather than sleeping: the engine notices a crash on its reader, and how
+        // soon that runs depends on the machine, not on a fixed delay.
         Server(0).Crash();
-        await WaitUntil(() => false, 0.1);
-        Assert.True((await e.StatusAsync()).IsReady);
+        var status = await StatusUntil(e, s => s.IsReady && ServerCount == 2);
+        Assert.True(status.IsReady);
         Assert.Equal(2, ServerCount);
         Server(1).Crash();
-        await WaitUntil(() => false, 0.1);
-        Assert.Equal(new EngineStatus.Failed("Codex restarted — press Ask again."), await e.StatusAsync());
+        status = await StatusUntil(e, s => s is EngineStatus.Failed);
+        Assert.Equal(new EngineStatus.Failed("Codex restarted — press Ask again."), status);
         Assert.Equal(2, ServerCount); // no third launch
     }
 
