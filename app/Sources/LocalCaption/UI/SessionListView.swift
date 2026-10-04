@@ -148,9 +148,12 @@ struct SessionListView: View {
 
     private func delete(_ rec: SessionRecord, alsoFile: Bool, alsoInterview: Bool = false) {
         guard let id = rec.id else { return }
+        // Read the interviews first: deleting the session sets their session_id to NULL, after
+        // which they can no longer be found and would be left behind.
+        let linked = alsoInterview ? ((try? env.store.interviews(sessionId: id)) ?? []) : []
         try? env.store.delete(id: id)
         if alsoFile, let path = rec.transcriptFile { SessionFiles.deleteTranscript(atTxtPath: path) }
-        if alsoInterview, let saved = try? env.store.interview(sessionId: id) {
+        for saved in linked {
             // Rows, turns and screenshots go together; the Codex thread is archived too, so the CV
             // doesn't linger in its session store (SPEC-12 §Threads & turns).
             try? env.store.deleteInterview(id: saved.id)

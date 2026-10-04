@@ -126,6 +126,15 @@ extension Store {
         }
     }
 
+    /// Every interview linked to a session, newest first. Read it BEFORE deleting the session:
+    /// `interviews.session_id` is `ON DELETE SET NULL`, so afterwards the link is gone.
+    public func interviews(sessionId: Int64) throws -> [InterviewRecord] {
+        try dbQueue.read { db in
+            try Row.fetchAll(db, sql: "SELECT * FROM interviews WHERE session_id = ? ORDER BY created_at DESC, rowid DESC",
+                             arguments: [sessionId]).map { try Self.record($0, db) }
+        }
+    }
+
     /// Every interview, newest first.
     public func allInterviews() throws -> [InterviewRecord] {
         try dbQueue.read { db in

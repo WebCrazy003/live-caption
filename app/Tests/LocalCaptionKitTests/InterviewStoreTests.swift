@@ -82,6 +82,25 @@ final class InterviewStoreTests: XCTestCase {
         XCTAssertNil(try store.interview(id: r.id)?.sessionId, "deleting the session keeps the interview, unlinked")
     }
 
+    /// "Delete Session and Interview Data" must find every interview of the session before the
+    /// session row goes — afterwards `session_id` is NULL and they would be left behind.
+    func testEveryInterviewOfASessionIsFoundBeforeItIsDeleted() throws {
+        let session = try store.insert(SessionRecord(sessionName: "Interview 1", createdAt: "2026-10-02T09:00:00Z"))
+        let id = try XCTUnwrap(session.id)
+        var older = sample(), newer = sample()
+        older.sessionId = id; older.createdAt = "2026-10-02T08:00:00Z"
+        newer.sessionId = id
+        try store.saveInterview(older)
+        try store.saveInterview(newer)
+
+        let linked = try store.interviews(sessionId: id)
+        XCTAssertEqual(linked.map(\.id), [newer.id, older.id])
+        try store.delete(id: id)
+        XCTAssertEqual(try store.interviews(sessionId: id), [], "the link is gone once the session is deleted")
+        for r in linked { try store.deleteInterview(id: r.id) }
+        XCTAssertEqual(try store.allInterviews(), [])
+    }
+
     func testLegacyFolderIsImportedOnce() throws {
         var r = sample()
         r.turns[1].images = ["attachments/2-1.png"]
