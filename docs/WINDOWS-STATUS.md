@@ -4,6 +4,8 @@ As of 2026-10-02 · Live copy: https://claude.ai/code/artifact/6e02595d-07eb-459
 
 ## Summary
 
+**What to do next is [specs/SPEC-17-windows-bring-up.md](../specs/SPEC-17-windows-bring-up.md)** — the step-by-step bring-up on a Windows PC.
+
 Work on the Windows version is paused at the owner's request. The shared groundwork and the interview logic that can be tested on the Mac are done, committed and pushed; nothing Windows-only (hotkeys, screen capture, clipboard, screens) has been started.
 
 - **Committed and pushed to `main`:** everything, including the interview flow logic and the status doc (`docs/WINDOWS-STATUS.md`).

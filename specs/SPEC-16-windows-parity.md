@@ -1,6 +1,6 @@
 # SPEC-16 — Windows parity: what macOS has that Windows does not
 
-**Status:** 🟡 Drafted — every piece is written and compiles; nothing Windows-only has run yet. Next: the smoke test on a Windows PC; see *Progress* and [docs/WINDOWS-STATUS.md](../docs/WINDOWS-STATUS.md) · **Written:** 2026-10-02, against `main` at `6608d48` (the merge of
+**Status:** 🟡 Drafted — every piece is written and compiles; nothing Windows-only has run yet. Next: [SPEC-17](SPEC-17-windows-bring-up.md), the bring-up on a Windows PC; see *Progress* and [docs/WINDOWS-STATUS.md](../docs/WINDOWS-STATUS.md) · **Written:** 2026-10-02, against `main` at `6608d48` (the merge of
 `windows/stage-b`) · **Depends on:** [SPEC-WINDOWS.md](../SPEC-WINDOWS.md) (the port, B0–B6 done),
 [SPEC-11](SPEC-11-interview-assist.md)–[15](SPEC-15-interview-ui-results.md) (Interview Assist on macOS)
 
