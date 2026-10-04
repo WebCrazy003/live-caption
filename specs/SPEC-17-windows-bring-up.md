@@ -43,13 +43,9 @@
 ## 2. Setup (once per machine)
 
 1. **.NET 10 SDK** (`winget install Microsoft.DotNet.SDK.10`), Git, and `git pull` on `main`.
-2. **Logs you can see.** The app writes its diagnostics (Codex, hotkeys, screenshot, clipboard,
-   speech fallback) to `System.Diagnostics.Trace`, and **no listener writes them to a file yet**.
-   Before W2, do one of:
-   - run [Sysinternals DebugView](https://learn.microsoft.com/sysinternals/downloads/debugview)
-     (captures `Trace` output), or
-   - better, add a file listener at startup — `%LOCALAPPDATA%\LocalCaption\logs\app.log`,
-     rotated at a few MB — and make it the first commit of this bring-up.
+2. **Logs.** The app writes its diagnostics (Codex, hotkeys, screenshot, clipboard, speech
+   fallback) to `%LOCALAPPDATA%\LocalCaption\logs\app.log`; the previous run's is `app.log.1`.
+   Keep it open while testing. Codex's own stderr is `interview\codex.log`.
 3. **Codex CLI** (Interview mode only): install Node.js LTS, then `npm install -g @openai/codex`;
    `codex --version` must print **0.159.3 or newer**. Do **not** sign in from a terminal: the app
    uses its own `CODEX_HOME` and signs in from Settings → Codex.

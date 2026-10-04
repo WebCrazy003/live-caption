@@ -59,6 +59,7 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        LocalCaption.Core.FileLog.Start();
         // First, before any window or any file is touched. The installer re-runs this
         // executable with its own arguments to perform install, update and uninstall steps,
         // and this is what services them — anything done before it would run during those
