@@ -12,7 +12,10 @@ public sealed class FileLogTests
         {
             FileLog.Start(dir);
             Trace.WriteLine("first run");
-            Trace.Listeners.Remove("file");
+            // Close the first run's file as process exit would: Windows cannot rename an open file.
+            var first = Trace.Listeners["file"]!;
+            Trace.Listeners.Remove(first);
+            first.Dispose();
             FileLog.Start(dir);
             Trace.WriteLine("second run");
             var listener = Trace.Listeners["file"]!;

@@ -187,7 +187,8 @@ Keep it here while working (newest first): date · step · what happened · fix 
 
 | Date | Step | Fault | Fix |
 |---|---|---|---|
-| | | | |
+| 2026-10-04 | W1 live Codex | `CodexLiveSmokeTests.FreshDedicatedHomeLaunchesSignedOut` read `codex.log` with `File.ReadAllText` while the stderr pump still had it open for writing → `IOException` on Windows. Test-only; the app shares the file correctly | Test reads with `FileShare.ReadWrite \| Delete` |
+| 2026-10-04 | W1 Core | `FileLogTests` removed the first run's listener without disposing it, so `app.log` stayed open and the rotation to `app.log.1` failed on Windows (cannot rename an open file). Test-only; the app starts the log once per process | Test disposes the first listener, as process exit would |
 
 ---
 

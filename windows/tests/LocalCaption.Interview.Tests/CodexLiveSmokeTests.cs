@@ -74,7 +74,12 @@ public sealed class CodexLiveSmokeTests : IDisposable
         Assert.Empty(Directory.EnumerateFileSystemEntries(Path.Combine(_tmp, "ws")));
         await e.ShutdownAsync();
         if (File.Exists(Path.Combine(_tmp, "codex.log")))
-            _output.WriteLine("stderr: " + File.ReadAllText(Path.Combine(_tmp, "codex.log")).Trim());
+        {
+            // The stderr pump may still hold the log open for writing; Windows needs a sharing read.
+            using var log = new FileStream(Path.Combine(_tmp, "codex.log"), FileMode.Open, FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            _output.WriteLine("stderr: " + new StreamReader(log).ReadToEnd().Trim());
+        }
     }
 
     [LiveCodexFact]
