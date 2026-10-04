@@ -16,40 +16,46 @@ namespace LocalCaption.Asr;
 /// Armoury Crate profiles all remove it (§5.8) — and the only symptom would be captions
 /// quietly getting slower. The resolved backend is returned so it can be logged and shown
 /// in Settings.</para>
+/// <para>Vulkan (AMD, Intel, or NVIDIA without CUDA) is a third, opt-in backend: x64 only,
+/// used only when <c>asr.backend</c> says <c>vulkan</c>, never by <c>auto</c>.</para>
 /// </remarks>
 public static class BackendProbe
 {
     /// <summary>
     /// Resolve <see cref="AsrBackend.Auto"/> against what this machine actually has.
     /// An explicit <c>cuda</c> or <c>cpu</c> is honoured as written, so the CPU path can be
-    /// forced for A/B testing without a rebuild (<c>asr.backend</c>, §5.2).
+    /// forced for A/B testing without a rebuild (<c>asr.backend</c>, §5.2). An explicit
+    /// <c>vulkan</c> is honoured when it can be tried, and <c>auto</c> never picks it — see
+    /// <see cref="BackendChoice"/>, which holds the rules.
     /// </summary>
-    public static AsrBackend Resolve(AsrBackend requested) => requested switch
+    public static AsrBackend Resolve(AsrBackend requested) => Plan(requested).Resolved;
+
+    /// <summary>
+    /// Plan an engine load on this PC, in this process: the backend, the library order to set
+    /// before the first factory, and a note when an explicit <c>vulkan</c> cannot be honoured.
+    /// </summary>
+    public static BackendPlan Plan(AsrBackend requested) =>
+        BackendChoice.Plan(requested, PlatformFacts.Current(), LoadedLibrary());
+
+    /// <summary>
+    /// The native library Whisper.net has already loaded in this process, or null before the
+    /// first model load. Reading it loads nothing.
+    /// </summary>
+    public static Whisper.net.LibraryLoader.RuntimeLibrary? LoadedLibrary()
     {
-        AsrBackend.Cpu => AsrBackend.Cpu,
-        AsrBackend.Cuda => AsrBackend.Cuda,
-        AsrBackend.Metal => AsrBackend.Metal,
-        _ when HasMetal() => AsrBackend.Metal,
-        _ when HasCudaRuntime() => AsrBackend.Cuda,
-        _ => AsrBackend.Cpu,
-    };
+        try { return Whisper.net.LibraryLoader.RuntimeOptions.LoadedLibrary; }
+        catch (Exception) { return null; }
+    }
 
     /// <summary>Whether a resolved backend wants the GPU path enabled on the factory.</summary>
-    public static bool UsesGpu(AsrBackend resolved) => resolved is AsrBackend.Cuda or AsrBackend.Metal;
+    public static bool UsesGpu(AsrBackend resolved) =>
+        resolved is AsrBackend.Cuda or AsrBackend.Metal or AsrBackend.Vulkan;
 
     /// <summary>
     /// True when a GPU backend is worth attempting. Whisper.net falls back to CPU by itself
     /// if the runtime is absent, so this only has to avoid the obviously-pointless cases.
     /// </summary>
     public static bool HasUsableGpu() => UsesGpu(Resolve(AsrBackend.Auto));
-
-    /// <summary>
-    /// Apple Silicon's Metal runtime ships with Whisper.net and always works on arm64. This
-    /// is the stage-A development case only — it is never a shipping configuration.
-    /// </summary>
-    private static bool HasMetal() =>
-        RuntimeInformation.IsOSPlatform(OSPlatform.OSX) &&
-        RuntimeInformation.ProcessArchitecture is Architecture.Arm64;
 
     /// <summary>
     /// Look for the CUDA runtime the way the loader will. Checked by presence rather than
@@ -99,6 +105,44 @@ public static class BackendProbe
         {
             var system = Environment.GetFolderPath(Environment.SpecialFolder.System);
             return system.Length > 0 && File.Exists(Path.Combine(system, "nvcuda.dll"));
+        }
+        catch (Exception) { return false; }
+    }
+
+    /// <summary>
+    /// Whether the Vulkan loader, <c>vulkan-1.dll</c>, is in System32 — what Whisper.net's
+    /// Vulkan build links against (<c>ggml-vulkan-whisper.dll</c> imports it).
+    /// </summary>
+    /// <remarks>
+    /// <para>Checked by presence, for the same reason as <see cref="HasCudaRuntime"/>: a probe
+    /// should answer, not throw. The loader is installed by every current AMD, Intel and NVIDIA
+    /// display driver; a PC with only the Microsoft Basic Display Adapter, or a driver from
+    /// before Vulkan, lacks it.</para>
+    /// <para>Presence is necessary, not sufficient. A loader with no Vulkan-capable device
+    /// behind it still loads, and whisper.cpp then reports "no GPU found" and runs on its CPU
+    /// backend — which <see cref="WhisperEngine"/> watches for in the native log.</para>
+    /// </remarks>
+    public static bool HasVulkanLoader()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return false;
+        try
+        {
+            var system = Environment.GetFolderPath(Environment.SpecialFolder.System);
+            return system.Length > 0 && File.Exists(Path.Combine(system, "vulkan-1.dll"));
+        }
+        catch (Exception) { return false; }
+    }
+
+    /// <summary>
+    /// Whether this build carries Whisper.net's Vulkan library, where its loader looks for it
+    /// (<c>runtimes/vulkan/win-x64</c> beside the app). Absent from ARM64 builds and from
+    /// x64 builds made with <c>build/publish.ps1 -NoVulkan</c>.
+    /// </summary>
+    public static bool HasVulkanRuntime()
+    {
+        try
+        {
+            return File.Exists(Path.Combine(AppContext.BaseDirectory, "runtimes", "vulkan", "win-x64", "whisper.dll"));
         }
         catch (Exception) { return false; }
     }

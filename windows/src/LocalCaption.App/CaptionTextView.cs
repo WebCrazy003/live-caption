@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Media;
 using ICSharpCode.AvalonEdit;
 using ICSharpCode.AvalonEdit.Document;
@@ -42,6 +43,20 @@ public sealed class CaptionTextView : TextEditor
         };
         TextArea.TextView.ScrollOffsetChanged += (_, _) => OnScrolled();
 
+        // The end of a mouse selection (SPEC-16 C12). AvalonEdit's selection handler marks the
+        // button-up handled, so this listens to handled events too — after it has finished
+        // extending the selection, so what is reported is what was selected.
+        // Only a selection that changed is reported: a plain click inside an existing selection
+        // must not rewrite the clipboard every time.
+        (int Start, int Length)? reported = null;
+        TextArea.AddHandler(MouseLeftButtonUpEvent, new MouseButtonEventHandler((_, _) =>
+        {
+            if (SelectionLength == 0) { reported = null; return; }
+            if (reported == (SelectionStart, SelectionLength)) return;
+            reported = (SelectionStart, SelectionLength);
+            SelectionMade?.Invoke(SelectedText);
+        }), handledEventsToo: true);
+
         // Selection as a tint over the text rather than AvalonEdit's default solid block
         // with inverted text, which reads as a different control in either theme.
         TextArea.SelectionForeground = null;
@@ -71,6 +86,12 @@ public sealed class CaptionTextView : TextEditor
 
     /// <summary>Raised when following starts or stops, so the "Jump to latest" button can appear.</summary>
     public event Action<bool>? FollowingChanged;
+
+    /// <summary>
+    /// The mouse button came up over a selection — with the selected text. What
+    /// <c>clipboard.auto_copy_selection</c> listens to.
+    /// </summary>
+    public event Action<string>? SelectionMade;
 
     /// <summary>Live-applied from Settings (§10).</summary>
     public bool AutoScroll { get; set; } = true;

@@ -30,6 +30,9 @@ public class ChromeWindow : Window
     public static readonly DependencyProperty TitleBarLeadingProperty = DependencyProperty.Register(
         nameof(TitleBarLeading), typeof(object), typeof(ChromeWindow));
 
+    public static readonly DependencyProperty ShowTitleIconProperty = DependencyProperty.Register(
+        nameof(ShowTitleIcon), typeof(bool), typeof(ChromeWindow), new PropertyMetadata(true));
+
     private FrameworkElement? _root;
 
     public ChromeWindow()
@@ -189,6 +192,16 @@ public class ChromeWindow : Window
     {
         get => GetValue(TitleBarLeadingProperty);
         set => SetValue(TitleBarLeadingProperty, value);
+    }
+
+    /// <summary>
+    /// Whether the app icon is drawn at the left of the title bar. A very narrow window gives
+    /// its 30 pixels to the controls instead (SPEC-16 C11).
+    /// </summary>
+    public bool ShowTitleIcon
+    {
+        get => (bool)GetValue(ShowTitleIconProperty);
+        set => SetValue(ShowTitleIconProperty, value);
     }
 
     public override void OnApplyTemplate()

@@ -57,8 +57,8 @@ public sealed class SessionController : IAsyncDisposable
         Orchestrator = new StreamingOrchestrator();
         Orchestrator.OnFinal = IngestFinalAsync;
         Orchestrator.OnChanged = () => Changed?.Invoke();
-        Orchestrator.OnSpeechEnded = AutoCopyLastN;
-        Orchestrator.OnFinalized = AutoCopyLastN;
+        Orchestrator.OnSpeechEnded = interim => CopyLastN(CopyTrigger.SpeechEnded, interim);
+        Orchestrator.OnFinalized = interim => CopyLastN(CopyTrigger.Finalized, interim);
         Orchestrator.OnCaptureMustPause = () =>
         {
             _capturePauseRequested = true;
@@ -119,6 +119,47 @@ public sealed class SessionController : IAsyncDisposable
         await Orchestrator.PrepareModelAsync(_env.Config, cancellationToken).ConfigureAwait(false);
         Phase = Orchestrator.ModelReady ? SessionPhase.Ready : SessionPhase.Failed;
         Notify();
+    }
+
+    /// <summary>
+    /// Whether <see cref="RetryPrepareAsync"/> would do anything now: an error is showing and
+    /// nothing is live, unsaved or in transition (the Mac's Retry under the error, specs/SPEC-16 C2).
+    /// </summary>
+    public bool CanRetryPrepare =>
+        !_transitioning && !HasUnsavedSession && Orchestrator.ErrorText is not null &&
+        Phase is SessionPhase.Ready or SessionPhase.Failed;
+
+    /// <summary>
+    /// The Retry under a model-load error (Mac <c>SessionController.retryPrepare</c>): with the
+    /// models loaded it only dismisses the message; otherwise it loads them again, without a
+    /// restart or a model change.
+    /// </summary>
+    public async Task RetryPrepareAsync()
+    {
+        if (!CanRetryPrepare) return;
+
+        Orchestrator.ClearError();
+        if (Orchestrator.ModelReady && !_modelsStale)
+        {
+            Phase = SessionPhase.Ready;
+            Notify();
+            return;
+        }
+
+        _transitioning = true;
+        try
+        {
+            Phase = SessionPhase.Preparing;
+            Notify();
+            _modelsStale = false;
+            // Reload rather than Prepare: it disposes the engine the failed attempt left behind.
+            var loaded = await Orchestrator.ReloadModelAsync(_env.Config).ConfigureAwait(false);
+            Phase = loaded ? SessionPhase.Ready : SessionPhase.Failed;
+        }
+        finally
+        {
+            FinishTransition();
+        }
     }
 
     /// <param name="name">
@@ -510,8 +551,8 @@ public sealed class SessionController : IAsyncDisposable
 
     // ── clipboard (write-only — §7.4, §12.1) ─────────────────────────────────────────────
 
-    /// <summary>Copy the last N completed sentences, N from Settings.</summary>
-    public void CopyLastN() => CopyLastN("");
+    /// <summary>Copy the last N completed sentences, N from Settings. Always copies.</summary>
+    public void CopyLastN() => CopyLastN(CopyTrigger.Manual, "");
 
     /// <summary>Copy every committed caption so far — the transcript as it stands.</summary>
     public void CopyAll()
@@ -523,19 +564,14 @@ public sealed class SessionController : IAsyncDisposable
     }
 
     /// <summary>
-    /// At an endpoint, copy the latest interim rather than waiting for the final model; the
+    /// Put the last N sentences on the clipboard — or not: <see cref="AutoCopy"/> decides. At an
+    /// endpoint the latest interim is copied rather than waiting for the final model, and the
     /// final refreshes it once the matching provisional is retired. Only with Auto-copy on —
     /// otherwise the clipboard is the user's (SPEC-WINDOWS §12.1, specs/SPEC-16 §2.5).
     /// </summary>
-    private void AutoCopyLastN(string interim)
+    private void CopyLastN(CopyTrigger trigger, string interim)
     {
-        if (_env.Config.Clipboard.AutoUpdate) CopyLastN(interim);
-    }
-
-    private void CopyLastN(string interim)
-    {
-        var text = Sentences.LastN(CommittedText, interim, _env.Config.Clipboard.RecentSentences);
-        if (text.Length == 0) return;
+        if (AutoCopy.TextFor(_env.Config, trigger, CommittedText, interim) is not { } text) return;
         if (_env.Clipboard?.Invoke(text) == true) Copied?.Invoke();
     }
 

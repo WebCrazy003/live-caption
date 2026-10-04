@@ -32,7 +32,14 @@ public static class WindowPlacement
     // Small enough to sit beside a video call. The layout is built to survive it: the
     // sidebar steps aside, the toolbar scrolls, the controls wrap, and Settings lives in the
     // title bar — which is the point of allowing it, where 720 px used to be the floor.
-    private const double MinimumWidth = 400;
+    //
+    // 360 wide is the Mac's minimum (specs/SPEC-16 C11); below 480 the title bar sheds its
+    // icon, the theme button and the divider and narrows its buttons (MainWindow.FitTitleBar),
+    // or the window controls would not fit. The height stays 320, not the Mac's 240: Windows
+    // wraps the transport bar rather than shedding its labels (a decided difference), and at
+    // 360–400 wide it wraps to three rows, so header, toolbar, three rows of buttons and the
+    // status bar already take about 300 of 320 — at 240 the captions would get nothing.
+    private const double MinimumWidth = 360;
     private const double MinimumHeight = 320;
 
     public static void Restore(Window window, Config config)

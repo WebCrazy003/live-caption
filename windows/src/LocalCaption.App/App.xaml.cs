@@ -158,41 +158,10 @@ public partial class App : Application
 
     /// <summary>
     /// §9.4: journals that outlived their session. Offer them before a new session starts,
-    /// because starting one is exactly what would bury them.
+    /// because starting one is exactly what would bury them — one row each, to recover or
+    /// discard (specs/SPEC-16 C1, the Mac's RecoveryView).
     /// </summary>
-    private static void OfferRecovery(AppEnvironment env)
-    {
-        if (env.PendingRecoveries.Count == 0) return;
-
-        var summary = new StringBuilder();
-        summary.AppendLine("These sessions did not stop cleanly — the app quit or crashed while recording.");
-        summary.AppendLine("Their captions were written to disk as they happened and can still be saved.");
-        summary.AppendLine();
-
-        foreach (var pending in env.PendingRecoveries)
-        {
-            var when = pending.StartedAt is { } at
-                ? TimeFormat.Human(at.ToLocalTime())
-                : "unknown time";
-            summary.AppendLine($"  · {when} — {pending.Segments.Count} caption(s)");
-        }
-
-        summary.AppendLine();
-        summary.AppendLine("Save them as transcripts?");
-
-        // leave them; the offer repeats next launch
-        if (!ConfirmDialog.Ask(null, "Recover unsaved sessions", summary.ToString().TrimEnd(),
-                               "Save them", "Not now")) return;
-
-        var failed = 0;
-        foreach (var pending in env.PendingRecoveries.ToList())
-            if (!env.Recover(pending))
-                failed++;
-
-        if (failed > 0)
-            MessageBox.Show($"{failed} session(s) could not be written and have been kept for another try.",
-                            "Local Caption", MessageBoxButton.OK, MessageBoxImage.Warning);
-    }
+    private static void OfferRecovery(AppEnvironment env) => RecoveryDialog.Show(env);
 
     /// <summary>Raise whichever window the first instance already has open.</summary>
     private static void FocusExistingWindow()

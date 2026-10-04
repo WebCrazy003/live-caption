@@ -4,10 +4,12 @@ namespace LocalCaption.Asr;
 
 /// <summary>Which compute backend a factory should use.</summary>
 /// <remarks>
-/// <c>asr.backend</c> in <c>config.json</c> accepts only <c>auto</c>, <c>cuda</c> and
-/// <c>cpu</c> (§5.2). <see cref="Metal"/> is a <b>resolved-only</b> value that never appears
-/// in config: it exists so a stage-A run on the Mac reports what it actually used instead of
-/// claiming CUDA on a machine that has no NVIDIA GPU.
+/// <c>asr.backend</c> in <c>config.json</c> accepts <c>auto</c>, <c>cuda</c> and <c>cpu</c>
+/// (§5.2), and the opt-in <c>vulkan</c> (SPEC-16, Compatibility target). <see cref="Metal"/>
+/// is a <b>resolved-only</b> value that never appears in config: it exists so a stage-A run
+/// on the Mac reports what it actually used instead of claiming CUDA on a machine that has no
+/// NVIDIA GPU. New members go at the end: <c>Enum.TryParse</c> also accepts numbers, so
+/// renumbering would change what an odd config value means.
 /// </remarks>
 public enum AsrBackend
 {
@@ -18,6 +20,12 @@ public enum AsrBackend
 
     /// <summary>Apple Silicon GPU. Development only — never shipped, never written to config.</summary>
     Metal,
+
+    /// <summary>
+    /// Any GPU with a Vulkan driver — AMD, Intel, or NVIDIA without the CUDA DLLs. Opt-in:
+    /// <see cref="Auto"/> never resolves to it (<see cref="BackendChoice"/>). Experimental.
+    /// </summary>
+    Vulkan,
 }
 
 /// <summary>

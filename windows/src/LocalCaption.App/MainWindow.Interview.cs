@@ -45,6 +45,8 @@ public partial class MainWindow
     private SessionsWindow? _sessions;
     private string? _shownOpenBlocker;
     private Button? _compactStart, _compactPause, _compactStop;
+    // Failed with captions unsaved: Pause and Stop read Retry capture / Retry save (SPEC-16 C3).
+    private bool _retryShown;
 
     /// <summary>
     /// <c>interview.mode</c> says Interview and Interview mode is available. False whenever
@@ -301,9 +303,9 @@ public partial class MainWindow
         ChangeModeButton.Content = interview ? "Interview" : "Caption only";
         AutomationProperties.SetName(ChangeModeButton, $"Change mode (now {(interview ? "Interview" : "Caption only")})");
 
-        var stop = interview ? "End interview" : "Stop";
+        var stop = _retryShown ? "Retry save" : interview ? "End interview" : "Stop";
         StopButton.Content = stop;
-        StopButton.Tag = interview ? "" : "";       // flag / stop
+        StopButton.Tag = _retryShown ? "\uE74E" : interview ? "" : "";       // save / flag / stop
         AutomationProperties.SetName(StopButton, stop);
         if (_compactStop is { } compact)
         {
@@ -361,9 +363,18 @@ public partial class MainWindow
         StartButton.IsEnabled = _modeChosen && !skillsBlock && !ending &&
                                 phase is SessionPhase.Ready or SessionPhase.Saved or SessionPhase.Failed &&
                                 orchestrator.ModelReady && !_controller.HasUnsavedSession;
-        PauseButton.IsEnabled = phase is SessionPhase.Recording or SessionPhase.Paused;
-        PauseButton.Content = phase == SessionPhase.Paused ? "Resume" : "Pause";
-        PauseButton.Tag = phase == SessionPhase.Paused ? "" : "";
+        // SPEC-16 C3 (Mac ActiveSessionView): capture or the save failed with captions still
+        // unsaved. Pause becomes Retry capture (ResumeAsync carries the session on) and Stop
+        // becomes Retry save; the journal keeps everything meanwhile.
+        var retry = phase == SessionPhase.Failed && _controller.HasUnsavedSession;
+        if (retry != _retryShown)
+        {
+            _retryShown = retry;
+            ApplyModeLabels();
+        }
+        PauseButton.IsEnabled = phase is SessionPhase.Recording or SessionPhase.Paused || retry;
+        PauseButton.Content = retry ? "Retry capture" : phase == SessionPhase.Paused ? "Resume" : "Pause";
+        PauseButton.Tag = phase == SessionPhase.Paused || retry ? "" : "";
         StopButton.IsEnabled = phase is SessionPhase.Recording or SessionPhase.Paused ||
                                (phase == SessionPhase.Failed && _controller.HasUnsavedSession);
 
@@ -372,7 +383,7 @@ public partial class MainWindow
             start.IsEnabled = StartButton.IsEnabled;
             pause.IsEnabled = PauseButton.IsEnabled;
             pause.Tag = PauseButton.Tag;
-            var label = phase == SessionPhase.Paused ? "Resume" : "Pause";
+            var label = retry ? "Retry capture" : phase == SessionPhase.Paused ? "Resume" : "Pause";
             pause.ToolTip = label;
             AutomationProperties.SetName(pause, label);
             stop.IsEnabled = StopButton.IsEnabled;

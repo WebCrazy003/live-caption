@@ -39,9 +39,14 @@ public static class SystemInfo
         else
         {
             engineRows.Add(new("Models", $"{engine.InterimModel} (live) · {engine.FinalModel} (final)"));
-            engineRows.Add(new("Backend", engine.FellBack
-                ? $"asked for {Lower(engine.Backend)}, running on {engine.Library.ToLowerInvariant()}"
-                : $"{Lower(engine.Backend)} · {engine.Library.ToLowerInvariant()} library", engine.FellBack));
+            // The library is what Whisper.net actually loaded (RuntimeOptions.LoadedLibrary),
+            // not what was asked for — the two differ exactly when something is wrong.
+            engineRows.Add(new("Backend", engine.NoGpuDevice
+                ? $"asked for {Lower(engine.Backend)} · {engine.Library.ToLowerInvariant()} library loaded, but no GPU device — running on the CPU"
+                : engine.FellBack
+                    ? $"asked for {Lower(engine.Backend)}, running on {engine.Library.ToLowerInvariant()}"
+                    : $"{Lower(engine.Backend)} · {engine.Library.ToLowerInvariant()} library", engine.FellBack));
+            if (engine.Note is { } note) engineRows.Add(new("Backend note", note, true));
             engineRows.Add(new("Threads", engine.Threads.ToString()));
             engineRows.Add(new("Word timings", engine.WordTimings ? "DTW" : "none", !engine.WordTimings));
         }
@@ -50,6 +55,13 @@ public static class SystemInfo
         engineRows.Add(new("CUDA runtime",
             cuda ? "found" : nvidia ? "not found — 'auto' runs on the CPU" : "not applicable — no NVIDIA GPU; runs on the CPU",
             !cuda && nvidia));
+        // Opt-in, so only a fact, never flagged — unless someone chose it and it cannot run.
+        var vulkanBlocked = BackendChoice.VulkanUnavailableReason(PlatformFacts.Current());
+        var vulkanChosen = BackendChoice.Parse(env.Config.Asr.Backend) is AsrBackend.Vulkan;
+        engineRows.Add(new("Vulkan", vulkanBlocked is null
+                ? vulkanChosen ? "driver found · chosen" : "driver found · available (choose it under Speech recognition)"
+                : vulkanBlocked,
+            vulkanChosen && vulkanBlocked is not null));
         if (BackendProbe.MissingNativeRuntime() is { Count: > 0 } missing)
             engineRows.Add(new("Visual C++ runtime", $"missing ({string.Join(", ", missing)}) — speech models cannot load", true));
 

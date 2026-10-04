@@ -15,10 +15,16 @@
     cannot load on any machine it will ever run on. On this project that is most of the
     payload.
 
-    What stays: runtimes/<rid>, and inside the `cuda` and `noavx` folders (where Whisper.net
-    looks for the GPU backend, and for the CPU build used on processors without AVX2) only
-    <rid>. CUDA is x64-only: there is no CUDA for Windows on ARM, so an ARM64 build has no
-    `cuda` folder, never carries CUDA DLLs, and runs on the CPU (NEON).
+    What stays: runtimes/<rid>, and inside the `cuda`, `vulkan` and `noavx` folders (where
+    Whisper.net looks for the GPU backends, and for the CPU build used on processors without
+    AVX2) only <rid>. CUDA is x64-only: there is no CUDA for Windows on ARM, so an ARM64 build
+    has no `cuda` folder, never carries CUDA DLLs, and runs on the CPU (NEON). Whisper.net's
+    Vulkan build is win-x64 only too, so an ARM64 build has no `vulkan` folder either.
+
+    Vulkan is the opt-in GPU path for AMD and Intel GPUs (asr.backend = "vulkan"; "auto"
+    never uses it). It is about 57 MB unpacked (ggml-vulkan-whisper.dll is nearly all of it),
+    so -NoVulkan leaves it out for a smaller build; the app then lists Vulkan greyed out,
+    saying this build was made without it (BackendProbe.HasVulkanRuntime).
 
 .PARAMETER Runtime
     win-x64 (default) or win-arm64.
@@ -29,13 +35,17 @@
 
 .PARAMETER KeepAllRuntimes
     Skip the pruning, to compare against an untouched publish.
+
+.PARAMETER NoVulkan
+    Leave out runtimes/vulkan (about 57 MB): no opt-in Vulkan GPU backend in this build.
 #>
 [CmdletBinding()]
 param(
     [ValidateSet('win-x64', 'win-arm64')]
     [string] $Runtime = 'win-x64',
     [string] $Output,
-    [switch] $KeepAllRuntimes
+    [switch] $KeepAllRuntimes,
+    [switch] $NoVulkan
 )
 
 $ErrorActionPreference = 'Stop'
@@ -99,9 +109,11 @@ if (-not $KeepAllRuntimes) {
     $runtimes = Join-Path $Output 'runtimes'
     if (Test-Path $runtimes) {
         # Whisper.net's variant folders hold one subfolder per RID: keep ours, drop the rest.
-        # cuda is kept on x64 only; on ARM64 it holds nothing this build can load.
+        # cuda and vulkan are kept on x64 only; on ARM64 they hold nothing this build can
+        # load. vulkan is also dropped under -NoVulkan (below).
         $variants = @('noavx')
         if ($withCuda) { $variants += 'cuda' }
+        if ($withCuda -and -not $NoVulkan) { $variants += 'vulkan' }
         foreach ($dir in @(Get-ChildItem $runtimes -Directory)) {
             if ($dir.Name -eq $Runtime) { continue }
             if ($dir.Name -in $variants) {
@@ -121,11 +133,21 @@ if (-not $KeepAllRuntimes) {
     Get-ChildItem $Output -Filter '*.metal' -File -ErrorAction SilentlyContinue | Remove-Item -Force
 }
 
+# Asked for explicitly, so honoured even under -KeepAllRuntimes.
+$vulkanDir = Join-Path $Output 'runtimes\vulkan'
+if ($NoVulkan -and (Test-Path $vulkanDir)) {
+    Write-Host '  dropping runtimes/vulkan (-NoVulkan)'
+    Remove-Item $vulkanDir -Recurse -Force
+}
+
 $after = (Get-ChildItem $Output -Recurse -File | Measure-Object Length -Sum).Sum
 
 Write-Host ''
 Write-Host ("  before pruning  {0:N0} MB" -f ($before / 1MB))
 Write-Host ("  after pruning   {0:N0} MB" -f ($after / 1MB))
+if (Test-Path (Join-Path $Output "runtimes\vulkan\$Runtime")) {
+    Write-Host '  Vulkan GPU backend included (opt-in; build with -NoVulkan to leave it out)'
+}
 Write-Host ''
 
 # whisper.cpp's native DLLs link the Visual C++ runtime dynamically (MSVCP140, VCRUNTIME140,

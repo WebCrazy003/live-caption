@@ -118,6 +118,20 @@ on Windows yet.**
 12. **ARM64** — publish and launch the ARM64 build; codex locates and starts; hotkeys and overlay.
 13. **150 % + 100 % dual monitor** — the screenshot overlay and selection land in the right physical
     pixels on both screens; the interview layout's densities and the Sessions window placement.
+14. **Vulkan on an AMD or Intel GPU** (x64, opt-in, experimental) — pick "Vulkan (AMD, Intel, other
+    GPUs)" in Settings → Speech recognition, restart; Settings → System shows `vulkan · vulkan
+    library` and the speed beats the CPU on large-v3-turbo. Then: with `auto` nothing changes (CPU,
+    or CUDA on the G15 — never Vulkan); greyed out with a reason on ARM64 and in a `-NoVulkan`
+    build; a PC without a Vulkan driver, or a failed load, runs on the CPU with CPU-sized models
+    and says why in the status line.
+
+## Checked on the Mac (2026-10-04)
+
+- `windows/build/*.ps1` parse cleanly under PowerShell 7.6.
+- `publish.ps1` runs end to end from the Mac (cross-publish, `EnableWindowsTargeting=true`):
+  win-x64 keeps `runtimes/{win-x64,cuda,noavx,vulkan}` and comes to 400 MB; win-x64 `-NoVulkan`
+  keeps `{win-x64,cuda,noavx}`, 343 MB; win-arm64 keeps only `runtimes/win-arm64`, 206 MB.
+- `package.ps1` / `release.ps1` (Velopack, Visual C++ runtime) have not been run: they need Windows.
 
 ## Not started (needs the Windows machine)
 
@@ -129,8 +143,7 @@ Nothing below can be run or checked on the Mac, so all of it waits for the G15. 
 | Codex on Windows | Confirm npm's `codex.exe` launches, the Job Object kills it on exit, the read-only lockdown holds | §4.1, §10 |
 | Win32 services | Drafted and wired (see *Integration*); run and verify F8/F9 global hotkeys, region screenshot, clipboard images | §4.2–§4.4 |
 | WPF screens | Drafted and wired (see *Integration*); see them on screen and work through the checklist | §5.1–§5.7 |
-| Caption-mode items | Per-session recovery, Retry buttons, "Saved — show in folder", name-prefix field, folder picker, detection-setting limits, durations in the list, minimum window size, auto-copy on selection | §6 (C1–C12; C9, C10 done) |
-| Tests | Unit test for the auto-copy fix (Windows-only project) | §2.5 |
+| Caption-mode items | Drafted on the Mac and compiles; see them on screen and try each: per-session recovery, Retry (model load), Retry capture / Retry save, "Saved ✓ Show in folder", Settings → General (name prefix, folder picker with write test, auto-copy selection), detection limits, durations in the sidebar, 360-wide window, sidebar Remove of an interview | §6 (C1–C8, C11, C12; C9, C10 done) |
 | Acceptance | One full interview, run locally on the G15 | §11 |
 
 ## Decisions recorded

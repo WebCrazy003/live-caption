@@ -31,7 +31,7 @@ it can be looked at as it is made. Testing is local on the G15 only — no remot
 | P2 Win32: global hotkeys (§4.2), region screenshot (§4.3), clipboard images (§4.4) | 🟡 drafted on the Mac, compiles; not yet run | `LocalCaption.App/Interview/Platform`; pure rules tested in `LocalCaption.Interview` |
 | P3 WPF screens (§5.1–§5.7) | 🟡 drafted and wired on the Mac, compiles; not yet run | `LocalCaption.App/Interview/{Views,Answers,Sessions,Settings}`, `MainWindow.Interview.cs` |
 | Compatibility (any Windows 10 1809+/11, x64 + ARM64, no NVIDIA required, mixed DPI, any layout) | 🟡 done on the Mac, not yet run | app manifest, ARM64 publish, Visual C++ runtime in the installer, Windows 10 capture fallback, keyboard labels |
-| P4 caption-side C1–C12 | C10 ✅ (`7d42846`); C7 is the Settings input limits (the segmenter already enforces the Mac's own); rest ⬜ on the G15 | |
+| P4 caption-side C1–C12 | C10 ✅ (`7d42846`), C9 ✅; C1–C8, C11, C12 🟡 drafted on the Mac, compiles; not yet run (see §6) | `App/RecoveryDialog.cs`, `MainWindow*`, `SettingsWindow*`; pure rules in Core `Captions/AutoCopy.cs`, `Data/SettingsInput.cs` (tested) |
 | P5 acceptance (§11) | ⬜ on a Windows PC | smoke-test checklist in [docs/WINDOWS-STATUS.md](../docs/WINDOWS-STATUS.md) |
 
 Verified on the Mac at each step: `dotnet build LocalCaption.slnx -p:EnableWindowsTargeting=true`
@@ -48,7 +48,7 @@ app where it falls short, must hold on:
 |---|---|---|
 | OS | Windows 10 version 1809 (build 17763) and later, Windows 11 | Windows-11-only features (rounded corners, Mica, Fluent icons, process loopback before build 20348) degrade gracefully, never fail |
 | CPU | x64 and ARM64 | publish both; no x64-only P/Invoke struct assumptions |
-| GPU | none required | CUDA is an optional speed-up; CPU always works |
+| GPU | none required | CUDA is an optional speed-up; CPU always works. Vulkan optional, opt-in: `asr.backend = "vulkan"` for AMD/Intel (or NVIDIA without CUDA), x64 only, never chosen by `auto`, falls back to CPU with a message; `-NoVulkan` builds leave it out |
 | Display | any scale 100–300 %, several monitors with different scales | per-monitor DPI v2 manifest; overlays and screenshots in physical pixels |
 | Input | any keyboard layout; laptops with Fn-lock | hotkeys by virtual key, never by character |
 | Audio | any output device; no meeting app required | process loopback when the OS supports it, endpoint loopback otherwise |
@@ -89,7 +89,7 @@ The G15 stays the first machine things are run on.
 | 11 | End interview sheet, summary, follow-ups, replay | ✅ | ❌ | P3 |
 | 12 | Sessions window with detail pane, mode filter, interview delete options | ✅ | ❌ sidebar + opens `.txt` in Notepad | P3 |
 | 13 | Settings → Interview / Asking / Prompts / Codex | ✅ | ❌ | P3 |
-| 14 | Caption-side details (recovery per session, Retry, prefix field, ranges…) | ✅ | 🟡 | P4 |
+| 14 | Caption-side details (recovery per session, Retry, prefix field, ranges…) | ✅ | 🟡 drafted, not yet run | P4 |
 
 Windows-only features (process loopback, auto gain, quick bar, Send, configurable shortcuts,
 click-through, theme, bookmarks, Recycle-Bin delete, Velopack) are **not** in scope and must keep
@@ -183,9 +183,10 @@ finals.** That undermines the clipboard-privacy position of SPEC-WINDOWS §12.1.
 
 - [x] Split into `CopyLastNManual()` (always copies) and `AutoCopyLastN(string interim)`
       (returns unless `clipboard.auto_update`), as the Mac does (`LC/Session/SessionController.swift:57-64`).
-- [ ] Unit test: Auto-copy off → no clipboard write on `OnSpeechEnded` or `OnFinalized`; manual
-      copy still works. *(Windows: `LocalCaption.Session` is `net10.0-windows` and has no test
-      project yet — add it on the G15.)*
+- [x] Unit test: Auto-copy off → no clipboard write on `OnSpeechEnded` or `OnFinalized`; manual
+      copy still works. The decision is a pure helper in Core (`Captions/AutoCopy.cs`: config +
+      trigger → text or nothing, via `Sentences.LastN`), used by `SessionController` for all three
+      triggers and asserted in `LocalCaption.Core.Tests/AutoCopyTests.cs`, so it runs on the Mac.
 
 ### 2.6 Repo hygiene
 
@@ -493,18 +494,18 @@ Smaller gaps in Caption only mode. Each is independent.
 
 | # | Item | Mac | Windows now | Do |
 |---|---|---|---|---|
-| C1 | Recovery prompt per session | sheet: each journal with time + segment count, **Recover & Save** / **Discard**, **Discard All** (`LC/UI/RecoveryView.swift`) | one dialog, "Save them" / "Not now"; `AppEnvironment.Discard` never called — unwanted journals return every launch | port the per-session sheet |
-| C2 | Retry model load | **Retry** under the error (`SessionController.retryPrepare`) | none; restart or change model | add Retry |
-| C3 | Retry capture after failure | **Retry capture** + **Retry save** | `ResumeAsync` allows it but the button is disabled | enable Resume when Failed with unsaved data; add Retry save |
-| C4 | "Saved ✓ Show in folder" after Stop | inline link | phase just reads "Saved" | add link using `SavedTranscriptPath` |
-| C5 | Session name prefix field | Settings → General | config only | add field |
-| C6 | Transcript folder picker + writability check | Change… + check | free text, no check | folder picker + write test |
-| C7 | Range limits | silence 200–2000 ms step 50; max utterance 5–60 s | unbounded `int.TryParse` reaches the segmenter | clamp in UI **and** in `ApplyTuning` |
-| C8 | Duration in session list | shown | not shown | add (sidebar + Sessions window) |
-| C9 | Font size range | 10–48 | 12–32 — clamps Mac configs | widen to 10–48 |
-| C10 | `distil-large-v3` final model | offered | not in `ModelCatalog`; a Mac config naming it fails to download | map it to its GGUF if one exists, else fall back to `large-v3-turbo` with a notice instead of failing |
-| C11 | Minimum window | 360×240 | 400×320 | match if the WPF layout allows (SPEC-WINDOWS §7.3) |
-| C12 | Auto-copy selection | toggle exists, does nothing | nothing | SPEC-WINDOWS §19 calls this trivial on Windows: implement it here (copy on mouse-up selection in the caption view when `clipboard.auto_copy_selection`) |
+| C1 | Recovery prompt per session | sheet: each journal with time + segment count, **Recover & Save** / **Discard**, **Discard All** (`LC/UI/RecoveryView.swift`) | one dialog, "Save them" / "Not now"; `AppEnvironment.Discard` never called — unwanted journals return every launch | 🟡 drafted, not yet run — `RecoveryDialog`: one row per journal (time, segment count) with **Recover & Save** / **Discard**, **Discard All** (asks first) and **Not now**; a failed recover keeps its row and says so |
+| C2 | Retry model load | **Retry** under the error (`SessionController.retryPrepare`) | none; restart or change model | 🟡 drafted, not yet run — **Retry** in the status strip under the error when Ready/Failed with nothing unsaved (`SessionController.RetryPrepareAsync`: dismisses if the models loaded, else reloads them) |
+| C3 | Retry capture after failure | **Retry capture** + **Retry save** | `ResumeAsync` allows it but the button is disabled | 🟡 drafted, not yet run — Failed with unsaved captions: Pause reads **Retry capture** (resumes the same session), Stop reads **Retry save** |
+| C4 | "Saved ✓ Show in folder" after Stop | inline link | phase just reads "Saved" | 🟡 drafted, not yet run — header reads "Saved ✓" with a **Show in folder** link in place of the source; hidden when the export failed or the file is gone |
+| C5 | Session name prefix field | Settings → General | config only | 🟡 drafted, not yet run — new Settings → **General** page (as on the Mac): prefix field with a live example name |
+| C6 | Transcript folder picker + writability check | Change… + check | free text, no check | 🟡 drafted, not yet run — **Change…** (`OpenFolderDialog`) + write test (create and delete a probe file, `SettingsInput.FolderProblem`, tested); an unwritable or relative folder is refused with a message, also when typed and saved |
+| C7 | Range limits | silence 200–2000 ms step 50; max utterance 5–60 s | unbounded `int.TryParse` reaches the segmenter | 🟡 drafted, not yet run — clamped in the Settings UI (on leaving the box and on Save; Up/Down step 50 ms / 1 s; `SettingsInput`, tested). `ApplyTuning` left alone: the segmenter already holds 5–60 s and a 100 ms floor |
+| C8 | Duration in session list | shown | not shown | 🟡 drafted, not yet run — sidebar rows show `HH:MM:SS`; the Sessions window already did |
+| C9 | Font size range | 10–48 | 12–32 — clamps Mac configs | ✅ done — widened to 10–48 |
+| C10 | `distil-large-v3` final model | offered | not in `ModelCatalog`; a Mac config naming it fails to download | map it to its GGUF if one exists, else fall back to `large-v3-turbo` with a notice instead of failing — ✅ done (`7d42846`) |
+| C11 | Minimum window | 360×240 | 400×320 | 🟡 drafted, not yet run — width 360 (below 480 the title bar drops icon, theme button and divider and narrows its buttons); height stays 320: the wrapped transport bar (three rows at ≤400 px) leaves the captions nothing at 240 |
+| C12 | Auto-copy selection | toggle exists, does nothing | nothing | 🟡 drafted, not yet run — copies the caption view's selection on mouse-up when on; toggle in Settings → General |
 
 Not gaps (decided, keep as is): Settings as a Save/Cancel dialog (Windows' quick bar is the live
 path), transport bar wrapping instead of shedding labels, large-v3-turbo default, the `ui` pin

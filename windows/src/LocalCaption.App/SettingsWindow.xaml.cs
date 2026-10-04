@@ -87,6 +87,7 @@ public partial class SettingsWindow : ChromeWindow
 
         var pages = new List<PageItem>
         {
+            new("General", "\uE713", PageGeneral),
             new("Audio", "\uE767", PageAudio),
             new("Speech", "\uE720", PageSpeech),
             new("Captions", "\uE8D2", PageCaptions),
@@ -204,8 +205,7 @@ public partial class SettingsWindow : ChromeWindow
         FinalCare.ItemsSource = care;
         FinalCare.SelectedItem = config.Asr.FinalBeamSize > 1 ? care[1] : care[0];
 
-        Backend.ItemsSource = new[] { "auto", "cuda", "cpu" };
-        Backend.SelectedItem = config.Asr.Backend;
+        BackendPicker.Fill(Backend, config.Asr.Backend, fallback: null);
         // Three different situations, and only one of them is something to fix.
         BackendNote.Text = BackendProbe.HasCudaRuntime()
             ? "A CUDA runtime was found. 'auto' will use the GPU."
@@ -214,6 +214,11 @@ public partial class SettingsWindow : ChromeWindow
                   "much slower. See BENCH-RESULTS.md for what that costs."
                 : "This PC has no NVIDIA GPU, so speech recognition runs on the CPU. 'auto' picks models " +
                   "the CPU can keep up with.";
+        // Vulkan is opt-in and experimental: said once here, with why it is greyed out if it is.
+        BackendNote.Text += BackendChoice.VulkanUnavailableReason(PlatformFacts.Current()) is { } vulkanBlocked
+            ? $" Vulkan (experimental) is unavailable: {vulkanBlocked}"
+            : " Vulkan (experimental) can use an AMD or Intel GPU instead; 'auto' never picks it. " +
+              "Switching to or from it takes effect after a restart.";
 
         FontSizeSlider.Value = config.Caption.FontSize;
         AutoScroll.IsChecked = config.Caption.AutoScroll;
@@ -221,6 +226,9 @@ public partial class SettingsWindow : ChromeWindow
 
         AutoUpdate.IsChecked = config.Clipboard.AutoUpdate;
         RecentSentences.Text = config.Clipboard.RecentSentences.ToString(CultureInfo.InvariantCulture);
+        AutoCopySelection.IsChecked = config.Clipboard.AutoCopySelection;
+        SessionNamePrefix.Text = config.General.SessionNamePrefix;
+        OnPrefixChanged(SessionNamePrefix, null!);     // TextChanged does not fire for an empty prefix
 
         VadSensitivity.Value = config.Audio.VadSensitivity;
         EndpointSilence.Text = config.Asr.EndpointSilenceMs.ToString(CultureInfo.InvariantCulture);
@@ -256,6 +264,23 @@ public partial class SettingsWindow : ChromeWindow
     {
         var config = _env.Config;
 
+        // SPEC-16 C6: a folder that cannot be written is refused before anything is saved —
+        // finding out at the end of an interview, when Stop cannot export, is far worse. Only a
+        // changed folder is checked: the one in use already gets its own error at save time.
+        var folder = TranscriptFolder.Text.Trim();
+        // An emptied box keeps the folder in use, as before.
+        if (folder.Length > 0 &&
+            !string.Equals(folder, config.General.TranscriptFolder, StringComparison.Ordinal) &&
+            !string.Equals(folder, _checkedFolder, StringComparison.Ordinal) &&
+            SettingsInput.FolderProblem(folder) is { } problem)
+        {
+            ShowFolderProblem(problem);
+            Pages.SelectedItem = Pages.Items.OfType<PageItem>().FirstOrDefault(p => p.Panel == PageGeneral);
+            TranscriptFolder.Focus();
+            TranscriptFolder.SelectAll();
+            return;
+        }
+
         config.Audio.CaptureMode = ModeProcess.IsChecked == true ? "process"
                                  : ModeEndpoint.IsChecked == true ? "endpoint"
                                  : config.Audio.CaptureMode;
@@ -266,10 +291,12 @@ public partial class SettingsWindow : ChromeWindow
 
         config.Asr.InterimModel = InterimModel.SelectedItem as string ?? config.Asr.InterimModel;
         config.Asr.FinalModel = FinalModel.SelectedItem as string ?? config.Asr.FinalModel;
-        config.Asr.Backend = Backend.SelectedItem as string ?? "auto";
+        config.Asr.Backend = BackendPicker.Value(Backend) ?? "auto";
         config.Asr.FinalBeamSize = (FinalCare.SelectedItem as Choice)?.Value == "5" ? 5 : 0;
-        config.Asr.EndpointSilenceMs = Number(EndpointSilence.Text, config.Asr.EndpointSilenceMs);
-        config.Asr.MaxUtteranceS = Number(MaxUtterance.Text, config.Asr.MaxUtteranceS);
+        // SPEC-16 C7: the Mac's ranges. Anything typed outside them is brought inside rather
+        // than handed to the segmenter as it is.
+        config.Asr.EndpointSilenceMs = SettingsInput.EndpointSilenceMs(Number(EndpointSilence.Text, config.Asr.EndpointSilenceMs));
+        config.Asr.MaxUtteranceS = SettingsInput.MaxUtteranceS(Number(MaxUtterance.Text, config.Asr.MaxUtteranceS));
         config.Asr.Vocabulary = string.Join(", ", Vocabulary.Text
             .Split([',', ';', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
@@ -279,8 +306,11 @@ public partial class SettingsWindow : ChromeWindow
 
         config.Clipboard.AutoUpdate = AutoUpdate.IsChecked == true;
         config.Clipboard.RecentSentences = Math.Clamp(Number(RecentSentences.Text, config.Clipboard.RecentSentences), 1, 50);
+        config.Clipboard.AutoCopySelection = AutoCopySelection.IsChecked == true;
 
-        if (TranscriptFolder.Text is { Length: > 0 } folder) config.General.TranscriptFolder = folder;
+        // As typed, trailing space included ("Interview " is the default); it may be empty.
+        config.General.SessionNamePrefix = SessionNamePrefix.Text;
+        if (folder.Length > 0) config.General.TranscriptFolder = folder;
 
         ReadSend(config.Send);
         if (_pickedWindow != IntPtr.Zero) _sender?.Pick(_pickedWindow);
@@ -297,6 +327,90 @@ public partial class SettingsWindow : ChromeWindow
 
         _env.Update(config);
         DialogResult = true;
+    }
+
+    // ── general: session names and the transcript folder ─────────────────────────────────
+
+    /// <summary>The folder the picker last proved writable, so Save does not test it twice.</summary>
+    private string? _checkedFolder;
+
+    /// <summary>What the next session will be called, so the prefix is seen in use.</summary>
+    private void OnPrefixChanged(object sender, TextChangedEventArgs e)
+    {
+        var example = SessionNamePrefix.Text + LocalCaption.Core.Transcripts.TimeFormat.FileStamp(DateTimeOffset.Now);
+        PrefixExample.Text = $"New sessions are named like “{example}”. An interview is named from its details when it has them.";
+    }
+
+    private void OnFolderEdited(object sender, TextChangedEventArgs e)
+    {
+        if (!_loading) FolderError.Visibility = Visibility.Collapsed;
+    }
+
+    private void ShowFolderProblem(string problem)
+    {
+        FolderError.Text = problem;
+        FolderError.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>
+    /// SPEC-16 C6: Change… — the system folder picker, then the write test (Mac
+    /// <c>SettingsView.pickFolder</c>). An unwritable choice is refused and the old one kept.
+    /// </summary>
+    private void OnPickFolder(object sender, RoutedEventArgs e)
+    {
+        var current = TranscriptFolder.Text.Trim();
+        var picker = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "Choose the transcript folder",
+            Multiselect = false,
+        };
+        try
+        {
+            if (current.Length > 0 && Directory.Exists(current)) picker.InitialDirectory = current;
+        }
+        catch (Exception) { /* an unreadable path just opens the picker somewhere else */ }
+
+        if (picker.ShowDialog(this) != true || picker.FolderName is not { Length: > 0 } chosen) return;
+
+        if (SettingsInput.FolderProblem(chosen) is { } problem)
+        {
+            ShowFolderProblem(problem);
+            return;
+        }
+
+        TranscriptFolder.Text = chosen;
+        _checkedFolder = chosen;
+        FolderError.Visibility = Visibility.Collapsed;
+    }
+
+    // ── speech: detection limits (SPEC-16 C7) ────────────────────────────────────────────
+
+    /// <summary>The range and step of a limit box: the Mac's Steppers.</summary>
+    private (int Min, int Max, int Step, int Fallback) LimitOf(TextBox box) => box == EndpointSilence
+        ? (SettingsInput.EndpointSilenceMinMs, SettingsInput.EndpointSilenceMaxMs, SettingsInput.EndpointSilenceStepMs,
+           _env.Config.Asr.EndpointSilenceMs)
+        : (SettingsInput.MaxUtteranceMinS, SettingsInput.MaxUtteranceMaxS, SettingsInput.MaxUtteranceStepS,
+           _env.Config.Asr.MaxUtteranceS);
+
+    /// <summary>Up / Down step the number, as the Mac's Stepper does; the range holds.</summary>
+    private void OnStepKey(object sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox box || e.Key is not (Key.Up or Key.Down)) return;
+        var (min, max, step, fallback) = LimitOf(box);
+        var value = Math.Clamp(Number(box.Text, fallback) + (e.Key == Key.Up ? step : -step), min, max);
+        box.Text = value.ToString(CultureInfo.InvariantCulture);
+        box.CaretIndex = box.Text.Length;
+        e.Handled = true;
+    }
+
+    /// <summary>Leaving the box shows the value that will be saved: clamped, or the old one if it was not a number.</summary>
+    private void OnLimitLostFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (sender is not TextBox box) return;
+        var (min, max, _, fallback) = LimitOf(box);
+        var value = Math.Clamp(Number(box.Text, fallback), min, max);
+        var text = value.ToString(CultureInfo.InvariantCulture);
+        if (box.Text != text) box.Text = text;
     }
 
     private void OnOpenFolder(object sender, RoutedEventArgs e)

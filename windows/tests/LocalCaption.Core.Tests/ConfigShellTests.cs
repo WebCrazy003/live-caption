@@ -35,6 +35,26 @@ public sealed class ConfigShellTests : IDisposable
         Assert.Equal("Ctrl+C", config.Shortcuts.CopyLastN.Keys);
     }
 
+    [Theory]
+    [InlineData("vulkan")]
+    [InlineData("auto")]
+    [InlineData("cuda")]
+    [InlineData("cpu")]
+    public void Every_asr_backend_the_pickers_offer_round_trips(string backend)
+    {
+        // "vulkan" is Windows-only and opt-in; the Mac ignores asr.backend, so it only has to
+        // survive a write and a read here without being repaired away.
+        var config = new Config();
+        config.Asr.Backend = backend;
+        config.Write(ConfigPath);
+
+        var (reloaded, repaired) = Config.LoadOrRepair(ConfigPath);
+
+        Assert.False(repaired);
+        Assert.Equal(backend, reloaded.Asr.Backend);
+        Assert.Equal(config, reloaded);
+    }
+
     [Fact]
     public void No_shortcut_is_global_until_someone_asks_for_it()
     {

@@ -161,7 +161,8 @@ public static class ConfirmDialog
     /// It names them. "Remove 14 sessions?" asks for trust; a list of what the fourteen are
     /// lets someone notice the one they did not mean to include.
     /// </remarks>
-    public static Removal AskToRemoveMany(Window owner, IReadOnlyList<string> names, int fileCount)
+    /// <param name="interviewCount">How many of them are interviews, whose interview data goes with them.</param>
+    public static Removal AskToRemoveMany(Window owner, IReadOnlyList<string> names, int fileCount, int interviewCount = 0)
     {
         var title = new TextBlock { Text = $"{names.Count} sessions", FontSize = 16, FontWeight = FontWeights.SemiBold };
         title.SetResourceReference(TextBlock.FontFamilyProperty, "Font.Display");
@@ -182,6 +183,14 @@ public static class ConfirmDialog
         }
 
         var explain = new TextBlock { Text = "This takes them out of the session list.", FontSize = 13, TextWrapping = TextWrapping.Wrap };
+        if (interviewCount > 0)
+        {
+            // Said before the click: removing several at once never deletes interview data.
+            explain.Text += interviewCount == names.Count
+                ? " Their interview data — CV text, questions, answers and screenshots — is kept; delete it one session at a time from the Sessions window."
+                : $" {interviewCount} of them {(interviewCount == 1 ? "is an interview" : "are interviews")}: " +
+                  "interview data is kept; delete it one session at a time from the Sessions window.";
+        }
 
         var alsoFiles = new CheckBox
         {

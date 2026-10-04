@@ -251,7 +251,8 @@ internal sealed record BenchOptions(
                   --wav <path>        16 kHz mono WAV. Omitted: synthetic audio (timings only).
                   --seconds <n>       Synthetic audio length. Default 6 — one interim window.
                   --models <a,b,...>  Default: tiny.en,small.en,large-v3-turbo
-                  --backends <a,b>    auto | cuda | cpu. Default: auto
+                  --backends <a,b>    auto | cuda | cpu | vulkan. Default: auto. One process loads one
+                                      native library, so measure vulkan in a run of its own.
                   --models-dir <p>    Where weights live. Default: %LOCALAPPDATA%/LocalCaption/models
                   --runs <n>          Decodes per cell. Default 5.
                   --threads <n>       0 = physical cores. Default 0.

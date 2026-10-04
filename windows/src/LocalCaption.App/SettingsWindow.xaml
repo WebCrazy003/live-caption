@@ -60,6 +60,41 @@
             <!-- PagesHost: the Interview, Asking, Prompts and Codex pages are added from code. -->
             <Grid x:Name="PagesHost" Margin="26,22,22,22">
 
+                <!-- ── General (SPEC-16 C5, C6, C12: the Mac's General tab) ── -->
+                <StackPanel x:Name="PageGeneral" Style="{StaticResource Page}">
+                    <TextBlock Style="{StaticResource Type.Heading}" Text="General" />
+
+                    <TextBlock Style="{StaticResource Group}" Margin="0,0,0,2" Text="SESSIONS" />
+                    <TextBlock x:Name="PrefixLabel" Style="{StaticResource Field}" Text="Session name prefix" />
+                    <TextBox x:Name="SessionNamePrefix" MaxLength="80" TextChanged="OnPrefixChanged"
+                             AutomationProperties.LabeledBy="{Binding ElementName=PrefixLabel}" />
+                    <TextBlock x:Name="PrefixExample" Style="{StaticResource Type.Note}" />
+
+                    <TextBlock x:Name="FolderLabel" Style="{StaticResource Field}" Text="Transcript folder" />
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="Open" Tag="&#xE8B7;" Margin="8,0,0,0" Click="OnOpenFolder" />
+                        <Button DockPanel.Dock="Right" Content="Change…" Tag="&#xE8DA;" Margin="8,0,0,0" Click="OnPickFolder"
+                                ToolTip="Choose the folder transcripts are saved in" />
+                        <TextBox x:Name="TranscriptFolder" TextChanged="OnFolderEdited"
+                                 AutomationProperties.LabeledBy="{Binding ElementName=FolderLabel}" />
+                    </DockPanel>
+                    <TextBlock x:Name="FolderError" Style="{StaticResource Type.Note}" Foreground="{DynamicResource Caution}"
+                               Visibility="Collapsed" />
+                    <TextBlock Style="{StaticResource Type.Note}"
+                               Text="Checked before it is used: Local Caption writes a small test file there and deletes it again." />
+
+                    <TextBlock Style="{StaticResource Group}" Text="CLIPBOARD" />
+                    <CheckBox x:Name="AutoUpdate" Content="Copy the latest captions automatically" Margin="0,12,0,0" />
+                    <TextBlock Style="{StaticResource Type.Note}" Margin="25,3,0,0"
+                               Text="Off by default. It writes every few seconds, so over a synced clipboard it will overwrite whatever you copied on your own machine — turn Jump Desktop's clipboard sync off while recording, then this is safe. The transcript file, not the clipboard, is the durable copy." />
+                    <TextBlock x:Name="RecentLabel" Style="{StaticResource Field}" Text="Sentences to copy" />
+                    <TextBox x:Name="RecentSentences" Width="80" HorizontalAlignment="Left"
+                             AutomationProperties.LabeledBy="{Binding ElementName=RecentLabel}" />
+                    <CheckBox x:Name="AutoCopySelection" Content="Copy captions as soon as you select them" Margin="0,16,0,0" />
+                    <TextBlock Style="{StaticResource Type.Note}" Margin="25,3,0,0"
+                               Text="Off by default. Selecting caption text with the mouse puts it on the clipboard straight away, without Ctrl+C. Local Caption only ever writes to the clipboard, never reads it." />
+                </StackPanel>
+
                 <!-- ── Audio ── -->
                 <StackPanel x:Name="PageAudio" Style="{StaticResource Page}">
                     <TextBlock Style="{StaticResource Type.Heading}" Text="Audio source" />
@@ -136,12 +171,18 @@
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
-                            <TextBlock Style="{StaticResource Field}" Text="End of speech (ms)" />
-                            <TextBox x:Name="EndpointSilence" />
+                            <TextBlock x:Name="EndpointLabel" Style="{StaticResource Field}" Text="End of speech (ms)" />
+                            <TextBox x:Name="EndpointSilence" PreviewKeyDown="OnStepKey" LostKeyboardFocus="OnLimitLostFocus"
+                                     AutomationProperties.LabeledBy="{Binding ElementName=EndpointLabel}"
+                                     ToolTip="200–2000 ms. Up and Down step by 50." />
+                            <TextBlock Style="{StaticResource Type.Note}" Text="200–2000, in steps of 50" />
                         </StackPanel>
                         <StackPanel Grid.Column="2">
-                            <TextBlock Style="{StaticResource Field}" Text="Longest phrase (s)" />
-                            <TextBox x:Name="MaxUtterance" />
+                            <TextBlock x:Name="UtteranceLabel" Style="{StaticResource Field}" Text="Longest phrase (s)" />
+                            <TextBox x:Name="MaxUtterance" PreviewKeyDown="OnStepKey" LostKeyboardFocus="OnLimitLostFocus"
+                                     AutomationProperties.LabeledBy="{Binding ElementName=UtteranceLabel}"
+                                     ToolTip="5–60 seconds. Up and Down step by 1." />
+                            <TextBlock Style="{StaticResource Type.Note}" Text="5–60" />
                         </StackPanel>
                     </Grid>
                 </StackPanel>
@@ -161,19 +202,6 @@
                     <CheckBox x:Name="AutoScroll" Content="Follow the latest caption" Margin="0,16,0,0" />
                     <CheckBox x:Name="ShowTimestamps" Content="Timestamps in saved transcripts" Margin="0,10,0,0" />
 
-                    <TextBlock Style="{StaticResource Group}" Text="CLIPBOARD" />
-                    <CheckBox x:Name="AutoUpdate" Content="Copy the latest captions automatically" Margin="0,12,0,0" />
-                    <TextBlock Style="{StaticResource Type.Note}" Margin="25,3,0,0"
-                               Text="Off by default. It writes every few seconds, so over a synced clipboard it will overwrite whatever you copied on your own machine — turn Jump Desktop's clipboard sync off while recording, then this is safe. The transcript file, not the clipboard, is the durable copy." />
-                    <TextBlock Style="{StaticResource Field}" Text="Sentences to copy" />
-                    <TextBox x:Name="RecentSentences" Width="80" HorizontalAlignment="Left" />
-
-                    <TextBlock Style="{StaticResource Group}" Text="TRANSCRIPTS" />
-                    <TextBlock Style="{StaticResource Field}" Text="Folder" />
-                    <DockPanel>
-                        <Button DockPanel.Dock="Right" Content="Open" Tag="&#xE8B7;" Margin="8,0,0,0" Click="OnOpenFolder" />
-                        <TextBox x:Name="TranscriptFolder" />
-                    </DockPanel>
                 </StackPanel>
 
                 <!-- ── Send ── -->

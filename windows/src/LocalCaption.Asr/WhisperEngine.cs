@@ -2,6 +2,7 @@ using LocalCaption.Core.Audio;
 using LocalCaption.Core.Captions;
 using Whisper.net;
 using Whisper.net.LibraryLoader;
+using Whisper.net.Logger;
 
 namespace LocalCaption.Asr;
 
@@ -14,27 +15,34 @@ namespace LocalCaption.Asr;
 /// §5.2 requires the active backend to be visible rather than merely felt, and this is the
 /// field that makes it so.
 /// </param>
+/// <param name="NoGpuDevice">
+/// whisper.cpp logged "no GPU found": the GPU library loaded but had no device to run on, so
+/// it is on its CPU backend. Watched for Vulkan only (<see cref="BackendChoice.FellBack"/>).
+/// </param>
+/// <param name="Note">
+/// Why an explicit <c>vulkan</c> is not running on the GPU, in a sentence for the status
+/// line; null when it is, and always null for <c>auto</c>, <c>cuda</c> and <c>cpu</c>.
+/// </param>
 public sealed record EngineInfo(
     string InterimModel, string FinalModel, AsrBackend Backend,
-    bool WordTimings, int Threads, string RuntimeInfo, string Library = "unknown")
+    bool WordTimings, int Threads, string RuntimeInfo, string Library = "unknown",
+    bool NoGpuDevice = false, string? Note = null)
 {
     /// <summary>
-    /// True when CUDA was asked for and something else loaded — the §5.8 symptom that would
-    /// otherwise present only as captions quietly getting slower.
+    /// True when a GPU library was asked for and the work is not on it — the §5.8 symptom
+    /// that would otherwise present only as captions quietly getting slower.
     /// </summary>
     /// <remarks>
-    /// CUDA only. Metal is not a separate runtime library in Whisper.net — the macOS build
-    /// reports it in the <c>Cpu</c> slot — so asking the same question there would raise a
-    /// false alarm on every Mac development run.
+    /// CUDA and Vulkan only. Metal is not a separate runtime library in Whisper.net — the
+    /// macOS build reports it in the <c>Cpu</c> slot — so asking the same question there
+    /// would raise a false alarm on every Mac development run.
     /// </remarks>
-    public bool FellBack =>
-        Backend is AsrBackend.Cuda &&
-        !Library.Equals(nameof(AsrBackend.Cuda), StringComparison.OrdinalIgnoreCase);
+    public bool FellBack => BackendChoice.FellBack(Backend, Library, NoGpuDevice);
 
     public override string ToString() =>
         $"{Backend.ToString().ToLowerInvariant()}→{Library.ToLowerInvariant()} · interim={InterimModel} final={FinalModel} · " +
         $"threads={Threads} · word-timings={(WordTimings ? "dtw" : "none")}" +
-        (FellBack ? "  ⚠ fell back to the CPU library" : "");
+        (NoGpuDevice ? "  ⚠ no GPU device — running on the CPU" : FellBack ? "  ⚠ fell back to the CPU library" : "");
 }
 
 /// <summary>
@@ -117,32 +125,49 @@ public sealed class WhisperEngine : IAsyncDisposable
             }
         }
 
-        var backend = BackendProbe.Resolve(RequestedBackend);
+        var plan = BackendProbe.Plan(RequestedBackend);
+        var backend = plan.Resolved;
+
+        // Whisper.net picks its native library once per process, on the first factory, by
+        // walking this list; afterwards the list is ignored (plan.LibraryOrder is then null).
+        // Always set rather than left at Whisper.net's default, which puts Vulkan ahead of the
+        // CPU and would move every non-NVIDIA PC onto it unasked (BackendChoice remarks).
+        if (plan.LibraryOrder is { } order) RuntimeOptions.RuntimeLibraryOrder = [.. order];
+
         onStatus?.Invoke($"Loading {InterimName} + {FinalName}…");
 
-        // The interim lane needs word timings; the final lane does not and skips the cost.
-        _interimFactory = CreateFactory(ModelCatalog.PathFor(interimSpec, modelsDirectory),
-                                        backend, interimSpec.Heads, wordTimings: true);
-        _finalFactory = CreateFactory(ModelCatalog.PathFor(finalSpec, modelsDirectory),
-                                      backend, finalSpec.Heads, wordTimings: false);
-
-        _interim = BuildInterim(_interimFactory);
-        _final = BuildFinal(_finalFactory);
-
-        // Loading weights does not warm the first prediction — whisper.cpp still has to
-        // compile its GPU kernels. Doing that here rather than on first speech is the
-        // difference between a clean first caption and a multi-second stall.
-        onStatus?.Invoke("Warming speech models…");
-        var silence = new float[(int)(2 * SampleRate)];
-        foreach (var processor in new[] { _interim, _final })
+        // Vulkan's two quiet failures — library did not load, or loaded with no GPU behind
+        // it — show up only in Whisper.net's log, so listen while loading and warming.
+        var log = new NativeLoadLog();
+        using (backend is AsrBackend.Vulkan ? LogProvider.AddLogger((_, message) => log.Observe(message)) : null)
         {
-            await foreach (var _ in processor.ProcessAsync(silence, cancellationToken).ConfigureAwait(false)) { }
+            // The interim lane needs word timings; the final lane does not and skips the cost.
+            _interimFactory = CreateFactory(ModelCatalog.PathFor(interimSpec, modelsDirectory),
+                                            backend, interimSpec.Heads, wordTimings: true);
+            _finalFactory = CreateFactory(ModelCatalog.PathFor(finalSpec, modelsDirectory),
+                                          backend, finalSpec.Heads, wordTimings: false);
+
+            _interim = BuildInterim(_interimFactory);
+            _final = BuildFinal(_finalFactory);
+
+            // Loading weights does not warm the first prediction — whisper.cpp still has to
+            // compile its GPU kernels. Doing that here rather than on first speech is the
+            // difference between a clean first caption and a multi-second stall.
+            onStatus?.Invoke("Warming speech models…");
+            var silence = new float[(int)(2 * SampleRate)];
+            foreach (var processor in new[] { _interim, _final })
+            {
+                await foreach (var _ in processor.ProcessAsync(silence, cancellationToken).ConfigureAwait(false)) { }
+            }
         }
 
+        var library = LoadedLibrary();
+        var noGpu = backend is AsrBackend.Vulkan && log.NoGpuFound;
         Info = new EngineInfo(InterimName, FinalName, backend,
                               WordTimings: interimSpec.Heads != WhisperAlignmentHeadsPreset.None,
                               Threads, WhisperFactory.GetRuntimeInfo() ?? "unknown",
-                              Library: LoadedLibrary());
+                              Library: library, NoGpuDevice: noGpu,
+                              Note: BackendChoice.VulkanFallbackNote(backend, library, log) ?? plan.Note);
         onStatus?.Invoke($"Ready — {Info}");
         return Info;
     }

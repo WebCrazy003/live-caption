@@ -839,7 +839,7 @@
                                                       Content="{TemplateBinding TitleBarContent}"
                                                       WindowChrome.IsHitTestVisibleInChrome="True" />
 
-                                    <Image DockPanel.Dock="Left" Source="/Assets/app.png" Width="18" Height="18"
+                                    <Image x:Name="Icon" DockPanel.Dock="Left" Source="/Assets/app.png" Width="18" Height="18"
                                            Margin="12,0,0,0" VerticalAlignment="Center"
                                            RenderOptions.BitmapScalingMode="HighQuality" />
 
@@ -863,6 +863,9 @@
                         <Trigger Property="WindowState" Value="Maximized">
                             <Setter TargetName="Maximize" Property="Visibility" Value="Collapsed" />
                             <Setter TargetName="Restore" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <Trigger Property="ShowTitleIcon" Value="False">
+                            <Setter TargetName="Icon" Property="Visibility" Value="Collapsed" />
                         </Trigger>
                         <Trigger Property="ResizeMode" Value="NoResize">
                             <Setter TargetName="Minimize" Property="Visibility" Value="Collapsed" />

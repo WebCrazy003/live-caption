@@ -24,6 +24,11 @@
     win-x64 (default) or win-arm64. Each architecture is its own Velopack channel ("win" and
     "win-arm64"), so an installed app only ever updates to builds for its own CPU.
 
+.PARAMETER NoVulkan
+    Leave out the opt-in Vulkan GPU backend (runtimes/vulkan, about 57 MB unpacked, roughly
+    18 MB of the compressed installer). Without it, AMD and Intel GPUs cannot be used and
+    Vulkan shows greyed out in the backend pickers. ARM64 builds never carry it.
+
 .PARAMETER CudaDirectory
     Folder holding the CUDA redistributable DLLs (cublas64_*, cublasLt64_*, cudart64_*).
     §5.2 bundles the CUDA runtime with the installer, but those files are in no NuGet package
@@ -36,6 +41,9 @@
 
 .EXAMPLE
     ./package.ps1 -Version 1.0.0 -Runtime win-arm64
+
+.EXAMPLE
+    ./package.ps1 -Version 1.0.0 -NoVulkan
 #>
 [CmdletBinding()]
 param(
@@ -45,7 +53,8 @@ param(
     [string] $CudaDirectory,
     [string] $Output,
     # Pack what is already in publish/ instead of rebuilding it first.
-    [switch] $SkipPublish
+    [switch] $SkipPublish,
+    [switch] $NoVulkan
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,11 +77,21 @@ if ($SkipPublish) {
     Write-Host "Packing the existing $staging"
 }
 else {
-    & (Join-Path $PSScriptRoot 'publish.ps1') -Runtime $Runtime -Output $staging
+    & (Join-Path $PSScriptRoot 'publish.ps1') -Runtime $Runtime -Output $staging -NoVulkan:$NoVulkan
+}
+
+# -NoVulkan: no opt-in Vulkan GPU backend (about 57 MB unpacked). publish.ps1 already left it
+# out; this covers -SkipPublish, packing a publish/ that was built with it.
+if ($NoVulkan) {
+    $vulkanDir = Join-Path $staging 'runtimes\vulkan'
+    if (Test-Path $vulkanDir) { Remove-Item $vulkanDir -Recurse -Force; Write-Host '  dropped runtimes/vulkan (-NoVulkan)' }
+}
+elseif ($x64 -and -not (Test-Path (Join-Path $staging 'runtimes\vulkan\win-x64'))) {
+    Write-Host '  no Vulkan GPU backend in this build (the opt-in AMD/Intel GPU path)'
 }
 
 if (-not $x64) {
-    Write-Host '  ARM64: CPU speech recognition only (no CUDA on Windows on ARM)'
+    Write-Host '  ARM64: CPU speech recognition only (no CUDA or Vulkan build for Windows on ARM)'
 }
 elseif ($CudaDirectory) {
     # Beside the executable, which is where BackendProbe looks first and where the loader

@@ -108,6 +108,14 @@ public class BackendProbeTests
     }
 
     [Fact]
+    public void VulkanIsNeverDetectedOffWindows()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        Assert.False(BackendProbe.HasVulkanLoader());
+        Assert.NotEqual(AsrBackend.Vulkan, BackendProbe.Resolve(AsrBackend.Vulkan));
+    }
+
+    [Fact]
     public void CudaIsNeverDetectedOffWindows()
     {
         if (OperatingSystem.IsWindows()) return;
@@ -122,6 +130,7 @@ public class BackendProbeTests
     {
         Assert.True(BackendProbe.UsesGpu(AsrBackend.Cuda));
         Assert.True(BackendProbe.UsesGpu(AsrBackend.Metal));
+        Assert.True(BackendProbe.UsesGpu(AsrBackend.Vulkan));
         Assert.False(BackendProbe.UsesGpu(AsrBackend.Cpu));
     }
 

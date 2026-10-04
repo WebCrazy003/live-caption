@@ -50,6 +50,10 @@
     CPU, which BENCH-RESULTS.md §1 measures at 17 s per window for large-v3-turbo. x64 only,
     and only useful on a PC with an NVIDIA GPU.
 
+.PARAMETER NoVulkan
+    Leave out the opt-in Vulkan GPU backend for AMD and Intel GPUs (runtimes/vulkan, about
+    57 MB). ARM64 builds never carry it.
+
 .PARAMETER SkipPublish
     Install what is already in publish/ rather than rebuilding it first.
 
@@ -72,6 +76,7 @@ param(
     [ValidateSet('win-x64', 'win-arm64')]
     [string] $Runtime,
     [string] $CudaDirectory,
+    [switch] $NoVulkan,
     [switch] $SkipPublish,
     [switch] $NoShortcut,
     [switch] $Run
@@ -146,11 +151,21 @@ if ($SkipPublish) {
     Write-Host "Installing the existing $staging"
 }
 else {
-    & (Join-Path $PSScriptRoot 'publish.ps1') -Runtime $Runtime -Output $staging
+    & (Join-Path $PSScriptRoot 'publish.ps1') -Runtime $Runtime -Output $staging -NoVulkan:$NoVulkan
+}
+
+# -NoVulkan: no opt-in Vulkan GPU backend (about 57 MB unpacked). publish.ps1 already left it
+# out; this covers -SkipPublish, packing a publish/ that was built with it.
+if ($NoVulkan) {
+    $vulkanDir = Join-Path $staging 'runtimes\vulkan'
+    if (Test-Path $vulkanDir) { Remove-Item $vulkanDir -Recurse -Force; Write-Host '  dropped runtimes/vulkan (-NoVulkan)' }
+}
+elseif ($x64 -and -not (Test-Path (Join-Path $staging 'runtimes\vulkan\win-x64'))) {
+    Write-Host '  no Vulkan GPU backend in this build (the opt-in AMD/Intel GPU path)'
 }
 
 if (-not $x64) {
-    Write-Host '  ARM64: CPU speech recognition only (no CUDA on Windows on ARM)'
+    Write-Host '  ARM64: CPU speech recognition only (no CUDA or Vulkan build for Windows on ARM)'
 }
 elseif ($CudaDirectory) {
     Copy-CudaRuntime -From $CudaDirectory -To $staging
@@ -238,9 +253,10 @@ if (-not $NoShortcut) {
 $size = (Get-ChildItem $Destination -Recurse -File | Measure-Object Length -Sum).Sum
 $version = (Get-Item $installed).VersionInfo.FileVersion
 $cuda = @(Get-CudaRuntimeDll $Destination).Count
+$vulkan = if (Test-Path (Join-Path $Destination 'runtimes\vulkan')) { 'with' } else { 'without' }
 
 Write-Host ''
-Write-Host ("  {0}  version {1}, {2:N0} MB, {3} CUDA DLL(s)" -f $exeName, $version, ($size / 1MB), $cuda)
+Write-Host ("  {0}  version {1}, {2:N0} MB, {3} CUDA DLL(s), {4} Vulkan" -f $exeName, $version, ($size / 1MB), $cuda, $vulkan)
 Write-Host ("  transcripts, models and settings stay in {0}" -f (Join-Path $env:LOCALAPPDATA 'LocalCaption'))
 Write-Host ''
 Write-Host "Done. Run it from the desktop, or from $installed"

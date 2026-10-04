@@ -37,29 +37,37 @@ public static class AsrFallback
     /// Pick the models for a backend, downgrading only when the choice would be hopeless.
     /// </summary>
     /// <param name="onGpu">Whether a GPU backend actually loaded — not whether one was asked for.</param>
+    /// <param name="why">
+    /// Why a GPU the user explicitly chose is not in use (an opt-in <c>vulkan</c> that could
+    /// not start), as a sentence; it replaces the NVIDIA hint, which would be beside the point.
+    /// Null for the ordinary case.
+    /// </param>
     /// <returns>The models to load, and the banner to show, or null when nothing is wrong.</returns>
-    public static (string Interim, string Final, string? Banner) Choose(bool onGpu, string interim, string final)
+    public static (string Interim, string Final, string? Banner) Choose(bool onGpu, string interim, string final,
+                                                                       string? why = null)
     {
         if (onGpu) return (interim, final, null);
 
         // A CPU-sized choice the user already made is left alone; only the ones B0 measured
         // as unusable are overridden, and the banner says so rather than silently differing
         // from what Settings shows.
-        if (!IsHopelessOnCpu(final)) return (interim, final, CpuBanner(null));
+        if (!IsHopelessOnCpu(final)) return (interim, final, CpuBanner(null, why));
 
         var (cpuInterim, cpuFinal) = CpuModels;
-        return (IsHopelessOnCpu(interim) ? cpuInterim : interim, cpuFinal, CpuBanner(final));
+        return (IsHopelessOnCpu(interim) ? cpuInterim : interim, cpuFinal, CpuBanner(final, why));
     }
 
     /// <summary>Models whose CPU decode time exceeds the audio they are decoding (B0 §2a).</summary>
     private static bool IsHopelessOnCpu(string model) =>
         model.Contains("large", StringComparison.OrdinalIgnoreCase);
 
-    private static string CpuBanner(string? replaced)
+    private static string CpuBanner(string? replaced, string? why)
     {
         // Not "enable the NVIDIA GPU": most PCs have none, and CPU is simply how they run.
-        const string core = "Running on CPU — captions will be slower. If this PC has an NVIDIA GPU, " +
-                            "make sure it is switched on (not Eco or integrated-only mode) for best results.";
+        var core = why is null
+            ? "Running on CPU — captions will be slower. If this PC has an NVIDIA GPU, " +
+              "make sure it is switched on (not Eco or integrated-only mode) for best results."
+            : $"Running on CPU — captions will be slower. {why}";
         return replaced is null
             ? core
             : $"{core} ({replaced} needs about 17 seconds per window without a GPU, so {CpuModels.Final} " +

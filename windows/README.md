@@ -118,6 +118,30 @@ are harmless on a PC without an NVIDIA GPU: `BackendProbe` only chooses CUDA whe
 driver (`nvcuda.dll`) is present, and if Whisper.net still ends up on its CPU library (a GPU
 or driver too old for CUDA 13) the app reloads with CPU-sized models.
 
+**Vulkan — the opt-in GPU path for AMD and Intel (experimental).** x64 builds also carry
+`Whisper.net.Runtime.Vulkan` in `runtimes\vulkan\win-x64`. It is used only when someone picks
+**Vulkan (AMD, Intel, other GPUs)** in Settings ▸ Speech recognition or the toolbar's COMPUTE
+picker (`asr.backend = "vulkan"`); `auto` never picks it, and the library order for `auto`,
+`cuda` and `cpu` deliberately leaves Vulkan out, so those load exactly what they did before
+(`BackendChoice`). With Vulkan chosen the order is Vulkan → CPU, never CUDA. It needs the
+Vulkan loader (`vulkan-1.dll` in System32, installed by any current AMD/Intel/NVIDIA display
+driver); without it, on ARM64, or in a `-NoVulkan` build the picker shows it greyed out with
+the reason. If the library does not load, or loads but the driver offers no Vulkan GPU
+(whisper.cpp logs "no GPU found"), the app runs on the CPU with CPU-sized models and the
+status line says why; Settings ▸ System shows the library that actually loaded. Whisper.net
+loads one native library per process, so switching to or from Vulkan takes effect after a
+restart.
+
+Size: the Vulkan payload is about **57 MB unpacked** (`ggml-vulkan-whisper.dll` is 55 MB of
+it; the rest is its own copy of whisper/ggml) and roughly **18 MB compressed** in the installer
+and in every full update package. To leave it out:
+
+```powershell
+build\package.ps1 -Version 1.0.0 -NoVulkan      # also: publish.ps1 -NoVulkan, release.ps1 -NoVulkan
+```
+
+ARM64 builds never carry it — Whisper.net's Vulkan build is `win-x64` only.
+
 ### Other PCs: ARM64, Windows 10, no NVIDIA GPU
 
 The target is any Windows 10 1809+ / 11 PC, x64 or ARM64 ([SPEC-16, Compatibility
@@ -138,8 +162,8 @@ an install only ever updates to its own architecture.
   ARM cannot run the x64 build at all; Windows 11 on ARM can, emulated and slower — Settings ▸
   System says "emulated" when that is happening.
 - **No NVIDIA GPU** (Intel, AMD, ARM): the CPU backend, with `auto` choosing models the CPU
-  keeps up with. x64 CPUs without AVX2 (pre-2013 Intel, many Pentium/Celeron/Atom) use the
-  bundled `Whisper.net.Runtime.NoAvx` build.
+  keeps up with — or, on x64, the opt-in Vulkan backend above. x64 CPUs without AVX2
+  (pre-2013 Intel, many Pentium/Celeron/Atom) use the bundled `Whisper.net.Runtime.NoAvx` build.
 - **Visual C++ runtime.** whisper.cpp's DLLs link the VC++ 2015–2022 runtime (MSVCP140,
   VCRUNTIME140, and on x64 VCRUNTIME140_1 and VCOMP140), which a self-contained publish does
   not include. The installer installs it first when missing (`vpk --framework
@@ -324,7 +348,13 @@ whole pixels — into `src/LocalCaption.App/Assets/`. Re-run it to change the ma
 - **A GPU backend that fails to load is silent.** Whisper.net walks its runtime order and
   drops to the CPU library without throwing or logging, so `EngineInfo.Library` records what
   actually loaded and `FellBack` says whether it matches what was asked for (§5.2). Trust
-  that field, never the requested backend.
+  that field, never the requested backend. Vulkan has a second quiet failure — the library
+  loads but finds no device — which only shows in Whisper.net's log; `WhisperEngine` listens
+  for it while loading (`NativeLoadLog`).
+- **Whisper.net's default runtime order includes Vulkan ahead of the CPU.** Leave
+  `RuntimeOptions.RuntimeLibraryOrder` at its default and every non-NVIDIA x64 PC silently
+  moves onto the Vulkan library. `WhisperEngine` always sets the order from
+  `BackendChoice.LibraryOrder` before the first factory; it is read once per process.
 - **The capture clock must start when the stream opens, not when audio does.** An endpoint
   that is silent from the beginning never sends a first packet, so a clock waiting for one
   never starts and the session silently captures nothing. Found on hardware, not in a test —

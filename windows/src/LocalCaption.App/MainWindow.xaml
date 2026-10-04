@@ -6,6 +6,26 @@
         xmlns:answers="clr-namespace:LocalCaption.App.Interview.Answers"
         Title="Local Caption" Height="620" Width="980" AllowSeeThrough="True">
 
+    <local:ChromeWindow.Resources>
+        <!-- An inline link in the header ("Show in folder"). Focusable, so Tab reaches it and
+             Enter follows it, like any other control. -->
+        <Style x:Key="Link" TargetType="Hyperlink">
+            <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+            <Setter Property="TextDecorations" Value="{x:Null}" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="{DynamicResource Accent.Text}" />
+                    <Setter Property="TextDecorations" Value="Underline" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource Accent.Soft}" />
+                    <Setter Property="TextDecorations" Value="Underline" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </local:ChromeWindow.Resources>
+
     <!-- The title bar carries the controls that must survive any window size. Whatever the
          body does when it is squeezed beside a video call — wrap, scroll, drop the sidebar —
          Settings, the theme and the pin stay exactly where they were. -->
@@ -69,7 +89,7 @@
                     AutomationProperties.Name="Sessions" />
             <Button x:Name="SettingsButton" Style="{StaticResource Button.Ghost}" Tag="&#xE713;"
                     Click="OnSettings" Focusable="False" Margin="2,0,0,0" />
-            <Border Width="1" Height="16" Margin="8,0,2,0" Background="{DynamicResource Line.Strong}" />
+            <Border x:Name="TitleSeparator" Width="1" Height="16" Margin="8,0,2,0" Background="{DynamicResource Line.Strong}" />
         </StackPanel>
     </local:ChromeWindow.TitleBarContent>
 
@@ -136,8 +156,14 @@
                             <DataTemplate>
                                 <StackPanel>
                                     <TextBlock Text="{Binding SessionName}" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Style="{StaticResource Type.Muted}" FontSize="11" Margin="0,2,0,0"
-                                               Text="{Binding When, Mode=OneWay}" />
+                                    <!-- SPEC-16 C8: how long it ran, as the Sessions window shows it. -->
+                                    <DockPanel Margin="0,2,0,0">
+                                        <TextBlock DockPanel.Dock="Right" Style="{StaticResource Type.Measure}"
+                                                   Margin="8,0,0,0" Foreground="{DynamicResource Text.Muted}"
+                                                   Text="{Binding Duration, Mode=OneWay}" />
+                                        <TextBlock Style="{StaticResource Type.Muted}" FontSize="11"
+                                                   Text="{Binding When, Mode=OneWay}" />
+                                    </DockPanel>
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -178,7 +204,13 @@
                             <Ellipse x:Name="PhaseDot" Width="8" Height="8" Margin="0,1,7,0" VerticalAlignment="Center"
                                      Fill="{DynamicResource Text.Faint}" />
                             <TextBlock x:Name="PhaseText" Style="{StaticResource Type.Muted}" Text="Preparing…" />
-                            <TextBlock Style="{StaticResource Type.Muted}" Text="  ·  " />
+                            <!-- SPEC-16 C4: after Stop, the saved transcript is one click away (the
+                                 Mac's "Saved ✓ Reveal in Finder"). Hidden when the export failed. -->
+                            <TextBlock x:Name="SavedLink" Margin="8,0,0,0" Visibility="Collapsed">
+                                <Hyperlink x:Name="ShowSavedLink" Style="{StaticResource Link}" Click="OnShowSaved"
+                                           ToolTip="Show the saved transcript in File Explorer">Show in folder</Hyperlink>
+                            </TextBlock>
+                            <TextBlock x:Name="SourceSeparator" Style="{StaticResource Type.Muted}" Text="  ·  " />
                             <TextBlock x:Name="SourceText" Style="{StaticResource Type.Muted}" MaxWidth="320"
                                        Text="no source" />
                         </StackPanel>
@@ -306,6 +338,11 @@
                                             <Border x:Name="DownloadFill" HorizontalAlignment="Left" Width="0" CornerRadius="1.5"
                                                     Background="{DynamicResource Accent}" />
                                         </Border>
+                                        <!-- SPEC-16 C2: try the model load again (or dismiss a warning
+                                             about models that did load) without a restart. -->
+                                        <Button x:Name="RetryButton" DockPanel.Dock="Bottom" Content="Retry" Tag="&#xE72C;"
+                                                HorizontalAlignment="Left" MinHeight="26" Padding="10,0" Margin="0,8,0,0"
+                                                Click="OnRetryPrepare" Visibility="Collapsed" />
                                         <TextBlock x:Name="StatusText" TextWrapping="Wrap" FontSize="12.5" />
                                     </DockPanel>
                                 </Border>

@@ -17,6 +17,12 @@
          CUDA natives exist for win-x64 only; build/publish.ps1 drops them from an ARM64
          build. Windows-only payload. -->
     <PackageReference Include="Whisper.net.Runtime.Cuda.Windows" Version="1.9.1" />
+    <!-- Opt-in only (asr.backend = "vulkan"): the GPU path for AMD and Intel GPUs, and for an
+         NVIDIA GPU without the CUDA redistributables. Lands in runtimes/vulkan/win-x64 and is
+         never in the load order unless the user picks it (BackendChoice.LibraryOrder), so
+         "auto" behaves exactly as it did before this package existed. win-x64 only;
+         build/publish.ps1 drops it from ARM64 builds, and -NoVulkan drops it everywhere. -->
+    <PackageReference Include="Whisper.net.Runtime.Vulkan" Version="1.9.1" />
   </ItemGroup>
 
   <PropertyGroup>

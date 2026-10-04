@@ -10,8 +10,10 @@ using System.Windows.Media.Effects;
 using System.Windows.Threading;
 using LocalCaption.App.Interview;
 using LocalCaption.App.Interview.Answers;
+using LocalCaption.App.Interview.Sessions;
 using LocalCaption.Asr;
 using LocalCaption.Core.Data;
+using LocalCaption.Core.Interview;
 using LocalCaption.Core.Transcripts;
 using LocalCaption.Interview;
 using LocalCaption.Session;
@@ -95,6 +97,13 @@ public partial class MainWindow : ChromeWindow
 
         Captions.FollowingChanged += following =>
             Dispatcher.BeginInvoke(() => JumpButton.Visibility = following ? Visibility.Collapsed : Visibility.Visible);
+
+        // SPEC-16 C12: with "Copy selected captions" on, a mouse selection is copied as it is
+        // made. Write-only, through the same retrying writer as every other copy (§7.4).
+        Captions.SelectionMade += text =>
+        {
+            if (_env.Config.Clipboard.AutoCopySelection && ClipboardWriter.Copy(text)) Flash("✓ COPIED");
+        };
 
         // The level meter is not session state — it is a continuous reading, and binding it
         // to Changed would either miss frames or force a redraw per audio packet.
@@ -209,6 +218,13 @@ public partial class MainWindow : ChromeWindow
     }
 
     private void OnJump(object sender, RoutedEventArgs e) => Captions.JumpToLatest();
+
+    /// <summary>SPEC-16 C2: the Retry under a model-load error.</summary>
+    private async void OnRetryPrepare(object sender, RoutedEventArgs e) => await _controller.RetryPrepareAsync();
+
+    /// <summary>SPEC-16 C4: "Saved ✓  Show in folder" after Stop.</summary>
+    private void OnShowSaved(object sender, RoutedEventArgs e) =>
+        SessionShell.ShowInFolder(this, _controller.SavedTranscriptPath);
 
     private void OnSettings(object sender, RoutedEventArgs e) => OpenSettings();
 
@@ -467,6 +483,7 @@ public partial class MainWindow : ChromeWindow
     /// </remarks>
     private void FitSidebar()
     {
+        FitTitleBar();
         var ui = _env.Config.Ui;
         var narrow = ActualWidth > 0 && ActualWidth < NarrowWidth;
         if (narrow != _narrow)
@@ -497,6 +514,36 @@ public partial class MainWindow : ChromeWindow
 
     private bool _sidebarShown = true;
     private EventHandler? _sidebarSlide;
+
+    /// <summary>Below this the title bar and header give up what they can spare (SPEC-16 C11).</summary>
+    private const double CompactWidth = 480;
+    private bool? _compactBar;
+
+    /// <summary>
+    /// Keep every title-bar control reachable down to the 360-pixel minimum.
+    /// </summary>
+    /// <remarks>
+    /// The full bar wants about 430 pixels: three caption buttons (138), seven controls and a
+    /// divider (219), the sidebar button and the icon (70). Narrow, the icon, the theme button
+    /// (still in Settings → Appearance and on its shortcut) and the divider go, and the buttons
+    /// close up from 32 to 28 — about 330 pixels, leaving some 30 to drag the window by.
+    /// The level meter shortens too, so the session name keeps some room beside the clock.
+    /// </remarks>
+    private void FitTitleBar()
+    {
+        var compact = ActualWidth > 0 && ActualWidth < CompactWidth;
+        if (compact == _compactBar) return;
+        _compactBar = compact;
+
+        ShowTitleIcon = !compact;
+        ThemeButton.Visibility = TitleSeparator.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+        foreach (var button in new FrameworkElement[] { SidebarButton, ViewButton, ClickThroughButton, PinButton, SessionsButton, SettingsButton })
+        {
+            if (compact) button.Width = 28;
+            else button.ClearValue(WidthProperty);
+        }
+        LevelTrack.Width = compact ? 110 : 150;
+    }
 
     /// <summary>The resting state: a real column with real limits, or none at all.</summary>
     private void SettleSidebar(bool show, double width)
@@ -579,9 +626,13 @@ public partial class MainWindow : ChromeWindow
         StartButton.ToolTip = _skillsBlockStart
             ? "Load your 4 skills in Settings → Interview → Skills first"
             : With("Start a new session", ShortcutAction.Start);
-        PauseButton.ToolTip = With("Pause or resume", ShortcutAction.PauseResume);
-        StopButton.ToolTip = With(IsInterviewMode ? "End the interview and save the transcript" : "Stop and save the transcript",
-                                  ShortcutAction.Stop);
+        PauseButton.ToolTip = _retryShown
+            ? With("Retry capture — carry on recording into the same session", ShortcutAction.PauseResume)
+            : With("Pause or resume", ShortcutAction.PauseResume);
+        StopButton.ToolTip = _retryShown
+            ? With("Retry save — try saving the transcript again", ShortcutAction.Stop)
+            : With(IsInterviewMode ? "End the interview and save the transcript" : "Stop and save the transcript",
+                   ShortcutAction.Stop);
         CopyButton.ToolTip = With($"Copy the last {_env.Config.Clipboard.RecentSentences} sentences", ShortcutAction.CopyLastN);
         CopyAllButton.ToolTip = With("Copy the whole transcript so far", ShortcutAction.CopyAll);
         JumpButton.ToolTip = With("Jump to the latest caption", ShortcutAction.JumpLatest);
@@ -603,9 +654,7 @@ public partial class MainWindow : ChromeWindow
 
             FillModels();
 
-            var backends = new[] { "auto", "cuda", "cpu" };
-            BackendBox.ItemsSource = backends;
-            BackendBox.SelectedItem = backends.Contains(config.Asr.Backend) ? config.Asr.Backend : "auto";
+            BackendPicker.Fill(BackendBox, config.Asr.Backend, fallback: "auto");
 
             var sensitivities = new[]
             {
@@ -633,7 +682,8 @@ public partial class MainWindow : ChromeWindow
         FinalBox.ToolTip = "The accurate model behind the saved transcript. Changing a model while " +
                            "recording pauses for a few seconds to load it, then carries on.";
         BackendBox.ToolTip = "Where the models run. 'auto' uses the GPU when a CUDA runtime is present. " +
-                             "Moving from cpu to cuda may need the app restarted.";
+                             "Moving from cpu to cuda may need the app restarted. Vulkan (AMD, Intel, other GPUs) " +
+                             "is experimental, never picked by 'auto', and switching to or from it needs a restart.";
         SensitivityBox.ToolTip = "How quiet speech can be and still count. Raise it for soft voices, " +
                                  "lower it if background noise is being captioned.";
         CopyChip.ToolTip = "How many sentences 'Copy last N' takes";
@@ -754,7 +804,7 @@ public partial class MainWindow : ChromeWindow
 
         asr.InterimModel = (InterimBox.SelectedItem as ModelChoice)?.Name ?? asr.InterimModel;
         asr.FinalModel = (FinalBox.SelectedItem as ModelChoice)?.Name ?? asr.FinalModel;
-        asr.Backend = BackendBox.SelectedItem as string ?? asr.Backend;
+        asr.Backend = BackendPicker.Value(BackendBox) ?? asr.Backend;
 
         Save();
         await _controller.ReconfigureAsync(reloadModels: true);
@@ -906,7 +956,11 @@ public partial class MainWindow : ChromeWindow
     /// diffable against the macOS build. Bound straight to the list it puts
     /// "2026-09-20T12:30:19Z" in front of someone who recorded at half past two.
     /// </remarks>
-    private sealed record SessionRow(SessionRecord Record, string SessionName, string When);
+    private sealed record SessionRow(SessionRecord Record, string SessionName, string When)
+    {
+        /// <summary><c>HH:MM:SS</c>, as the Sessions window and the Mac's list show it (SPEC-16 C8).</summary>
+        public string Duration => TimeFormat.Clock(Record.DurationSeconds);
+    }
 
     /// <summary>§17.1's sort orders, in the order someone would reach for them.</summary>
     private sealed record SortChoice(string Label, SessionSort Sort);
@@ -1132,6 +1186,14 @@ public partial class MainWindow : ChromeWindow
         var rows = SelectedRows().Where(r => r.Record.Id is not null).ToList();
         if (rows.Count == 0) return;
 
+        // One interview: the Sessions window's own choices (SPEC-16 §5.6), so the same session
+        // is never deleted two different ways depending on which list it was picked from.
+        if (rows.Count == 1 && rows[0].Record.IsInterview)
+        {
+            DeleteInterviewSession(rows[0]);
+            return;
+        }
+
         // Every file behind the selection: each transcript and its .json sidecar, if there.
         var files = rows
             .Select(r => r.Record.TranscriptFile)
@@ -1141,9 +1203,10 @@ public partial class MainWindow : ChromeWindow
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        var interviewCount = rows.Count(r => r.Record.IsInterview);
         var choice = rows.Count == 1
             ? ConfirmDialog.AskToRemove(this, rows[0].SessionName, rows[0].When, rows[0].Record.TranscriptFile ?? "", files.Count > 0)
-            : ConfirmDialog.AskToRemoveMany(this, [.. rows.Select(r => r.SessionName)], files.Count);
+            : ConfirmDialog.AskToRemoveMany(this, [.. rows.Select(r => r.SessionName)], files.Count, interviewCount);
         if (choice == ConfirmDialog.Removal.Cancelled) return;
 
         // The list row is only a pointer; the transcript is the interview (§7.4). So the
@@ -1166,22 +1229,95 @@ public partial class MainWindow : ChromeWindow
         }
 
         // A row whose file could not be deleted stays: it is the only thing still pointing at
-        // a file that is still there. The rest of the selection goes regardless.
+        // a file that is still there. The rest of the selection goes regardless. Interview data
+        // is kept here, unlinked — deleting it is an explicit choice, made one session at a
+        // time in the Sessions window or the single-row dialog.
         var removed = 0;
+        var failed = 0;
         foreach (var row in rows)
         {
             if (row.Record.TranscriptFile is { } text && stuck.Contains(text)) continue;
-            _env.Store.Delete(row.Record.Id!.Value);
-            removed++;
+            try
+            {
+                _env.Store.Delete(row.Record.Id!.Value);
+                removed++;
+            }
+            catch (Exception) { failed++; }
         }
 
         RefreshSessions();
-        if (stuck.Count > 0)
-            Flash($"Removed {removed}; {stuck.Count} could not be deleted — open somewhere?", ok: false);
+        _sessions?.Reload();
+        if (stuck.Count > 0 || failed > 0)
+            Flash($"Removed {removed}; {stuck.Count + failed} could not be deleted — open somewhere?", ok: false);
         else if (choice == ConfirmDialog.Removal.ListAndFiles)
             Flash(removed == 1 ? "✓ MOVED TO THE RECYCLE BIN" : $"✓ {removed} SESSIONS MOVED TO THE RECYCLE BIN");
         else
             Flash(removed == 1 ? "✓ REMOVED FROM THE LIST" : $"✓ {removed} REMOVED FROM THE LIST");
+    }
+
+    /// <summary>
+    /// Remove one interview session with the Sessions window's choices: its interview data by
+    /// default, its transcript file if asked (Recycle Bin), or the session alone.
+    /// </summary>
+    private void DeleteInterviewSession(SessionRow row)
+    {
+        var record = row.Record;
+        var hasFile = SessionFiles.HasExport(record);
+        var choice = SessionDeleteDialog.Ask(this, record.SessionName, isInterview: true, hasFile);
+        if (choice == SessionDeleteDialog.Choice.Cancel) return;
+
+        var alsoFile = hasFile && choice is SessionDeleteDialog.Choice.SessionAndFile
+                                         or SessionDeleteDialog.Choice.SessionInterviewAndFile;
+        var alsoInterview = choice is SessionDeleteDialog.Choice.SessionAndInterview
+                                   or SessionDeleteDialog.Choice.SessionInterviewAndFile;
+
+        try
+        {
+            // Read before the row goes: interviews.session_id is ON DELETE SET NULL.
+            var interviews = alsoInterview ? InterviewsOf(record) : [];
+
+            // Files first: a transcript that will not go to the Recycle Bin keeps everything.
+            if (alsoFile && !SessionShell.RecycleTranscript(record.TranscriptFile!))
+            {
+                SessionShell.Report(this,
+                    "The transcript file could not be moved to the Recycle Bin — is it open somewhere? Nothing was deleted.");
+                return;
+            }
+
+            _env.Store.Delete(record.Id!.Value);
+            DeleteInterviews(interviews);
+        }
+        catch (Exception ex)
+        {
+            SessionShell.Report(this, $"The session could not be deleted.\n\n{ex.Message}");
+            return;
+        }
+
+        RefreshSessions();
+        _sessions?.Reload();
+        Flash(alsoFile ? "✓ MOVED TO THE RECYCLE BIN" : "✓ REMOVED FROM THE LIST");
+    }
+
+    /// <summary>
+    /// Every interview linked to an interview session — read <i>before</i> its row is deleted,
+    /// because <c>interviews.session_id</c> is <c>ON DELETE SET NULL</c>.
+    /// </summary>
+    private IReadOnlyList<InterviewRecord> InterviewsOf(SessionRecord record) =>
+        record.IsInterview && record.Id is { } id ? _env.Store.Interviews(id) : [];
+
+    /// <summary>
+    /// Delete interviews' rows, turns and screenshots, and archive their Codex threads — only
+    /// where that starts no Codex in Caption only mode (<see cref="InterviewServices.ArchiveThreadAsync"/>).
+    /// </summary>
+    private void DeleteInterviews(IReadOnlyList<InterviewRecord> interviews)
+    {
+        foreach (var interview in interviews)
+        {
+            _env.Store.DeleteInterview(interview.Id);
+            if (interview.ThreadId is not { Length: > 0 } thread) continue;
+            if (_services is { } services) _ = services.ArchiveThreadAsync(thread);
+            else InterviewPlatformLog.Write("sessions", $"left thread {thread} unarchived: Interview mode is unavailable");
+        }
     }
 
     private SessionRow? Selected() => SessionList.SelectedItem as SessionRow;
@@ -1274,6 +1410,13 @@ public partial class MainWindow : ChromeWindow
             ? orchestrator.SourceName
             : orchestrator.ModelLabel;
 
+        // "Saved ✓  Show in folder" in place of the source, which says nothing once the
+        // session is over. Only when the export exists: a failed export says so in the strip.
+        var savedFile = phase == SessionPhase.Saved && _controller.SaveError is null &&
+                        _controller.SavedTranscriptPath is { Length: > 0 } path && File.Exists(path);
+        SavedLink.Visibility = savedFile ? Visibility.Visible : Visibility.Collapsed;
+        SourceSeparator.Visibility = SourceText.Visibility = savedFile ? Visibility.Collapsed : Visibility.Visible;
+
         Captions.Update(_controller.Paragraphs, _controller.Current, orchestrator.Hypothesis);
         CaptionPlaceholder.Visibility =
             _controller.Paragraphs.Count == 0 && _controller.Current.Length == 0 &&
@@ -1309,6 +1452,15 @@ public partial class MainWindow : ChromeWindow
 
         StatusText.Text = message ?? "";
         StatusStrip.Visibility = message is null ? Visibility.Collapsed : Visibility.Visible;
+
+        // The Mac's Retry under a model error (SPEC-16 C2): never while a session is live or
+        // unsaved, and not under a save error, which the transport's Retry save answers.
+        var canRetry = _controller.CanRetryPrepare && _controller.SaveError is null;
+        RetryButton.Visibility = canRetry ? Visibility.Visible : Visibility.Collapsed;
+        if (canRetry)
+            RetryButton.ToolTip = orchestrator.ModelReady
+                ? "The speech models are loaded — dismiss this message"
+                : "Load the speech models again";
 
         var downloading = orchestrator.IsDownloading && _controller.SaveError is null && orchestrator.ErrorText is null;
         DownloadTrack.Visibility = downloading ? Visibility.Visible : Visibility.Collapsed;
@@ -1419,7 +1571,7 @@ public partial class MainWindow : ChromeWindow
         SessionPhase.Pausing => "Finishing speech…",
         SessionPhase.Paused => "Paused",
         SessionPhase.Saving => "Saving…",
-        SessionPhase.Saved => "Saved",
+        SessionPhase.Saved => "Saved ✓",
         _ => "Failed",
     };
 

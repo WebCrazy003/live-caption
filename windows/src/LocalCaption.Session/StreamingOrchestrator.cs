@@ -61,6 +61,14 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
     public bool ModelReady { get; private set; }
     public string? ErrorText { get; private set; }
 
+    /// <summary>Dismiss the error message — the Retry under it (Mac <c>retryPrepare</c> sets <c>errorText = nil</c>).</summary>
+    public void ClearError()
+    {
+        if (ErrorText is null) return;
+        ErrorText = null;
+        Changed();
+    }
+
     public string InterimName { get; private set; } = "";
     public string FinalName { get; private set; } = "";
     public string ModelLabel => FinalName.Length == 0 ? "" : $"{InterimName} · {FinalName}";
@@ -123,15 +131,16 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
         InterimName = config.Asr.InterimModel;
         FinalName = config.Asr.FinalModel;
 
-        var backend = Enum.TryParse<AsrBackend>(config.Asr.Backend, ignoreCase: true, out var parsed)
-            ? parsed
-            : AsrBackend.Auto;
+        var backend = BackendChoice.Parse(config.Asr.Backend);
 
         // §5.8: probe at every model load, not once at install — Eco mode and the MUX switch
         // change the answer between runs. If the GPU is not there, a turbo-sized choice is
         // not "slower", it is unusable, so the models are downgraded and the banner says so.
-        var onGpu = BackendProbe.UsesGpu(BackendProbe.Resolve(backend));
-        var (interim, final, banner) = AsrFallback.Choose(onGpu, InterimName, FinalName);
+        // An opt-in Vulkan that cannot even be tried (ARM64, no driver, needs a restart)
+        // resolves to the CPU here, and its plan says why.
+        var plan = BackendProbe.Plan(backend);
+        var onGpu = BackendProbe.UsesGpu(plan.Resolved);
+        var (interim, final, banner) = AsrFallback.Choose(onGpu, InterimName, FinalName, plan.Note);
         InterimName = interim;
         FinalName = final;
         _gpuBanner = banner;
@@ -148,10 +157,11 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
                 cancellationToken).ConfigureAwait(false);
 
             // Asked for the GPU, got Whisper.net's CPU library — an NVIDIA card too old for the
-            // bundled CUDA build, or a driver too old for its runtime. The GPU-sized models were
-            // kept on the strength of that ask, and on the CPU they are unusable (§5.8), so
-            // reload with the models the CPU can run rather than lag 17 s a window.
-            if (info.FellBack && AsrFallback.Choose(false, InterimName, FinalName) is var (cpuInterim, cpuFinal, cpuBanner) &&
+            // bundled CUDA build, or a driver too old for its runtime; or, for Vulkan, a library
+            // that would not load or found no GPU. The GPU-sized models were kept on the
+            // strength of that ask, and on the CPU they are unusable (§5.8), so reload with the
+            // models the CPU can run rather than lag 17 s a window.
+            if (info.FellBack && AsrFallback.Choose(false, InterimName, FinalName, info.Note) is var (cpuInterim, cpuFinal, cpuBanner) &&
                 (cpuInterim != InterimName || cpuFinal != FinalName))
             {
                 try { await engine.DisposeAsync().ConfigureAwait(false); } catch (Exception) { }
@@ -178,8 +188,10 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
             // without anything having "failed", so FellBack is false and nothing is said. The
             // user then waits 17 seconds a window for large-v3-turbo and has no idea why.
             ErrorText = info.FellBack
-                ? "The GPU backend could not be loaded, so speech recognition is running on the CPU. " +
-                  "Captions will lag badly — see Settings ▸ Speech recognition."
+                ? info.Note is { } why
+                    ? AsrFallback.Choose(false, InterimName, FinalName, why).Banner
+                    : "The GPU backend could not be loaded, so speech recognition is running on the CPU. " +
+                      "Captions will lag badly — see Settings ▸ Speech recognition."
                 : _gpuBanner;
         }
         catch (Exception e)
@@ -430,7 +442,7 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
     /// <remarks>After the §5.8 substitution, because that is what would actually be fetched.</remarks>
     public static IReadOnlyList<ModelSpec> MissingModels(Config config)
     {
-        var backend = Enum.TryParse<AsrBackend>(config.Asr.Backend, ignoreCase: true, out var parsed) ? parsed : AsrBackend.Auto;
+        var backend = BackendChoice.Parse(config.Asr.Backend);
         var onGpu = BackendProbe.UsesGpu(BackendProbe.Resolve(backend));
         var (interim, final, _) = AsrFallback.Choose(onGpu, config.Asr.InterimModel, config.Asr.FinalModel);
 
@@ -505,7 +517,7 @@ public sealed class StreamingOrchestrator : IAsyncDisposable
         if (++_consecutiveFailures < AsrFallback.FailuresBeforeGpuPresumedLost) return outcome;
         if (GpuLost) return outcome;                      // already handled; do not pause twice
 
-        GpuLost = _engine?.Info?.Backend is AsrBackend.Cuda or AsrBackend.Metal;
+        GpuLost = _engine?.Info?.Backend is AsrBackend.Cuda or AsrBackend.Metal or AsrBackend.Vulkan;
         ErrorText = GpuLost
             ? "The GPU stopped responding — Eco mode or a driver reset can do this. Recording is " +
               "paused; resume to continue on the CPU."
