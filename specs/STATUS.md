@@ -19,6 +19,7 @@ WhisperKit), and auto-saves transcripts. This document reflects what is actually
 | 6 | Developer ID signing + notarization + DMG | ⛔ Blocked on Apple Developer account (B2) |
 | 7 | Live AI Summary — on-device 1B LLM, right-side "Key points" card | ❌ Removed 2026-10-02 ([SPEC-10](SPEC-10-live-summary.md)) |
 | 8 | Interview Assist — F8 sends the interviewer's words to a locked-down Codex (ChatGPT) thread prepared with CV/JD/skill; answers stream beside captions; summary + history | 🟢 Built ([SPEC-11](SPEC-11-interview-assist.md)–[15](SPEC-15-interview-ui-results.md)); real-call check pending |
+| 9 | Accent mode — Standard ↔ Accent switch; two speech models on the user's RTX desktop (`rtx-agent/`), Codex correction live and after Stop | 🟡 Built ([SPEC-18](SPEC-18-accent-pipeline.md)); end-to-end replay passes (final 37.0% WER vs 46.9% Standard turbo); real-call check pending |
 
 **Phases 1–5 and 8 are built.** The app builds, runs, captions, saves, recovers, is locally
 signed, and has an opt-in **Interview mode** (Phase 8). The live AI summary ("Key points",
@@ -39,6 +40,9 @@ data/logic layer. Live captioning verified manually.
 - **Build system = SwiftPM** (no Xcode project). Builds, bundles, and locally signs via
   `run.sh` with a stable self-signed identity (so macOS keeps the Screen Recording grant
   across rebuilds).
+- **Accent mode (SPEC-18) is the second exception:** call audio goes to the user's own RTX
+  desktop on the LAN (paired, token-authenticated, Private-network firewall rule), and transcript
+  text goes to OpenAI through Codex for correction. Standard mode is unchanged.
 - **On-device only — in Caption only mode.** The sole network use is the one-time model
   download. Interview mode (opt-in, behind a notice) sends the CV, JD, questions and optional
   screenshots to OpenAI through the `codex` child process; the app itself still makes no

@@ -1,6 +1,6 @@
 # SPEC-18 — Accent mode: two models on the RTX, Codex correction live and at the end
 
-**Status:** 🟡 step 1 (RTX agent) built and running on the RTX; S0.2 ✅ S0.3 ✅ (2026-10-07) · **Depends on:** SPEC-03 (ASR
+**Status:** 🟡 steps 1–8 built (2026-10-07); S0.1 ✅ S0.2 ✅ S0.3 ✅; S0.4–S0.6 and the real-call check pending · **Depends on:** SPEC-03 (ASR
 lanes), SPEC-04 (finals, journal, save), SPEC-05 (caption view), SPEC-07 (Settings), SPEC-12
 (Codex engine and lockdown) · **Extends:** SPEC.md §8 (ASR) and §17 (privacy) — changes a product
 invariant, see [Privacy](#-privacy-this-mode-changes-a-product-invariant) · **Platform:** macOS
@@ -65,6 +65,41 @@ What the numbers say, and what they do not:
   first word in SPEC-12 S0). Unmeasured for correction — S0.1.
 - **One recording.** The word list was written after hearing it. Everything above must be
   re-checked on more recordings — S0.5.
+
+## Implementation notes (2026-10-07)
+
+What was built differs from the text below in these places:
+
+- **Live correction runs in its own `codex app-server` process** (`AppEnvironment.correctionEngine`,
+  same sign-in), because the engine allows one turn at a time and an F8 answer must never wait
+  behind a correction. Its turn timeout is 300 s (final-pass blocks), and final-pass blocks are
+  **10 minutes** of audio, not 15.
+- **Captions show raw text muted until corrected**, using the caption view's provisional styling;
+  corrected lines join the committed text in order.
+- **Mid-session loss:** a final retries for up to **120 s** (pause requested at 30 s). An outage
+  longer than that loses the utterances in it (they are reported); the audio file, if recording is
+  on, still has them.
+- **Interim captions need word timings:** the agent returns them with `words=1` (Parakeet token
+  times joined into words).
+- Not built yet: the per-session vocabulary at Start (only the global list), and pausing live
+  correction when Codex usage is below 10%.
+- The migration is named `v6_accent`.
+
+### End-to-end replay (2026-10-07, `AccentReplayTests`)
+
+The reference recording through the app's own segmenter, caption pipeline, `RTXEngine` (RTX
+4090 D over the LAN), `LiveCorrector` (`gpt-6-luna` low, one thread) and `FinalPass`
+(`gpt-6.1-sol` high), in real time, with the vocabulary:
+
+| Stage | WER vs reference | "Claude" (of 15) | Timing |
+|---|---|---|---|
+| Primary (Parakeet) raw | 50.1% | — | caption 0.50 s p50 / 0.98 s p90 after the speech ends |
+| Secondary (Whisper large-v3) raw | 50.4% | — | — |
+| **Live corrected** | **42.9%** | 12 | correction 2.26 s p50 / 4.44 s p90 after the caption |
+| **Final pass** | **37.0%** | 14 | 79 s for 12.7 min |
+
+Acceptance 1 (final ≤ 41%, live ≤ 50%, "Claude" ≥ 14) and 2 (caption ≤ 1.0 s p90, correction
+≤ 5 s p90) pass on this clip.
 
 ## Decisions (settled with the user)
 
@@ -274,7 +309,7 @@ utterances are then decoded in order.
 
 - **`TranscriptSegment`** gains `altText` (`alt_text`), `liveText` (`live_text`), `finalText`
   (`final_text`) — all optional. `text` stays the raw primary result, unchanged in meaning.
-- **SQLite** migration `v6_correction`: three nullable columns on the segments table; on sessions,
+- **SQLite** migration `v6_accent`: three nullable columns on the segments table; on sessions,
   `speech_mode` (`standard` · `accent`), `models` (e.g. `parakeet-tdt-0.6b-v2+whisper-large-v3`)
   and `correction_status` (`none` · `running` · `done` · `failed`).
 - **`.json` sidecar** carries all four texts and the models used. **`.txt` export** writes the
@@ -318,7 +353,7 @@ Merge-default (missing → defaults), no schema bump — same treatment as `summ
 
 The Windows app keeps its current engine. So that both builds keep sharing files: the Windows
 config loader must **round-trip** the `accent` group untouched, and its DB migration list gains
-`v6_correction` (columns only) so a shared database opens on both — tracked in SPEC-16. The RTX
+`v6_accent` (columns only) so a shared database opens on both — tracked in SPEC-16. The RTX
 agent runs on Windows but is a separate program, not part of the Windows app.
 
 ---
@@ -332,7 +367,7 @@ agent runs on Windows but is a separate program, not part of the Windows app.
 | 2 | Replay CLI in `Benchmark`: feed a `.wav`/`.m4a` through cleanup → segmenter → RTX → corrector → final pass, write P/W/live/final text files and a WER report. All acceptance numbers come from it. | Mac |
 | 3 | `RTXClient` (discovery, pairing, Keychain token, status polling) + `RTXEngine` + `alt` in `SpeechOutcome` + audio cleanup + drop/retry/pause handling | Mac |
 | 4 | Mode switch (chooser + top bar), entering-mode flow (`/load`, progress, Start gating), privacy notice | Mac |
-| 5 | Data: segment fields, `v6_correction`, sidecar, `.txt` best-text export, journal `correction` kind | Kit |
+| 5 | Data: segment fields, `v6_accent`, sidecar, `.txt` best-text export, journal `correction` kind | Kit |
 | 6 | `LiveCorrector` + caption view replacement (raw muted → corrected normal, `[?]` highlighted) | Mac |
 | 7 | Final pass + session status + Raw/Corrected switch + Retry + list badge | Mac |
 | 8 | Settings → Accent mode (all sections above) | Mac |
@@ -342,7 +377,7 @@ agent runs on Windows but is a separate program, not part of the Windows app.
 
 | # | Question | How | Pass |
 |---|---|---|---|
-| S0.1 | Live correction latency with a persistent thread | App-server thread, `gpt-6-luna` low, replay the clip's finals at real-time pace | p50 ≤ 3 s, p90 ≤ 5 s from final to corrected text |
+| S0.1 | Live correction latency with a persistent thread | App-server thread, `gpt-6-luna` low, replay the clip's finals at real-time pace | p50 ≤ 3 s, p90 ≤ 5 s from final to corrected text — ✅ **p50 2.0 s, p90 2.8 s**, max 6.3 s (the 40-turn thread reset); 84 turns, 1.6 s p50 per turn |
 | S0.2 | Model start time | Cold `/load` of the default pair (already downloaded) on the RTX | `ready` ≤ 60 s — ✅ **23.3 s** (Parakeet 11 s, Whisper 11 s); +7.6 GB VRAM |
 | S0.3 | LAN round trip | Mac → RTX, the clip's pieces, one kept-alive connection per lane | p90 ≤ 800 ms for the caption, ≤ 400 ms for interim — ✅ endpoint 1000 ms: caption **423 ms**, interim 319 ms, secondary 1,184 ms; endpoint 600 ms: caption 293 ms, interim 275 ms, secondary 898 ms |
 | S0.4 | Cleanup and endpoint | Full pipeline: cleanup on/off × endpoint 600 / 1000 / 1500 ms, on this clip and a noisier one | Confirm or change the defaults; live caption delay ≤ 1.5 s p90 |

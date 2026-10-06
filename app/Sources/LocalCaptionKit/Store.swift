@@ -66,6 +66,19 @@ public final class Store {
         m.registerMigration("v5_audio_file") { db in
             try db.alter(table: SessionRecord.databaseTableName) { t in t.add(column: "audio_file", .text) }
         }
+        // Accent mode (SPEC-18): the secondary model's text and both corrections per segment;
+        // the speech mode, models and final-pass state per session. Windows registers the same
+        // columns so a shared database opens on both.
+        m.registerMigration("v6_accent") { db in
+            try db.execute(sql: """
+                ALTER TABLE session_segments ADD COLUMN alt_text TEXT;
+                ALTER TABLE session_segments ADD COLUMN live_text TEXT;
+                ALTER TABLE session_segments ADD COLUMN final_text TEXT;
+                ALTER TABLE sessions ADD COLUMN speech_mode TEXT NOT NULL DEFAULT 'standard';
+                ALTER TABLE sessions ADD COLUMN models TEXT;
+                ALTER TABLE sessions ADD COLUMN correction_status TEXT NOT NULL DEFAULT 'none';
+                """)
+        }
         return m
     }
 
@@ -98,7 +111,8 @@ public final class Store {
             try Row.fetchAll(db, sql: "SELECT * FROM session_segments WHERE session_id = ? ORDER BY n",
                              arguments: [sessionId]).map { row in
                 TranscriptSegment(text: row["text"], tStartMs: row["t_start_ms"], tEndMs: row["t_end_ms"],
-                                  createdAt: row["created_at"])
+                                  createdAt: row["created_at"], altText: row["alt_text"],
+                                  liveText: row["live_text"], finalText: row["final_text"])
             }
         }
     }
@@ -135,9 +149,11 @@ public final class Store {
     private static func writeSegments(_ segments: [TranscriptSegment], sessionId: Int64, _ db: Database) throws {
         for (i, s) in segments.enumerated() {
             try db.execute(sql: """
-                INSERT OR REPLACE INTO session_segments (session_id, n, text, t_start_ms, t_end_ms, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """, arguments: [sessionId, i + 1, s.text, s.tStartMs, s.tEndMs, s.createdAt])
+                INSERT OR REPLACE INTO session_segments
+                    (session_id, n, text, t_start_ms, t_end_ms, created_at, alt_text, live_text, final_text)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, arguments: [sessionId, i + 1, s.text, s.tStartMs, s.tEndMs, s.createdAt,
+                                 s.altText, s.liveText, s.finalText])
         }
     }
 
@@ -164,6 +180,25 @@ public final class Store {
         try dbQueue.write { db in
             try db.execute(sql: "UPDATE \(SessionRecord.databaseTableName) SET audio_file = ? WHERE id = ?",
                            arguments: [path, id])
+        }
+    }
+
+    /// Accent mode's final pass (SPEC-18): its state on the session.
+    public func setCorrectionStatus(id: Int64, _ status: String) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "UPDATE \(SessionRecord.databaseTableName) SET correction_status = ? WHERE id = ?",
+                           arguments: [status, id])
+        }
+    }
+
+    /// The final pass's text for each segment, keyed by segment start time; segments not in
+    /// `texts` keep what they have.
+    public func setFinalTexts(sessionId: Int64, _ texts: [Int: String]) throws {
+        try dbQueue.write { db in
+            for (start, text) in texts {
+                try db.execute(sql: "UPDATE session_segments SET final_text = ? WHERE session_id = ? AND t_start_ms = ?",
+                               arguments: [text, sessionId, start])
+            }
         }
     }
 

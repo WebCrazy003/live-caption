@@ -7,6 +7,9 @@ struct ModeChooserView: View {
     /// The mode used last time, highlighted.
     let lastMode: Config.Interview.Mode
     let choose: (Config.Interview.Mode) -> Void
+    /// The Standard ↔ Accent speech switch (SPEC-18), independent of the mode.
+    let accent: Bool
+    let setAccent: (Bool) -> Void
 
     var body: some View {
         VStack(spacing: 20) {
@@ -16,6 +19,8 @@ struct ModeChooserView: View {
                 VStack(spacing: 12) { cards }
             }
             .frame(maxWidth: 640)
+            SpeechSwitch(accent: accent, set: setAccent)
+                .frame(maxWidth: 640)
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -23,7 +28,8 @@ struct ModeChooserView: View {
 
     @ViewBuilder private var cards: some View {
         card(.caption, title: "Caption only", icon: "captions.bubble",
-             detail: "Live captions of the call audio, on this Mac. Saved as a transcript. Nothing leaves the device.")
+             detail: accent ? "Live captions of the call audio, corrected as you go. Saved as a transcript."
+                            : "Live captions of the call audio, on this Mac. Saved as a transcript. Nothing leaves the device.")
         card(.interview, title: "Interview", icon: "person.2.wave.2",
              detail: "Captions plus an AI coach: prepare with your CV and the job description, then get answers to the interviewer's questions.")
     }
@@ -49,5 +55,56 @@ struct ModeChooserView: View {
         .buttonStyle(.plain)
         .keyboardShortcut(last ? .defaultAction : nil)
         .accessibilityLabel("\(title) mode")
+    }
+}
+
+/// Standard ↔ Accent (SPEC-18 D1): which speech pipeline the next session uses.
+struct SpeechSwitch: View {
+    let accent: Bool
+    let set: (Bool) -> Void
+    var compact = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Picker("Speech", selection: Binding(get: { accent }, set: set)) {
+                Text("Standard").tag(false)
+                Text(compact ? "Accent" : "Accent / noisy").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .help("Standard: on this Mac. Accent: for accented or noisy speech — models on your RTX desktop, corrected by Codex.")
+            if !compact {
+                Text(accent ? "For accented or noisy speech. Audio goes to your RTX desktop; transcript text goes to OpenAI for correction."
+                            : "Standard English. Speech recognition runs on this Mac.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+/// Shown the first time Accent mode is chosen (SPEC-18 §Privacy).
+struct AccentPrivacyNotice: View {
+    let accept: () -> Void
+    let cancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("Accent mode", systemImage: "waveform.badge.magnifyingglass").font(.title2.weight(.semibold))
+            Text("Accent mode is for accented or noisy speech. Unlike Standard mode, it doesn't stay on this Mac:")
+            VStack(alignment: .leading, spacing: 8) {
+                Label("The call audio goes to your RTX desktop on your local network, which runs the speech models.",
+                      systemImage: "desktopcomputer")
+                Label("The transcript text goes to OpenAI through your Codex sign-in, to correct misheard words — "
+                      + "live, and once more after you stop.", systemImage: "text.badge.checkmark")
+            }
+            Text("You can turn either correction off in Settings → Accent mode. Standard mode is unchanged.")
+                .font(.callout).foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("Cancel", action: cancel).keyboardShortcut(.cancelAction)
+                Button("Use Accent mode", action: accept).keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20).frame(width: 460)
     }
 }

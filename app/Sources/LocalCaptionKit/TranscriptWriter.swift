@@ -29,9 +29,17 @@ public enum TranscriptWriter {
         try fm.createDirectory(at: folder, withIntermediateDirectories: true)
 
         let base = resolveBase(folder: folder, stamp: TimeFormat.fileStamp(start))
-        let txtURL = folder.appendingPathComponent(base + ".txt")
-        let jsonURL = folder.appendingPathComponent(base + ".json")
+        return try write(transcript: transcript, txtURL: folder.appendingPathComponent(base + ".txt"),
+                         sessionName: sessionName, start: start, end: end, durationSeconds: durationSeconds,
+                         showTimestamps: showTimestamps)
+    }
 
+    /// Write (or rewrite, after Accent mode's final pass) the `.txt` and its `.json` sidecar at
+    /// `txtURL`.
+    @discardableResult
+    public static func write(transcript: Transcript, txtURL: URL, sessionName: String, start: Date, end: Date,
+                             durationSeconds: Int, showTimestamps: Bool) throws -> TranscriptSaveResult {
+        let jsonURL = txtURL.deletingPathExtension().appendingPathExtension("json")
         let text = transcript.fileText(sessionName: sessionName, start: start, end: end,
                                        durationSeconds: durationSeconds, showTimestamps: showTimestamps)
         try Data(text.utf8).write(to: txtURL, options: .atomic)

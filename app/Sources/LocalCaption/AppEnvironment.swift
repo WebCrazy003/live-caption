@@ -33,6 +33,16 @@ final class AppEnvironment: ObservableObject {
         return i
     }()
     lazy var codex = CodexService(engine: CodexAppServerEngine(codexPath: { [codexPath] in codexPath.get() }))
+    /// Accent mode's correction (SPEC-18) runs in a Codex process of its own, so it never waits
+    /// behind (or blocks) an interview answer; same sign-in. Final-pass turns can take minutes.
+    lazy var correctionEngine: AnswerEngine = {
+        var timing = CodexAppServerEngine.Timing()
+        timing.giveUpAfter = 300
+        return CodexAppServerEngine(codexPath: { [codexPath] in codexPath.get() },
+                                    workspace: AppPaths.interview.appendingPathComponent("correction", isDirectory: true),
+                                    stderrLog: AppPaths.interview.appendingPathComponent("correction-codex.log"),
+                                    timing: timing)
+    }()
     private let codexPath = LockedValue("")
 
     /// True if the config on disk was corrupt and had to be repaired to defaults.
@@ -155,9 +165,12 @@ final class AppEnvironment: ObservableObject {
         let folder = URL(fileURLWithPath:
             (config.general.transcriptFolder as NSString).expandingTildeInPath)
 
+        // The journal holds no mode; Accent sessions are the ones with a second model's text or a correction.
+        let accent = segs.contains { $0.altText != nil || $0.liveText != nil }
         let rec = SessionRecord(
             sessionName: name, createdAt: TimeFormat.iso(start), endedAt: TimeFormat.iso(end),
-            durationSeconds: durationMs / 1000)
+            durationSeconds: durationMs / 1000,
+            speechMode: accent ? SessionRecord.accentSpeech : SessionRecord.standardSpeech)
         if let inserted = try? store.insert(rec, segments: segs), let id = inserted.id {
             let result = try? TranscriptWriter.save(
                 transcript: transcript, folder: folder, sessionName: name,
@@ -200,4 +213,7 @@ final class LockedValue<T>: @unchecked Sendable {
     init(_ value: T) { self.value = value }
     func get() -> T { lock.lock(); defer { lock.unlock() }; return value }
     func set(_ v: T) { lock.lock(); value = v; lock.unlock() }
+    /// Read-modify-write under the lock.
+    @discardableResult
+    func update<R>(_ body: (inout T) -> R) -> R { lock.lock(); defer { lock.unlock() }; return body(&value) }
 }

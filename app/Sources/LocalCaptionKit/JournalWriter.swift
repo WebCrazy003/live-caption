@@ -8,5 +8,6 @@ public actor JournalWriter {
         journal = try Journal(sessionId: sessionId, directory: directory)
     }
     public func append(_ segment: TranscriptSegment) throws { try journal.append(segment) }
+    public func append(_ patch: SegmentPatch) throws { try journal.append(patch) }
     public func deleteFile() { journal.deleteFile() }
 }

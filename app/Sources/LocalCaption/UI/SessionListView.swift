@@ -100,6 +100,10 @@ struct SessionListView: View {
                         .help("Interview")
                 }
                 Text(rec.sessionName).font(.body)
+                if rec.isAccent {
+                    Image(systemName: "waveform.badge.magnifyingglass").font(.caption).foregroundStyle(.secondary)
+                        .help("Accent mode")
+                }
                 if rec.audioFile != nil {
                     Image(systemName: "waveform").font(.caption).foregroundStyle(.secondary)
                         .help("Has an audio recording")

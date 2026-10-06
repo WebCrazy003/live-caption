@@ -27,7 +27,9 @@ class Backend:
     """No close(): unloading just drops the agent's reference, so a transcription already
     running keeps its model alive until it finishes, and the memory goes with the last reference."""
 
-    def transcribe(self, audio: np.ndarray) -> str:
+    def transcribe(self, audio: np.ndarray, words: bool = False):
+        """Return (text, words). `words` is [{word, start, end}] in seconds from the start of
+        `audio` when asked for (interim captions align on them), else None."""
         raise NotImplementedError
 
 
@@ -39,9 +41,13 @@ class NemoBackend(Backend):
         import onnx_asr
         providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if cuda else ["CPUExecutionProvider"]
         self.model = onnx_asr.load_model(entry["onnx_name"], path, providers=providers)
+        self.timed = self.model.with_timestamps()
 
-    def transcribe(self, audio):
-        return self.model.recognize(audio, sample_rate=SR).strip()
+    def transcribe(self, audio, words=False):
+        if not words:
+            return self.model.recognize(audio, sample_rate=SR).strip(), None
+        r = self.timed.recognize(audio, sample_rate=SR)
+        return r.text.strip(), _join_tokens(r.tokens, r.timestamps, len(audio) / SR)
 
 
 class WhisperBackend(Backend):
@@ -50,10 +56,15 @@ class WhisperBackend(Backend):
         self.model = WhisperModel(path, device="cuda" if cuda else "cpu",
                                   compute_type="float16" if cuda else "int8")
 
-    def transcribe(self, audio):
-        segments, _ = self.model.transcribe(audio, language="en", beam_size=5,
+    def transcribe(self, audio, words=False):
+        segments, _ = self.model.transcribe(audio, language="en", beam_size=5, word_timestamps=words,
                                             condition_on_previous_text=False, vad_filter=False)
-        return " ".join(s.text.strip() for s in segments).strip()
+        segments = list(segments)
+        text = " ".join(s.text.strip() for s in segments).strip()
+        if not words:
+            return text, None
+        return text, [{"word": w.word.strip(), "start": round(w.start, 3), "end": round(w.end, 3)}
+                      for s in segments for w in (s.words or []) if w.word.strip()]
 
 
 class FakeBackend(Backend):
@@ -63,8 +74,13 @@ class FakeBackend(Backend):
         self.id = entry["id"]
         time.sleep(0.05)
 
-    def transcribe(self, audio):
-        return f"{self.id} heard {len(audio)} samples"
+    def transcribe(self, audio, words=False):
+        text = f"{self.id} heard {len(audio)} samples"
+        if not words:
+            return text, None
+        step = len(audio) / SR / 4
+        return text, [{"word": w, "start": round(i * step, 3), "end": round((i + 1) * step, 3)}
+                      for i, w in enumerate(text.split())]
 
 
 BACKENDS = {"nemo": NemoBackend, "whisper": WhisperBackend}
@@ -104,6 +120,20 @@ def load(entry, path, fake=False):
 def warm(backend):
     """The first CUDA run compiles kernels; do it before a caption has to wait for it."""
     backend.transcribe(np.zeros(SR, dtype=np.float32))
+
+
+def _join_tokens(tokens, starts, duration):
+    """NeMo subword tokens with start times -> words. A token starting with a space opens a word;
+    a word ends where the next one starts (the last one 80 ms after its last token, clipped)."""
+    out = []
+    for tok, t in zip(tokens, starts):
+        if tok.startswith(" ") or not out:
+            out.append({"word": tok.strip(), "start": round(float(t), 3)})
+        else:
+            out[-1]["word"] += tok
+    for w, nxt in zip(out, out[1:] + [None]):
+        w["end"] = round(nxt["start"] if nxt else min(duration, float(starts[-1]) + 0.08), 3)
+    return [w for w in out if w["word"]]
 
 
 def _folder_bytes(path):

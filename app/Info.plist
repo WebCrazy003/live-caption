@@ -25,5 +25,18 @@
          Settings ▸ Record audio is set to "My microphone". -->
     <key>NSMicrophoneUsageDescription</key>
     <string>Local Caption records your microphone to an audio file when you turn on “Record audio: My microphone” in Settings. Captions still come from the call audio.</string>
+    <!-- Accent mode (SPEC-18): find and talk to the RTX agent on the local network over plain
+         HTTP. macOS asks for the Local Network permission the first time. -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Accent mode sends call audio to your RTX desktop on this network, which runs the speech models.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_localcaption._tcp</string>
+    </array>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
 </dict>
 </plist>

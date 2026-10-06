@@ -18,10 +18,23 @@ public struct SessionRecord: Codable, Equatable, Identifiable,
     public var interviewDir: String?
     /// The session's audio recording (absolute path), when recording was on (migration `v5_audio_file`).
     public var audioFile: String?
+    /// `standard` | `accent` (SPEC-18, migration `v6_accent`).
+    public var speechMode: String
+    /// Accent mode's models, `primary+secondary` catalog ids.
+    public var models: String?
+    /// The final pass: `none` · `running` · `done` · `failed`.
+    public var correctionStatus: String
 
     public static let captionMode = "caption"
     public static let interviewMode = "interview"
     public var isInterview: Bool { mode == SessionRecord.interviewMode }
+    public static let standardSpeech = "standard"
+    public static let accentSpeech = "accent"
+    /// `correction_status` values. Strings like `mode`, so a value from a newer build still loads.
+    public enum Correction {
+        public static let none = "none", running = "running", done = "done", failed = "failed"
+    }
+    public var isAccent: Bool { speechMode == SessionRecord.accentSpeech }
 
     public init(id: Int64? = nil,
                 sessionName: String,
@@ -31,7 +44,10 @@ public struct SessionRecord: Codable, Equatable, Identifiable,
                 transcriptFile: String? = nil,
                 mode: String = SessionRecord.captionMode,
                 interviewDir: String? = nil,
-                audioFile: String? = nil) {
+                audioFile: String? = nil,
+                speechMode: String = SessionRecord.standardSpeech,
+                models: String? = nil,
+                correctionStatus: String = Correction.none) {
         self.id = id
         self.sessionName = sessionName
         self.createdAt = createdAt
@@ -41,6 +57,9 @@ public struct SessionRecord: Codable, Equatable, Identifiable,
         self.mode = mode
         self.interviewDir = interviewDir
         self.audioFile = audioFile
+        self.speechMode = speechMode
+        self.models = models
+        self.correctionStatus = correctionStatus
     }
 
     public static let databaseTableName = "sessions"
@@ -55,6 +74,9 @@ public struct SessionRecord: Codable, Equatable, Identifiable,
         case mode
         case interviewDir = "interview_dir"
         case audioFile = "audio_file"
+        case speechMode = "speech_mode"
+        case models
+        case correctionStatus = "correction_status"
     }
 
     /// GRDB column references for typed queries.

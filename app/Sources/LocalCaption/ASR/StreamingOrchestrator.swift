@@ -24,14 +24,14 @@ final class StreamingOrchestrator: ObservableObject {
     var onSpeechEnded: ((String) -> Void)?
     var onFinalized: ((String) -> Void)?
     var onCaptureMustPause: (() -> Void)?
+    /// Accent mode: a final's secondary-model text, arriving after its caption (start ms, text).
+    var onSecondary: ((Int, String) -> Void)?
     /// Set by the session for the length of a recording; each capture (start and every resume)
     /// feeds it.
     var callRecorder: CallAudioRecorder?
 
-    private var engine: WhisperEngine?
-    private(set) var interimName = ""
-    private(set) var finalName = ""
-    var modelLabel: String { finalName.isEmpty ? "" : "\(interimName) · \(finalName)" }
+    private var engine: SpeechEngine?
+    var modelLabel: String { modelReady ? engine?.label ?? "" : "" }
     private var capture: SystemAudioCapture?
     private var processor: CaptureProcessor?
     private var pipeline: CaptionPipeline?
@@ -53,26 +53,68 @@ final class StreamingOrchestrator: ObservableObject {
 
     // MARK: Model preparation (once)
 
-    /// Download (if needed) and load both models. Idempotent.
+    /// Standard mode: download (if needed) and load both WhisperKit models. Idempotent.
     func prepareModel(interimModel: String, finalModel: String) async {
+        await prepare(WhisperEngine(interimModel: interimModel, finalModel: finalModel))
+    }
+
+    /// Get `engine` ready and make it the one captions use. Idempotent while the same engine is
+    /// ready; call `unload()` first to switch engines (the Standard ↔ Accent switch).
+    func prepare(_ engine: SpeechEngine) async {
         guard !modelReady else { return }
         errorText = nil
-        interimName = interimModel; finalName = finalModel
-        let engine = WhisperEngine(interimModel: interimModel, finalModel: finalModel)
         self.engine = engine
+        if let rtx = engine as? RTXEngine { wire(rtx) }
         do {
             try await engine.prepare(
                 onStatus: { [weak self] s in Task { @MainActor in self?.status = s } },
                 onDownload: { [weak self] name, frac in
                     Task { @MainActor in self?.updateDownload(name, frac) }
                 })
+            try Task.checkCancellation()
+            guard self.engine === engine else { return }
             isDownloading = false; downloadFraction = 1
             modelReady = true
-            status = "Ready — \(interimModel) · \(finalModel)"
+            status = "Ready — \(engine.label)"
         } catch {
+            guard self.engine === engine else { return }
+            engine.shutdown()
             isDownloading = false; modelReady = false
             status = "Failed"
-            errorText = friendlyError(error)
+            errorText = error is CancellationError ? nil : friendlyError(error)
+        }
+    }
+
+    /// Drop the current engine (switching Standard ↔ Accent). Only while nothing is captured.
+    func unload() {
+        guard capture == nil else { return }
+        engine?.shutdown()
+        engine = nil
+        modelReady = false
+        isDownloading = false
+        status = "Preparing…"
+        errorText = nil
+    }
+
+    /// Accent mode at Stop: let the last utterances' secondary texts arrive (bounded).
+    func waitForSecondaries(timeout: TimeInterval) async {
+        guard let rtx = engine as? RTXEngine else { return }
+        await rtx.waitForSecondaries(timeout: timeout)
+        await Task.yield()     // the delivery hops to the main actor
+    }
+
+    private func wire(_ rtx: RTXEngine) {
+        rtx.onSecondary = { [weak self] start, text in
+            Task { @MainActor in self?.onSecondary?(start, text) }
+        }
+        rtx.onConnection = { [weak self] problem in
+            Task { @MainActor in self?.detail = problem ?? "" }
+        }
+        rtx.onMustPause = { [weak self] in
+            Task { @MainActor in
+                self?.errorText = "The RTX desktop has been unreachable for 30 seconds. Pausing; press Resume when it's back."
+                self?.onCaptureMustPause?()
+            }
         }
     }
 
@@ -86,6 +128,7 @@ final class StreamingOrchestrator: ObservableObject {
 
     func resumeCapture() async throws {
         await endingTask?.value
+        (engine as? RTXEngine)?.resetOutage()
         try await beginCapture()
     }
 
@@ -105,8 +148,8 @@ final class StreamingOrchestrator: ObservableObject {
             segmenter: SpeechSegmenter(session: session, tuning: tuning, startSample: totalSamples))
         self.processor = processor
         let pipeline = CaptionPipeline(session: session,
-            interim: { await engine.transcribeInterim($0.audio) },
-            final: { await engine.transcribeFinal($0.audio) })
+            interim: { await engine.transcribeInterim($0) },
+            final: { await engine.transcribeFinal($0) })
         self.pipeline = pipeline
         pipeline.onHypothesis = { [weak self] text in
             self?.hypothesis = text
@@ -201,6 +244,7 @@ final class StreamingOrchestrator: ObservableObject {
     }
 
     private func friendlyError(_ error: Error) -> String {
+        if let rtx = error as? RTXError { return rtx.localizedDescription }
         let e = String(describing: error)
         if e.localizedCaseInsensitiveContains("declined") || e.localizedCaseInsensitiveContains("permission")
             || e.localizedCaseInsensitiveContains("TCC") || e.localizedCaseInsensitiveContains("not authorized") {

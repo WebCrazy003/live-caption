@@ -13,6 +13,7 @@ struct ActiveSessionView: View {
     @State private var showingIssues = false
     @State private var showingPrivacyNotice = false
     @State private var showingEndPrompt = false
+    @State private var showingAccentNotice = false
     /// Interview mode layout (owner, 2026-10-02): captions can be hidden, and the border between
     /// captions and answers is draggable. Both are remembered.
     @AppStorage("interview.captionsHidden") private var captionsHidden = false
@@ -29,7 +30,8 @@ struct ActiveSessionView: View {
     var body: some View {
         Group {
             if !env.modeChosen {
-                ModeChooserView(lastMode: env.config.interview.mode, choose: chooseMode)
+                ModeChooserView(lastMode: env.config.interview.mode, choose: chooseMode,
+                                accent: env.config.accent.enabled, setAccent: setAccent)
             } else {
                 VStack(alignment: .leading, spacing: 10) {
                     header
@@ -54,6 +56,15 @@ struct ActiveSessionView: View {
                     showingPrivacyNotice = false
                 },
                 cancel: { showingPrivacyNotice = false })
+        }
+        .sheet(isPresented: $showingAccentNotice) {
+            AccentPrivacyNotice(
+                accept: {
+                    env.config.accent.noticeAccepted = true
+                    showingAccentNotice = false
+                    controller.switchSpeech(accent: true)
+                },
+                cancel: { showingAccentNotice = false })
         }
         .sheet(isPresented: $showingEndPrompt) {
             EndInterviewSheet(interview: interview, transcript: controller.committedText,
@@ -121,6 +132,13 @@ struct ActiveSessionView: View {
         env.modeChosen = true
     }
 
+    /// The Standard ↔ Accent switch. Accent shows the privacy notice once.
+    private func setAccent(_ on: Bool) {
+        guard on != env.config.accent.enabled, controller.canSwitchSpeech else { return }
+        if on && !env.config.accent.noticeAccepted { showingAccentNotice = true; return }
+        controller.switchSpeech(accent: on)
+    }
+
     /// Back to the first screen; only while nothing is recording or unsaved.
     private var changeModeButton: some View {
         Button { env.modeChosen = false } label: {
@@ -143,6 +161,11 @@ struct ActiveSessionView: View {
     private var header: some View {
         HStack(spacing: 10) {
             if canChangeMode { changeModeButton }
+            if controller.canSwitchSpeech {
+                SpeechSwitch(accent: env.config.accent.enabled, set: setAccent, compact: true).frame(width: 170)
+            } else if controller.isAccentSession {
+                Label("Accent", systemImage: "waveform.badge.magnifyingglass").font(.caption).foregroundStyle(.secondary)
+            }
             statusPill
             if isLive && controller.recordingSource != .off { recordingBadge }
             if controller.orchestrator.errorText != nil || controller.saveError != nil
@@ -188,7 +211,7 @@ struct ActiveSessionView: View {
             if isInterviewMode { fontControls }
             Label(controller.orchestrator.modelLabel, systemImage: "waveform")
                 .font(.caption).foregroundStyle(.secondary)
-                .help("Speech model in use (on-device)")
+                .help(env.config.accent.enabled ? "Speech models on your RTX desktop" : "Speech model in use (on-device)")
         }
     }
 
@@ -200,7 +223,9 @@ struct ActiveSessionView: View {
         CaptionView(
             paragraphs: controller.paragraphs,
             current: controller.current,
-            hypothesis: controller.orchestrator.hypothesis,
+            // Accent mode: raw captions waiting for their correction show muted, like interim text.
+            hypothesis: [controller.pendingRaw, controller.orchestrator.hypothesis]
+                .filter { !$0.isEmpty }.joined(separator: " "),
             isReady: isLive,
             fontSize: Double(env.config.caption.fontSize),
             autoScroll: env.config.caption.autoScroll
@@ -361,6 +386,10 @@ struct ActiveSessionView: View {
                 Button("Retry") { controller.retryPrepare() }
             }
         }
+        if let issue = controller.correctionIssue {
+            Label(issue, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).font(.callout)
+        }
+        finalPassLine
         if !controller.hasUnsavedSession, let saveErr = controller.saveError {
             Label(saveErr, systemImage: "exclamationmark.triangle").foregroundStyle(.red).font(.callout)
         }
@@ -377,6 +406,30 @@ struct ActiveSessionView: View {
                         .help(audio.path)
                 }
             }.font(.callout)
+        }
+    }
+
+    /// Accent mode's final pass on the session just saved (SPEC-18 §Final pass).
+    @ViewBuilder private var finalPassLine: some View {
+        switch controller.finalPass {
+        case .running?:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Improving the transcript with \(env.config.accent.effectiveFinalModel)… you can start a new session meanwhile.")
+            }.font(.callout).foregroundStyle(.secondary)
+        case .done?:
+            Label("Transcript improved — the saved files have the corrected text.", systemImage: "sparkles")
+                .font(.callout).foregroundStyle(.green)
+        case .failed(let message)?:
+            HStack(spacing: 8) {
+                Label("Couldn't improve the transcript: \(message)", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+                if let id = controller.savedSessionId {
+                    Button("Retry") { controller.retryFinalPass(sessionId: id) }.buttonStyle(.link)
+                }
+            }.font(.callout)
+        case nil:
+            EmptyView()
         }
     }
 

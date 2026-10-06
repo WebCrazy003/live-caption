@@ -22,6 +22,7 @@ public struct Config: Codable, Equatable {
     public var clipboard: Clipboard
     public var summary: Summary
     public var interview: Interview
+    public var accent: Accent
 
     public init(
         schemaVersion: Int = Config.currentSchemaVersion,
@@ -32,7 +33,8 @@ public struct Config: Codable, Equatable {
         window: Window = Window(),
         clipboard: Clipboard = Clipboard(),
         summary: Summary = Summary(),
-        interview: Interview = Interview()
+        interview: Interview = Interview(),
+        accent: Accent = Accent()
     ) {
         self.schemaVersion = schemaVersion
         self.general = general
@@ -43,11 +45,12 @@ public struct Config: Codable, Equatable {
         self.clipboard = clipboard
         self.summary = summary
         self.interview = interview
+        self.accent = accent
     }
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
-        case general, audio, asr, caption, window, clipboard, summary, interview
+        case general, audio, asr, caption, window, clipboard, summary, interview, accent
     }
 
     public init(from decoder: Decoder) throws {
@@ -64,6 +67,8 @@ public struct Config: Codable, Equatable {
         summary = try c.decodeIfPresent(Summary.self, forKey: .summary) ?? d.summary
         // Merge-default (SPEC-11), same treatment as `summary`: no schema bump.
         interview = try c.decodeIfPresent(Interview.self, forKey: .interview) ?? d.interview
+        // Merge-default (SPEC-18), same treatment again.
+        accent = try c.decodeIfPresent(Accent.self, forKey: .accent) ?? d.accent
     }
 
     // MARK: Groups

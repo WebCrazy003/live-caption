@@ -17,12 +17,16 @@ struct SessionDetailView: View {
     @State private var text = ""
     @State private var replay: InterviewController?
     @State private var confirmingOpen = false
+    @State private var segments: [TranscriptSegment] = []
+    /// Accent sessions (SPEC-18): show the corrected text, or what the speech model wrote.
+    @AppStorage("sessions.showCorrected") private var showCorrected = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let rec = record {
                 header(rec)
                 if let saved = replay?.record { details(saved) }
+                if rec.isAccent { accentBar(rec) }
                 Divider()
                 if let replay {
                     InterviewReplayView(interview: replay, transcript: text,
@@ -99,6 +103,36 @@ struct SessionDetailView: View {
         }
     }
 
+    /// Raw / Corrected, and the final pass's state with Retry.
+    private func accentBar(_ rec: SessionRecord) -> some View {
+        HStack(spacing: 10) {
+            Picker("Text", selection: $showCorrected) {
+                Text("Corrected").tag(true)
+                Text("Raw").tag(false)
+            }
+            .pickerStyle(.segmented).labelsHidden().frame(width: 180)
+            .help("Corrected: after Codex's live and final corrections. Raw: what the speech model wrote.")
+            switch rec.correctionStatus {
+            case SessionRecord.Correction.running:
+                ProgressView().controlSize(.small)
+                Text("Improving the transcript…").foregroundStyle(.secondary)
+            case SessionRecord.Correction.failed:
+                Label("The final pass didn't finish", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                Button("Retry") { if let id = rec.id { session.retryFinalPass(sessionId: id) } }.buttonStyle(.link)
+            case SessionRecord.Correction.done:
+                Label("Improved after Stop", systemImage: "sparkles").foregroundStyle(.secondary)
+            default:
+                EmptyView()
+            }
+            Spacer()
+            if let models = rec.models {
+                Text(models.replacingOccurrences(of: "+", with: " + ")).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .font(.callout)
+        .onChange(of: showCorrected) { _, _ in render() }
+    }
+
     /// Interviewee, company, step and the rest of the interview's setup.
     private func details(_ rec: InterviewRecord) -> some View {
         let questions: Int = rec.turns.filter { $0.kind != .skill }.count
@@ -155,7 +189,13 @@ struct SessionDetailView: View {
         if rec.isInterview, let saved = try? env.store.interview(sessionId: id) {
             replay = InterviewController(env: env, existing: saved)
         }
-        let segments = (try? env.store.segments(sessionId: id)) ?? []
-        text = Transcript(segments: segments).body(showTimestamps: env.config.caption.showTimestamps)
+        segments = (try? env.store.segments(sessionId: id)) ?? []
+        render()
+    }
+
+    private func render() {
+        let shown = showCorrected ? segments
+            : segments.map { TranscriptSegment(text: $0.text, tStartMs: $0.tStartMs, tEndMs: $0.tEndMs, createdAt: $0.createdAt) }
+        text = Transcript(segments: shown).body(showTimestamps: env.config.caption.showTimestamps)
     }
 }

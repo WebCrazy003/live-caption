@@ -217,7 +217,7 @@ class Models:
             gc.collect()
             log.info("unloaded %d model(s)", len(old))
 
-    def transcribe(self, audio, roles, lane):
+    def transcribe(self, audio, roles, lane, words=False):
         held = []
         try:
             deadline = time.monotonic() + QUEUE_WAIT_S
@@ -232,17 +232,20 @@ class Models:
                 picked = {r: self.backends[r] for r in roles if r in self.backends}
             if roles == ["primary"] and "primary" not in picked:
                 raise HTTPError(409, "no primary model loaded")
-            futures = {r: self.pool.submit(_timed, b, audio) for r, b in picked.items()}
+            futures = {r: self.pool.submit(_timed, b, audio, words) for r, b in picked.items()}
             return {r: f.result() for r, f in futures.items()}
         finally:
             for sem in held:
                 sem.release()
 
 
-def _timed(backend, audio):
+def _timed(backend, audio, words):
     t = time.perf_counter()
-    text = backend.transcribe(audio)
-    return {"text": text, "ms": round((time.perf_counter() - t) * 1000)}
+    text, timed = backend.transcribe(audio, words)
+    out = {"text": text, "ms": round((time.perf_counter() - t) * 1000)}
+    if timed is not None:
+        out["words"] = timed
+    return out
 
 
 # ---------------------------------------------------------------- HTTP
@@ -360,7 +363,8 @@ def make_handler(agent):
             raise HTTPError(400, "body must be 16-bit PCM")
         audio = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
         agent.touch()
-        return 200, {"id": q.get("id", [""])[0], **agent.models.transcribe(audio, roles, lane)}
+        words = q.get("words", ["0"])[0] == "1"
+        return 200, {"id": q.get("id", [""])[0], **agent.models.transcribe(audio, roles, lane, words)}
 
     ROUTES = {
         ("GET", "/hello"): (hello, False),

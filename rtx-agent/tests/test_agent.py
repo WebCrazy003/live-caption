@@ -111,6 +111,16 @@ class AgentTest(unittest.TestCase):
         self.assertEqual(self.call("POST", "/transcribe?roles=primary&lane=interim", raw=self.pcm(1))[0], 200)
         self.assertEqual(self.call("POST", "/transcribe?lane=sideways", raw=self.pcm(1))[0], 400)
 
+    def test_word_timings_on_request(self):
+        self.pair()
+        self.load_and_wait()
+        body = self.call("POST", "/transcribe?roles=primary&lane=interim&words=1", raw=self.pcm(2))[1]
+        words = body["primary"]["words"]
+        self.assertEqual([w["word"] for w in words], body["primary"]["text"].split())
+        self.assertTrue(all(w["start"] < w["end"] <= 2.0 for w in words))
+        plain = self.call("POST", "/transcribe?roles=primary", raw=self.pcm(1))[1]
+        self.assertNotIn("words", plain["primary"])
+
     def test_concurrent_primary_and_secondary_requests(self):
         self.pair()
         self.load_and_wait()
@@ -157,6 +167,14 @@ class AgentTest(unittest.TestCase):
                 return
             time.sleep(0.1)
         self.fail("models were not unloaded when idle")
+
+
+class JoinTokensTest(unittest.TestCase):
+    def test_subwords_join_into_words_with_spans(self):
+        import backends
+        words = backends._join_tokens([" Yeah", ",", " I", " w", "atch"], [0.48, 0.64, 0.8, 1.2, 1.36], 2.0)
+        self.assertEqual([w["word"] for w in words], ["Yeah,", "I", "watch"])
+        self.assertEqual([(w["start"], w["end"]) for w in words], [(0.48, 0.8), (0.8, 1.2), (1.2, 1.44)])
 
 
 if __name__ == "__main__":

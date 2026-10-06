@@ -28,9 +28,14 @@ public final class Journal {
     }
 
     /// Append one segment as a JSON line and flush to disk.
-    public func append(_ segment: TranscriptSegment) throws {
+    public func append(_ segment: TranscriptSegment) throws { try write(segment) }
+
+    /// Append a later addition to a segment (SPEC-18) as its own line.
+    public func append(_ patch: SegmentPatch) throws { try write(patch) }
+
+    private func write<T: Encodable>(_ entry: T) throws {
         guard let handle else { throw CocoaError(.fileWriteUnknown) }
-        var data = try JSONEncoder().encode(segment)
+        var data = try JSONEncoder().encode(entry)
         data.append(0x0A) // newline
         try handle.write(contentsOf: data)
         try handle.synchronize()
@@ -49,11 +54,14 @@ public final class Journal {
         let dec = JSONDecoder()
         return items.filter { $0.pathExtension == "jsonl" }.compactMap { u in
             guard let content = try? String(contentsOf: u, encoding: .utf8) else { return nil }
-            let segs = content.split(separator: "\n").compactMap { line -> TranscriptSegment? in
-                try? dec.decode(TranscriptSegment.self, from: Data(line.utf8))
+            var transcript = Transcript()
+            for line in content.split(separator: "\n") {
+                let data = Data(line.utf8)
+                if let seg = try? dec.decode(TranscriptSegment.self, from: data) { transcript.append(seg) }
+                else if let patch = try? dec.decode(SegmentPatch.self, from: data) { transcript.apply(patch) }
             }
             let id = UUID(uuidString: u.deletingPathExtension().lastPathComponent) ?? UUID()
-            return RecoveredSession(sessionId: id, url: u, segments: segs)
+            return RecoveredSession(sessionId: id, url: u, segments: transcript.segments)
         }
     }
 
