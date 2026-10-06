@@ -32,3 +32,10 @@ windows/publish/
 windows/publish-*/
 windows/.cuda-stash-*/
 windows/artifacts/
+
+# RTX agent runtime (SPEC-18)
+rtx-agent/state/
+rtx-agent/.venv/
+
+# Spike outputs that contain private recordings
+spike/rtx-asr-spike/results/

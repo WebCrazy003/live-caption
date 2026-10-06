@@ -1,0 +1,23 @@
+[
+  {"id": "parakeet-tdt-0.6b-v2", "label": "Parakeet TDT 0.6B v2 (English)", "family": "nemo",
+   "onnx_name": "nemo-parakeet-tdt-0.6b-v2", "repo": "istupakov/parakeet-tdt-0.6b-v2-onnx",
+   "size_mb": 2500, "vram_mb": 3000, "tested": true},
+  {"id": "parakeet-tdt-0.6b-v3", "label": "Parakeet TDT 0.6B v3 (25 European languages)", "family": "nemo",
+   "onnx_name": "nemo-parakeet-tdt-0.6b-v3", "repo": "istupakov/parakeet-tdt-0.6b-v3-onnx",
+   "size_mb": 2500, "vram_mb": 3000, "tested": false},
+  {"id": "canary-1b-v2", "label": "Canary 1B v2", "family": "nemo",
+   "onnx_name": "nemo-canary-1b-v2", "repo": "istupakov/canary-1b-v2-onnx",
+   "size_mb": 4000, "vram_mb": 5000, "tested": false},
+  {"id": "whisper-large-v3", "label": "Whisper large-v3", "family": "whisper",
+   "repo": "Systran/faster-whisper-large-v3",
+   "size_mb": 3100, "vram_mb": 4500, "tested": true},
+  {"id": "whisper-large-v3-turbo", "label": "Whisper large-v3 turbo", "family": "whisper",
+   "repo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+   "size_mb": 1600, "vram_mb": 2500, "tested": false},
+  {"id": "distil-whisper-large-v3", "label": "Distil-Whisper large-v3", "family": "whisper",
+   "repo": "Systran/faster-distil-whisper-large-v3",
+   "size_mb": 1500, "vram_mb": 2500, "tested": false},
+  {"id": "whisper-medium.en", "label": "Whisper medium.en", "family": "whisper",
+   "repo": "Systran/faster-whisper-medium.en",
+   "size_mb": 1500, "vram_mb": 2500, "tested": false}
+]

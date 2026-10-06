@@ -1,6 +1,6 @@
 # SPEC-18 — Accent mode: two models on the RTX, Codex correction live and at the end
 
-**Status:** ⬜ not started — spike evidence in hand (2026-10-07) · **Depends on:** SPEC-03 (ASR
+**Status:** 🟡 step 1 (RTX agent) built and running on the RTX; S0.2 ✅ S0.3 ✅ (2026-10-07) · **Depends on:** SPEC-03 (ASR
 lanes), SPEC-04 (finals, journal, save), SPEC-05 (caption view), SPEC-07 (Settings), SPEC-12
 (Codex engine and lockdown) · **Extends:** SPEC.md §8 (ASR) and §17 (privacy) — changes a product
 invariant, see [Privacy](#-privacy-this-mode-changes-a-product-invariant) · **Platform:** macOS
@@ -114,11 +114,12 @@ is updated to name Accent mode as the exception.
  ─────────────────────────────────────────────            ───────────────────────────────
  enter Accent mode ───────────────── POST /load ────────▶ download (once) → load → warm
  ScreenCaptureKit → cleanup → SpeechSegmenter (VAD, endpoint)
-   │ interim snapshot ─────────────── POST /transcribe ──▶ primary              ~120 ms
-   │ final utterance ──────────────── POST /transcribe ──▶ primary ∥ secondary  ~350 ms
-   ▼                                                    ◀── {primary, secondary, ms}
+   │ interim snapshot ─── POST /transcribe?roles=primary&lane=interim ─▶ primary    p90 ~0.3 s
+   │ final utterance ──── POST /transcribe?roles=primary ─────────────▶ primary    p90 ~0.4 s
+   │                 └─── POST /transcribe?roles=secondary (concurrent) ▶ secondary p90 ~1.2 s
+   ▼
  CaptionPipeline lanes (unchanged)
-   │ final: text = primary, alt = secondary
+   │ final: text = primary (caption shows now); alt = secondary (arrives later, feeds correction)
    ├──▶ Session: journal + transcript (raw)
    ├──▶ Caption view (raw, muted)
    └──▶ LiveCorrector ── Codex thread (live model/effort) ──▶ corrected lines ─▶ view + journal
@@ -167,10 +168,12 @@ returns a random token, the Mac keeps it in the Keychain. Every other call needs
 | `POST /load` | token | `{primary, secondary}` (`secondary` may be `null`). Returns at once; work runs in the background. Refuses (409) if the pair would not fit in free VRAM. Loading the already-loaded pair is a no-op. |
 | `GET /status` | token | `{state: idle·downloading·loading·warming·ready·error, model, progress, message, loaded: {primary, secondary}, vram_used_mb}` |
 | `POST /unload` | token | Frees both models |
-| `POST /transcribe` | token | Body: 16 kHz mono PCM16 LE, ≤ 30 s (413 otherwise). Query: `roles=primary` or `roles=primary,secondary`, `id=<utterance>`. Reply: `{id, primary: {text, ms}, secondary?: {text, ms}}`. 409 if not `ready`. |
+| `POST /transcribe` | token | Body: 16 kHz mono PCM16 LE, ≤ 30 s (413 otherwise). Query: `roles=` any of `primary`, `secondary`; `lane=interim·final` (default final); `id=<utterance>`. Reply: `{id, primary?: {text, ms}, secondary?: {text, ms}}`. 409 if not `ready`. |
 
-Primary and secondary run on two threads per request; interim requests (`roles=primary`) go to
-their own worker and never queue behind a final. Requests waiting > 5 s get 503. The agent keeps
+Each (lane, role) handles one utterance at a time, so interim never queues behind a final, and the
+Mac sends a final's primary and secondary as **two concurrent requests**: the caption needs only
+the primary (S0.3: Whisper large-v3 takes ~0.65 s p50 / 1.2 s p90 on 1000 ms-endpoint pieces,
+too slow to hold the caption for). Requests waiting > 5 s get 503. The agent keeps
 no audio and writes none to disk. After **15 minutes** with no `/transcribe`, it unloads itself.
 
 ### Model catalog (v1)
@@ -222,10 +225,12 @@ utterances are then decoded in order.
 
 ### Engine and cleanup
 
-- **`RTXEngine`** — `interim` → `roles=primary`; `final` → `roles=primary,secondary`. Keep-alive
-  `URLSession`. Applies the existing `Filters` (hallucination, non-English, quality gate) to each
-  text. Returns `.success(text: primary, alt: secondary)`; if primary is empty but secondary is
-  not, secondary becomes `text`.
+- **`RTXEngine`** — `interim` → `roles=primary&lane=interim`; `final` → `roles=primary` and, in
+  parallel, `roles=secondary`. Keep-alive `URLSession`. Applies the existing `Filters`
+  (hallucination, non-English, quality gate) to each text. The final returns as soon as the
+  primary answers: `.success(text: primary)`; the secondary text is delivered to the segment (and
+  the corrector) when it arrives. If the primary is empty and the secondary is not, the secondary
+  becomes the caption when it arrives.
 - **Audio cleanup** (on by default) — per utterance before sending: 80 Hz–7.5 kHz band-pass
   (vDSP biquad) and loudness levelling to a fixed RMS. Two toggles. Standard mode never applies it.
 
@@ -338,8 +343,8 @@ agent runs on Windows but is a separate program, not part of the Windows app.
 | # | Question | How | Pass |
 |---|---|---|---|
 | S0.1 | Live correction latency with a persistent thread | App-server thread, `gpt-6-luna` low, replay the clip's finals at real-time pace | p50 ≤ 3 s, p90 ≤ 5 s from final to corrected text |
-| S0.2 | Model start time | Cold `/load` of the default pair (already downloaded) on the RTX | `ready` ≤ 60 s |
-| S0.3 | LAN round trip, both models | Mac → RTX over Wi-Fi, the clip's pieces | p90 ≤ 800 ms for final, ≤ 400 ms for interim |
+| S0.2 | Model start time | Cold `/load` of the default pair (already downloaded) on the RTX | `ready` ≤ 60 s — ✅ **23.3 s** (Parakeet 11 s, Whisper 11 s); +7.6 GB VRAM |
+| S0.3 | LAN round trip | Mac → RTX, the clip's pieces, one kept-alive connection per lane | p90 ≤ 800 ms for the caption, ≤ 400 ms for interim — ✅ endpoint 1000 ms: caption **423 ms**, interim 319 ms, secondary 1,184 ms; endpoint 600 ms: caption 293 ms, interim 275 ms, secondary 898 ms |
 | S0.4 | Cleanup and endpoint | Full pipeline: cleanup on/off × endpoint 600 / 1000 / 1500 ms, on this clip and a noisier one | Confirm or change the defaults; live caption delay ≤ 1.5 s p90 |
 | S0.5 | Generalisation | ≥ 2 more Nigerian or noisy recordings, each with a 3-minute verbatim reference | Accent final pass beats Standard mode's best on every clip |
 | S0.6 | Long sessions and Plus limits | Replay a 60 min recording | Final pass ≤ 12 min; live + final together use ≤ 25% of a 5-hour usage window |

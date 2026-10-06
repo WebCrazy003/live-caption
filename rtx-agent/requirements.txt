@@ -1,0 +1,14 @@
+# Pinned to the set verified on the RTX 4090 D (2026-10-07, SPEC-18 spike).
+numpy==2.5.3
+huggingface_hub==1.33.0
+zeroconf
+# NeMo models (Parakeet, Canary) through onnxruntime on CUDA 13.
+onnx-asr[hub]==0.12.0
+onnxruntime-gpu[cuda,cudnn]==1.30.0
+# Whisper models through CTranslate2 on CUDA 12 / cuDNN 9.
+faster-whisper==1.2.1
+ctranslate2==4.8.2
+av<16                    # faster-whisper 1.2.1 passes an argument av 16+ removed
+nvidia-cublas-cu12
+nvidia-cudnn-cu12==9.*
+nvidia-cuda-runtime-cu12
