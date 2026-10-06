@@ -67,10 +67,30 @@ final class ConfigTests: XCTestCase {
     }
 
     func testNoBlackHoleKeyInAudio() throws {
-        // Regression guard for the B3 cleanup: audio has only vad_sensitivity.
+        // Regression guard for the B3 cleanup: no device key in audio.
         let data = try JSONEncoder().encode(Config())
         let json = String(data: data, encoding: .utf8)!
         XCTAssertFalse(json.contains("system_device"))
         XCTAssertTrue(json.contains("vad_sensitivity"))
+    }
+
+    func testRecordSourceDefaultsOffAndRoundTrips() throws {
+        XCTAssertEqual(Config().audio.recordSource, .off)
+        // A config written before recording existed decodes with recording off.
+        let old = try JSONDecoder().decode(Config.self, from: Data(#"{"audio":{"vad_sensitivity":1}}"#.utf8))
+        XCTAssertEqual(old.audio.recordSource, .off)
+        XCTAssertEqual(old.audio.vadSensitivity, 1)
+
+        var c = Config(); c.audio.recordSource = .microphone
+        let json = String(data: try JSONEncoder().encode(c), encoding: .utf8)!
+        XCTAssertTrue(json.contains(#""record_source":"microphone""#))
+        XCTAssertEqual(try JSONDecoder().decode(Config.self, from: Data(json.utf8)).audio.recordSource, .microphone)
+    }
+
+    func testUnknownRecordSourceReadsAsOff() throws {
+        let c = try JSONDecoder().decode(Config.self,
+            from: Data(#"{"audio":{"vad_sensitivity":2,"record_source":"both"}}"#.utf8))
+        XCTAssertEqual(c.audio.recordSource, .off)
+        XCTAssertEqual(c.audio.vadSensitivity, 2)
     }
 }

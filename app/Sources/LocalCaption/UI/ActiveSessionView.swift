@@ -144,7 +144,9 @@ struct ActiveSessionView: View {
         HStack(spacing: 10) {
             if canChangeMode { changeModeButton }
             statusPill
-            if controller.orchestrator.errorText != nil || controller.saveError != nil {
+            if isLive && controller.recordingSource != .off { recordingBadge }
+            if controller.orchestrator.errorText != nil || controller.saveError != nil
+                || controller.recordingIssue != nil {
                 Button { showingIssues.toggle() } label: {
                     Label("Session issues", systemImage: "info.circle")
                         .font(.caption).foregroundStyle(.secondary)
@@ -154,6 +156,7 @@ struct ActiveSessionView: View {
                         Text("Session issues").font(.headline)
                         if let issue = controller.orchestrator.errorText { Text(issue) }
                         if let issue = controller.saveError { Text(issue) }
+                        if let issue = controller.recordingIssue { Text(issue) }
                     }
                     .textSelection(.enabled).padding().frame(width: 360)
                 }
@@ -321,6 +324,15 @@ struct ActiveSessionView: View {
         }
     }
 
+    /// Shown beside the status pill while a session saves its audio to a file.
+    private var recordingBadge: some View {
+        let mic = controller.recordingSource == .microphone
+        return Label(mic ? "Mic" : "Call audio", systemImage: mic ? "mic.fill" : "speaker.wave.2.fill")
+            .font(.caption).foregroundStyle(.secondary)
+            .help(mic ? "Saving your microphone as an audio file" : "Saving the call audio as an audio file")
+            .accessibilityLabel(mic ? "Recording microphone audio" : "Recording call audio")
+    }
+
     private func pill(color: Color, text: String, filled: Bool) -> some View {
         HStack(spacing: 6) {
             Circle().fill(filled ? color : .clear)
@@ -352,11 +364,18 @@ struct ActiveSessionView: View {
         if !controller.hasUnsavedSession, let saveErr = controller.saveError {
             Label(saveErr, systemImage: "exclamationmark.triangle").foregroundStyle(.red).font(.callout)
         }
-        if controller.phase == .saved, let url = controller.savedTxtURL {
+        if controller.phase == .saved, controller.savedTxtURL != nil || controller.savedAudioURL != nil {
             HStack(spacing: 8) {
                 Label("Saved", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                    .buttonStyle(.link)
+                if let url = controller.savedTxtURL {
+                    Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                        .buttonStyle(.link)
+                }
+                if let audio = controller.savedAudioURL {
+                    Button("Play Audio") { NSWorkspace.shared.open(audio) }
+                        .buttonStyle(.link)
+                        .help(audio.path)
+                }
             }.font(.callout)
         }
     }

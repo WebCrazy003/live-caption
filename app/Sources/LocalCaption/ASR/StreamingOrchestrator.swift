@@ -24,6 +24,9 @@ final class StreamingOrchestrator: ObservableObject {
     var onSpeechEnded: ((String) -> Void)?
     var onFinalized: ((String) -> Void)?
     var onCaptureMustPause: (() -> Void)?
+    /// Set by the session for the length of a recording; each capture (start and every resume)
+    /// feeds it.
+    var callRecorder: CallAudioRecorder?
 
     private var engine: WhisperEngine?
     private(set) var interimName = ""
@@ -127,6 +130,7 @@ final class StreamingOrchestrator: ObservableObject {
             self?.logger.info("final_queue_depth=\(metric.finalQueueDepth) final_backlog_ms=\(metric.finalBacklogMs)")
         }
         let capture = SystemAudioCapture(
+            recorder: callRecorder,
             onSamples: { buffer.append($0) },
             onError: { [weak self] error in
                 Task { @MainActor in

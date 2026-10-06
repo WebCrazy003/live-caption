@@ -23,6 +23,12 @@ final class SessionController: ObservableObject {
     @Published private(set) var savedSessionId: Int64?
     @Published var saveError: String?
     @Published var justCopied = false
+    /// What this session is recording to an audio file (`.off` when nothing is).
+    @Published private(set) var recordingSource: Config.RecordSource = .off
+    /// The audio file written by the last save, beside the transcript.
+    @Published private(set) var savedAudioURL: URL?
+    /// A recording problem. Never stops the captions.
+    @Published var recordingIssue: String?
 
 
     /// True once any final has been committed — gates the "Copy last N" button.
@@ -40,6 +46,8 @@ final class SessionController: ObservableObject {
     private(set) var sessionId = UUID()
     private(set) var startDate = Date()
     private var clockTask: Task<Void, Never>?
+    private var recorder: SessionAudioRecorder?
+    private var terminateObserver: NSObjectProtocol?
 
     var displayName: String { sessionName.isEmpty ? "New Session" : sessionName }
 
@@ -72,6 +80,17 @@ final class SessionController: ObservableObject {
             self.capturePauseRequested = true
             if !self.transitioning { self.finishTransition() }
         }
+        // Quitting mid-session leaves the journal for recovery; close the audio file too, so the
+        // recovered session keeps its recording (an unclosed .m4a can't be read).
+        terminateObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { _ = self?.recorder?.finish() }
+        }
+    }
+
+    deinit {
+        if let terminateObserver { NotificationCenter.default.removeObserver(terminateObserver) }
     }
 
     // MARK: Lifecycle
@@ -106,15 +125,23 @@ final class SessionController: ObservableObject {
             vadSensitivity: env.config.audio.vadSensitivity)
         sessionName = name ?? (env.config.general.sessionNamePrefix + TimeFormat.fileStamp(startDate))
         transcript = Transcript(); paragraphs = []; current = ""
-        savedTxtURL = nil; saveError = nil
+        savedTxtURL = nil; saveError = nil; savedAudioURL = nil; recordingIssue = nil
         do { journal = try JournalWriter(sessionId: sessionId) }
         catch { saveError = "Could not create recovery journal: \(error.localizedDescription)"; phase = .failed; return }
+        let source = env.config.audio.recordSource
+        if source == .call { setRecorder(makeRecorder { try CallAudioRecorder(url: $0) }) }
         do { try await orchestrator.startCapture() }
         catch {
             // No processing loop starts on capture failure. Remove its empty
             // journal so permission retry can start a new session safely.
             await journal?.deleteFile(); journal = nil
+            recorder?.discard(); setRecorder(nil)
             phase = .failed; return
+        }
+        // After capture is up, so the microphone file starts with the captions' clock.
+        if source == .microphone, let mic = makeRecorder({ try MicrophoneRecorder(url: $0) }) {
+            do { try await mic.start(); setRecorder(mic) }
+            catch { mic.discard(); recordingIssue = error.localizedDescription }
         }
         phase = .recording
         startClock()
@@ -126,6 +153,7 @@ final class SessionController: ObservableObject {
         defer { finishTransition() }
         phase = .pausing
         stopClock()
+        recorder?.pause()
         await orchestrator.pauseAndFinalize()
         elapsed = TimeFormat.clock(orchestrator.recordedMs / 1000)
         phase = .paused
@@ -136,6 +164,7 @@ final class SessionController: ObservableObject {
         transitioning = true
         defer { finishTransition() }
         do { try await orchestrator.resumeCapture() } catch { phase = .failed; return }
+        do { try recorder?.resume() } catch { recordingIssue = error.localizedDescription }
         phase = .recording
         startClock()
     }
@@ -147,8 +176,44 @@ final class SessionController: ObservableObject {
         defer { finishTransition() }
         phase = .saving
         stopClock()
+        recorder?.pause()
         await orchestrator.stopAndFinalize()
         phase = await save() ? .saved : .failed
+    }
+
+    // MARK: Audio recording
+
+    /// A recorder writing to `recordings/<session uuid>.m4a`, or nil (with the issue shown) if
+    /// it can't be created.
+    private func makeRecorder<R: SessionAudioRecorder>(_ make: (URL) throws -> R) -> R? {
+        do { return try make(SessionFiles.recordingURL(sessionId: sessionId)) }
+        catch {
+            recordingIssue = "Audio recording is off for this session: \(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    private func setRecorder(_ new: SessionAudioRecorder?) {
+        new?.onError = { [weak self] message in
+            Task { @MainActor in self?.recordingIssue = message }
+        }
+        recorder = new
+        orchestrator.callRecorder = new as? CallAudioRecorder
+        recordingSource = new?.source ?? .off
+    }
+
+    /// Close the recording and move it beside the transcript (same base name as the `.txt`).
+    /// A file that can't be moved stays where it is and is still linked to the session.
+    private func saveRecording(sessionId id: Int64?, txtURL: URL?, folder: URL) {
+        guard let recorder else { return }
+        setRecorder(nil)
+        guard recorder.finish() else { return }
+        var url = recorder.url
+        let base = txtURL?.deletingPathExtension().lastPathComponent ?? TimeFormat.fileStamp(startDate)
+        do { url = try SessionFiles.placeRecording(url, folder: folder, base: base) }
+        catch { recordingIssue = "The audio was saved, but couldn't be moved beside the transcript: \(error.localizedDescription)" }
+        if let id { try? env.store.setAudioFile(id: id, path: url.path) }
+        savedAudioURL = url
     }
 
     private func finishTransition() {
@@ -231,7 +296,9 @@ final class SessionController: ObservableObject {
                 durationSeconds: duration), segments: transcript.segments)
         } catch {
             saveError = "Could not save the session: \(error.localizedDescription)"
-            return false   // keep the journal for recovery
+            // Keep the journal (and the open recording) for a retry or recovery; quitting closes
+            // the audio file so recovery can attach it.
+            return false
         }
         savedSessionId = saved.id
         await journal?.deleteFile(); journal = nil
@@ -249,6 +316,7 @@ final class SessionController: ObservableObject {
         } catch {
             saveError = "Saved, but the transcript file export failed: \(error.localizedDescription)"
         }
+        saveRecording(sessionId: saved.id, txtURL: savedTxtURL, folder: folder)
         NotificationCenter.default.post(name: .sessionsChanged, object: nil)
         return true
     }
@@ -273,7 +341,8 @@ final class SessionController: ObservableObject {
         elapsed = TimeFormat.clock(rec.durationSeconds)
         savedSessionId = rec.id
         savedTxtURL = rec.transcriptFile.map { URL(fileURLWithPath: $0) }
-        saveError = nil
+        savedAudioURL = rec.audioFile.map { URL(fileURLWithPath: $0) }
+        saveError = nil; recordingIssue = nil
         phase = .saved
     }
 

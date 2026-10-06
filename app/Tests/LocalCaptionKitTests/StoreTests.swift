@@ -129,4 +129,12 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(try store.segmentCount(sessionId: XCTUnwrap(rc.id)), 0)
         XCTAssertEqual(try store.importTranscriptFiles(), 0, "already imported")
     }
+
+    func testAudioFileIsStoredAndRead() throws {
+        let store = try Store(url: dbURL)
+        let inserted = try store.insert(makeRecord("A", created: "2026-10-06T10:00:00Z"))
+        XCTAssertNil(inserted.audioFile)
+        try store.setAudioFile(id: XCTUnwrap(inserted.id), path: "/tmp/A.m4a")
+        XCTAssertEqual(try store.fetch(id: XCTUnwrap(inserted.id))?.audioFile, "/tmp/A.m4a")
+    }
 }

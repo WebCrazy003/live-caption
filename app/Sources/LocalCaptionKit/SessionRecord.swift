@@ -16,6 +16,8 @@ public struct SessionRecord: Codable, Equatable, Identifiable,
     public var mode: String
     /// The interview folder (absolute path) when `mode == "interview"`.
     public var interviewDir: String?
+    /// The session's audio recording (absolute path), when recording was on (migration `v5_audio_file`).
+    public var audioFile: String?
 
     public static let captionMode = "caption"
     public static let interviewMode = "interview"
@@ -28,7 +30,8 @@ public struct SessionRecord: Codable, Equatable, Identifiable,
                 durationSeconds: Int = 0,
                 transcriptFile: String? = nil,
                 mode: String = SessionRecord.captionMode,
-                interviewDir: String? = nil) {
+                interviewDir: String? = nil,
+                audioFile: String? = nil) {
         self.id = id
         self.sessionName = sessionName
         self.createdAt = createdAt
@@ -37,6 +40,7 @@ public struct SessionRecord: Codable, Equatable, Identifiable,
         self.transcriptFile = transcriptFile
         self.mode = mode
         self.interviewDir = interviewDir
+        self.audioFile = audioFile
     }
 
     public static let databaseTableName = "sessions"
@@ -50,6 +54,7 @@ public struct SessionRecord: Codable, Equatable, Identifiable,
         case transcriptFile = "transcript_file"
         case mode
         case interviewDir = "interview_dir"
+        case audioFile = "audio_file"
     }
 
     /// GRDB column references for typed queries.

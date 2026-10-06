@@ -78,6 +78,13 @@ struct SessionDetailView: View {
                     if let blocker { Text(blocker).font(.caption).foregroundStyle(.secondary) }
                 }
                 Spacer()
+                if let path = rec.audioFile, FileManager.default.fileExists(atPath: path) {
+                    Button {
+                        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+                    } label: { Label("Play Audio", systemImage: "play.circle") }
+                    .buttonStyle(.link)
+                    .help(path)
+                }
                 if let path = rec.transcriptFile, FileManager.default.fileExists(atPath: path) {
                     Button {
                         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])

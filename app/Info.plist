@@ -21,6 +21,9 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <!-- System audio is captured via ScreenCaptureKit (decision B3); macOS prompts for the
-         Screen Recording permission at runtime. No NSMicrophoneUsageDescription is needed. -->
+         Screen Recording permission at runtime. The microphone is used only when
+         Settings ▸ Record audio is set to "My microphone". -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Local Caption records your microphone to an audio file when you turn on “Record audio: My microphone” in Settings. Captions still come from the call audio.</string>
 </dict>
 </plist>

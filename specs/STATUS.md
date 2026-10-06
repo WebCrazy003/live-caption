@@ -83,7 +83,8 @@ app/
 | File | Responsibility |
 |------|----------------|
 | `LocalCaptionApp` / `AppEnvironment` | `@main`; owns config store + DB; recovery scan on launch |
-| `Audio/SystemAudioCapture` | ScreenCaptureKit stream → 48k stereo → 16k mono Float32 |
+| `Audio/SystemAudioCapture` | ScreenCaptureKit stream → 48k stereo → 16k mono Float32; feeds the call recording at 48k |
+| `Audio/SessionAudioRecorder` | Optional audio recording (`CallAudioRecorder` / `MicrophoneRecorder`) → AAC `.m4a` |
 | `ASR/WhisperEngine` | Dual resident WhisperKit models (interim + final); cache-aware download/load; metadata filtering |
 | `ASR/StreamingOrchestrator` | VAD endpointing loop; interim/final routing; LocalAgreement-2; sample-based timing |
 | `Session/SessionController` | State machine; owns transcript + journal + clock; save-on-stop; clipboard |
@@ -129,17 +130,40 @@ config.json              versioned settings (schema 2)
 localcaption.db          SQLite session metadata (WAL)
 transcripts/             <start>.txt  +  <start>.json  (saved on Stop)
 journal/<session>.jsonl  crash-recovery log (deleted on clean Stop)
+recordings/<session>.m4a audio being recorded; moved beside the transcript on Stop
 models/                  WhisperKit CoreML weights (downloaded once)
 ```
 
-Transcript text lives only in the files — never in SQLite. Raw audio is discarded after
-inference. Nothing is transmitted off-device.
+Caption text lives in SQLite (`session_segments`); the `.txt`/`.json` are an export. Audio
+is discarded after inference unless **Record audio** is on (below). Nothing is transmitted
+off-device.
+
+### Audio recording (owner, 2026-10-06)
+
+Settings → General → **Record audio**: Off (default) · Call audio · My microphone.
+
+- **Call audio** is the ScreenCaptureKit stream itself, written at its native 48 kHz stereo
+  before the 16 kHz downmix. **My microphone** records the default input device
+  (`AVAudioRecorder`, 48 kHz mono) and needs the Microphone permission
+  (`NSMicrophoneUsageDescription`; release builds sign with `LocalCaption.entitlements`).
+  Captions always come from the call audio.
+- AAC at 64 kbps per channel (~58 MB/h for call audio, ~29 MB/h for the mic).
+- The file only grows while capturing, so pauses are cut out exactly as the transcript clock
+  skips them: caption timestamps line up with the call recording.
+- On Stop the file moves to the transcript folder with the `.txt`'s base name and is stored
+  in `sessions.audio_file` (migration `v5_audio_file`, macOS only so far). Sessions → Play
+  Audio / Reveal Audio; deleting a session's files deletes the audio too.
+- Recording problems (no permission, no input device, encoder error) are reported under
+  *Session issues* and never stop the captions.
+- **Crash safety:** a quit mid-session closes the file, so Recover & Save attaches it. A
+  crash leaves the `.m4a` without its header; recovery deletes it and saves the transcript
+  only.
 
 ---
 
 ## Settings (persisted, live where safe)
 
-General (transcript folder, name prefix) · Caption (font, auto-scroll, timestamps) · Audio
+General (transcript folder, name prefix, record audio) · Caption (font, auto-scroll, timestamps) · Audio
 (VAD sensitivity) · ASR (endpoint silence, max utterance, interim/final model) · Window
 (always-on-top, opacity) · Clipboard (auto-update, N, auto-copy selection). Font/opacity/
 always-on-top apply live; ASR timing/VAD apply on next Start; model changes apply on next
@@ -157,4 +181,7 @@ Start (re-loads models).
 - **Not notarized** (Phase 6 / B2). Runs locally via a stable self-signed identity; would show
   a Gatekeeper prompt if copied to another Mac.
 - **Model change requires restarting the session** (models load at Start).
-- **Diarization / multi-language / mic capture** are non-goals (SPEC §3.2).
+- **Diarization / multi-language / mic captioning** are non-goals (SPEC §3.2). The mic can be
+  *recorded* (above), not captioned.
+- **Audio recording is one source at a time** (call *or* mic, not both mixed) and is lost
+  if the app crashes mid-session (see Crash safety above).

@@ -8,6 +8,7 @@ import LocalCaptionKit
 struct SettingsView: View {
     @EnvironmentObject var env: AppEnvironment
     @State private var folderError: String?
+    @State private var micDenied = false
 
     private let interimModels = ["tiny.en", "base.en", "small.en"]
     private let finalModels = ["small.en", "large-v3-turbo", "large-v3", "distil-large-v3"]
@@ -64,6 +65,31 @@ struct SettingsView: View {
                 Label(folderError, systemImage: "exclamationmark.triangle")
                     .font(.caption).foregroundStyle(.orange)
             }
+        }
+
+        Section {
+            Picker("Record audio", selection: $env.config.audio.recordSource) {
+                Text("Off").tag(Config.RecordSource.off)
+                Text("Call audio").tag(Config.RecordSource.call)
+                Text("My microphone").tag(Config.RecordSource.microphone)
+            }
+            .onChange(of: env.config.audio.recordSource) { _, source in
+                micDenied = false
+                guard source == .microphone else { return }
+                Task { micDenied = !(await MicrophoneRecorder.requestAccess()) }
+            }
+            if micDenied {
+                Label("LocalCaption doesn't have the Microphone permission. Turn it on in System Settings ▸ "
+                      + "Privacy & Security ▸ Microphone.", systemImage: "exclamationmark.triangle")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+        } header: {
+            Text("Recording")
+        } footer: {
+            Text("Saves each session's audio as an .m4a beside its transcript, from the next Start. "
+                 + "Call audio is what the captions are made from; My microphone is your own voice. "
+                 + "Captions always come from the call. Check that everyone on the call agrees to be recorded.")
+                .font(.caption).foregroundStyle(.secondary)
         }
 
         Section {

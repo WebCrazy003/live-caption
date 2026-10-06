@@ -13,6 +13,8 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unc
     private var stream: SCStream?
     private let onSamples: ([Float]) -> Void
     private let onError: (Error) -> Void
+    /// The call recording, if on: gets each buffer at its native rate, before downsampling.
+    private let recorder: CallAudioRecorder?
     private var converter: AVAudioConverter?
     private let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
                                              sampleRate: 16000, channels: 1, interleaved: false)!
@@ -21,7 +23,9 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unc
     // Accessed only on audioQueue. The fence in stop defines the capture cutoff.
     private var acceptingAudio = true
 
-    init(onSamples: @escaping ([Float]) -> Void, onError: @escaping (Error) -> Void) {
+    init(recorder: CallAudioRecorder? = nil,
+         onSamples: @escaping ([Float]) -> Void, onError: @escaping (Error) -> Void) {
+        self.recorder = recorder
         self.onSamples = onSamples
         self.onError = onError
     }
@@ -83,6 +87,7 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unc
             try sampleBuffer.withAudioBufferList { abl, _ in
                 guard let srcBuffer = AVAudioPCMBuffer(pcmFormat: srcFormat,
                                                        bufferListNoCopy: abl.unsafePointer) else { return }
+                recorder?.append(srcBuffer)
                 if converter == nil { converter = AVAudioConverter(from: srcFormat, to: targetFormat) }
                 guard let converter else { return }
 

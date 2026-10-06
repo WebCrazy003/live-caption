@@ -70,7 +70,9 @@ VERSION="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIS
 echo "▶ Signing…"
 if [ -n "$SIGN_IDENTITY" ]; then
   # Hardened runtime + secure timestamp are required for notarization.
+  # audio-input: the hardened runtime blocks the microphone without it (Record audio ▸ My microphone).
   codesign --force --options runtime --timestamp \
+    --entitlements LocalCaption.entitlements \
     --identifier "$BUNDLE_ID" --sign "$SIGN_IDENTITY" "$APP"
 else
   echo "  (ad-hoc — set SIGN_IDENTITY for a Developer ID signature)"

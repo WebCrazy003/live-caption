@@ -48,12 +48,14 @@ public enum TranscriptWriter {
         return TranscriptSaveResult(txtURL: txtURL, jsonURL: jsonURL)
     }
 
-    /// Pick a base filename that collides with neither an existing `.txt` nor `.json`.
+    /// Pick a base filename that collides with no existing `.txt`, `.json` or `.m4a` (the
+    /// session's audio recording takes the same base).
     static func resolveBase(folder: URL, stamp: String) -> String {
         let fm = FileManager.default
         func free(_ base: String) -> Bool {
-            !fm.fileExists(atPath: folder.appendingPathComponent(base + ".txt").path)
-            && !fm.fileExists(atPath: folder.appendingPathComponent(base + ".json").path)
+            ["txt", "json", SessionFiles.audioExtension].allSatisfy {
+                !fm.fileExists(atPath: folder.appendingPathComponent(base + "." + $0).path)
+            }
         }
         if free(stamp) { return stamp }
         var n = 2

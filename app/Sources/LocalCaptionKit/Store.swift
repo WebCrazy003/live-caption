@@ -61,6 +61,11 @@ public final class Store {
                 ALTER TABLE interviews ADD COLUMN interview_step INTEGER;
                 """)
         }
+        // Audio recording (owner, 2026-10-06): the saved `.m4a`, beside the transcript export.
+        // macOS only for now; the Windows Store leaves identifiers it doesn't know alone.
+        m.registerMigration("v5_audio_file") { db in
+            try db.alter(table: SessionRecord.databaseTableName) { t in t.add(column: "audio_file", .text) }
+        }
         return m
     }
 
@@ -150,6 +155,14 @@ public final class Store {
     public func setTranscriptFile(id: Int64, path: String) throws {
         try dbQueue.write { db in
             try db.execute(sql: "UPDATE \(SessionRecord.databaseTableName) SET transcript_file = ? WHERE id = ?",
+                           arguments: [path, id])
+        }
+    }
+
+    /// Point a session at its audio recording.
+    public func setAudioFile(id: Int64, path: String) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "UPDATE \(SessionRecord.databaseTableName) SET audio_file = ? WHERE id = ?",
                            arguments: [path, id])
         }
     }

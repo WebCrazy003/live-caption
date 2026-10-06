@@ -159,12 +159,14 @@ final class AppEnvironment: ObservableObject {
             sessionName: name, createdAt: TimeFormat.iso(start), endedAt: TimeFormat.iso(end),
             durationSeconds: durationMs / 1000)
         if let inserted = try? store.insert(rec, segments: segs), let id = inserted.id {
-            if let result = try? TranscriptWriter.save(
+            let result = try? TranscriptWriter.save(
                 transcript: transcript, folder: folder, sessionName: name,
                 start: start, end: end, durationSeconds: durationMs / 1000,
-                showTimestamps: config.caption.showTimestamps) {
-                try? store.setTranscriptFile(id: id, path: result.txtURL.path)
-            }
+                showTimestamps: config.caption.showTimestamps)
+            if let result { try? store.setTranscriptFile(id: id, path: result.txtURL.path) }
+            recoverRecording(session.sessionId, sessionId: id, folder: folder,
+                             base: result?.txtURL.deletingPathExtension().lastPathComponent
+                                ?? TimeFormat.fileStamp(start))
             linkRecoveredInterview(captureId: session.sessionId, sessionId: id, start: start)
             Journal.remove(at: session.url)
             pendingRecoveries.removeAll { $0.url == session.url }
@@ -172,8 +174,19 @@ final class AppEnvironment: ObservableObject {
         }
     }
 
-    /// Discard a leftover journal without saving.
+    /// The session's audio, if it was recording and the file was closed (a quit, or a failed
+    /// save); a crash leaves an unreadable file, which is removed.
+    private func recoverRecording(_ captureId: UUID, sessionId: Int64, folder: URL, base: String) {
+        let url = SessionFiles.recordingURL(sessionId: captureId)
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        guard RecordingCheck.isPlayable(url) else { try? FileManager.default.removeItem(at: url); return }
+        let placed = (try? SessionFiles.placeRecording(url, folder: folder, base: base)) ?? url
+        try? store.setAudioFile(id: sessionId, path: placed.path)
+    }
+
+    /// Discard a leftover journal (and any recording of it) without saving.
     func discard(_ session: RecoveredSession) {
+        try? FileManager.default.removeItem(at: SessionFiles.recordingURL(sessionId: session.sessionId))
         Journal.remove(at: session.url)
         pendingRecoveries.removeAll { $0.url == session.url }
     }

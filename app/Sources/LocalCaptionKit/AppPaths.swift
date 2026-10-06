@@ -7,6 +7,7 @@ import Foundation
 /// ~/Library/Application Support/LocalCaption/
 /// ├── transcripts/      final .txt (+ .json sidecar) — Phase 2
 /// ├── journal/          crash-recovery .jsonl        — Phase 2
+/// ├── recordings/       audio being recorded (`<session uuid>.m4a`), moved out on save
 /// ├── models/           WhisperKit CoreML weights
 /// ├── config.json       versioned app config
 /// ├── localcaption.db   sqlite session metadata
@@ -22,6 +23,7 @@ public enum AppPaths {
 
     public static var transcripts: URL { root.appendingPathComponent("transcripts", isDirectory: true) }
     public static var journal: URL { root.appendingPathComponent("journal", isDirectory: true) }
+    public static var recordings: URL { root.appendingPathComponent("recordings", isDirectory: true) }
     public static var models: URL { root.appendingPathComponent("models", isDirectory: true) }
     public static var configFile: URL { root.appendingPathComponent("config.json") }
     public static var databaseFile: URL { root.appendingPathComponent("localcaption.db") }
@@ -42,7 +44,7 @@ public enum AppPaths {
     @discardableResult
     public static func bootstrap() throws -> URL {
         let fm = FileManager.default
-        for dir in [root, transcripts, journal, models] {
+        for dir in [root, transcripts, journal, recordings, models] {
             try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         }
         return root

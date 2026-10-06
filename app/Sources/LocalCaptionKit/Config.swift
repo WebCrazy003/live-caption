@@ -90,12 +90,32 @@ public struct Config: Codable, Equatable {
     public struct Audio: Codable, Equatable {
         /// 0…3 (SPEC.md §15). No device UID — ScreenCaptureKit needs no device selection.
         public var vadSensitivity: Int
-        public init(vadSensitivity: Int = 2) { self.vadSensitivity = vadSensitivity }
-        enum CodingKeys: String, CodingKey { case vadSensitivity = "vad_sensitivity" }
+        /// What to save as an audio file beside the transcript. Off by default (owner, 2026-10-06).
+        public var recordSource: RecordSource
+        public init(vadSensitivity: Int = 2, recordSource: RecordSource = .off) {
+            self.vadSensitivity = vadSensitivity
+            self.recordSource = recordSource
+        }
+        enum CodingKeys: String, CodingKey {
+            case vadSensitivity = "vad_sensitivity"
+            case recordSource = "record_source"
+        }
         public init(from d: Decoder) throws {
             let c = try d.container(keyedBy: CodingKeys.self); let x = Audio()
             vadSensitivity = try c.decodeIfPresent(Int.self, forKey: .vadSensitivity) ?? x.vadSensitivity
+            // An unknown value (a newer build's) reads as off rather than failing the whole config.
+            recordSource = (try? c.decodeIfPresent(RecordSource.self, forKey: .recordSource)) ?? x.recordSource
         }
+    }
+
+    /// Audio recording source. Captions always come from the call audio; this only picks what
+    /// is saved as the session's `.m4a`.
+    public enum RecordSource: String, Codable, CaseIterable, Sendable {
+        case off
+        /// The system/call audio the captions are made from.
+        case call
+        /// The default input device (your own voice). Needs the Microphone permission.
+        case microphone
     }
 
     public struct ASR: Codable, Equatable {

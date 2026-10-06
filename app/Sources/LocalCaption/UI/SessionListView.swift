@@ -69,23 +69,24 @@ struct SessionListView: View {
             if rec.isInterview {
                 // Interview data (CV text, Q&A, screenshots) goes by default (SPEC-15 §History).
                 Button("Delete Session and Interview Data") { delete(rec, alsoFile: false, alsoInterview: true) }
-                if rec.transcriptFile != nil {
-                    Button("Delete Session, Interview Data and Transcript File", role: .destructive) {
+                if hasFiles(rec) {
+                    Button("Delete Session, Interview Data and \(filesLabel(rec))", role: .destructive) {
                         delete(rec, alsoFile: true, alsoInterview: true)
                     }
                 }
                 Button("Delete Session Only (keep interview data)") { delete(rec, alsoFile: false, alsoInterview: false) }
             } else {
                 Button("Delete Session Only") { delete(rec, alsoFile: false) }
-                if rec.transcriptFile != nil {
-                    Button("Delete Session and Transcript File", role: .destructive) { delete(rec, alsoFile: true) }
+                if hasFiles(rec) {
+                    Button("Delete Session and \(filesLabel(rec))", role: .destructive) { delete(rec, alsoFile: true) }
                 }
             }
             Button("Cancel", role: .cancel) {}
         } message: { rec in
+            let kept = rec.audioFile == nil ? "The transcript file is" : "The transcript and audio files are"
             Text(rec.isInterview
-                 ? "Interview data is the CV text, questions, answers and screenshots. The transcript file is kept unless you choose to delete it."
-                 : "The transcript file is kept unless you choose to delete it.")
+                 ? "Interview data is the CV text, questions, answers and screenshots. \(kept) kept unless you choose to delete them."
+                 : "\(kept) kept unless you choose to delete them.")
         }
     }
 
@@ -99,6 +100,10 @@ struct SessionListView: View {
                         .help("Interview")
                 }
                 Text(rec.sessionName).font(.body)
+                if rec.audioFile != nil {
+                    Image(systemName: "waveform").font(.caption).foregroundStyle(.secondary)
+                        .help("Has an audio recording")
+                }
             }
             if rec.isInterview, let id = rec.id, let subtitle = interviewSubtitle[id], !subtitle.isEmpty {
                 Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -117,6 +122,12 @@ struct SessionListView: View {
         Button("Rename…") { renameText = rec.sessionName; renameTarget = rec }
         if let path = rec.transcriptFile {
             Button("Reveal in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+            }
+        }
+        if let path = rec.audioFile {
+            Button("Play Audio") { NSWorkspace.shared.open(URL(fileURLWithPath: path)) }
+            Button("Reveal Audio in Finder") {
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
             }
         }
@@ -144,6 +155,16 @@ struct SessionListView: View {
         .padding(20)
     }
 
+    private func hasFiles(_ rec: SessionRecord) -> Bool { rec.transcriptFile != nil || rec.audioFile != nil }
+
+    private func filesLabel(_ rec: SessionRecord) -> String {
+        switch (rec.transcriptFile != nil, rec.audioFile != nil) {
+        case (true, true): return "Transcript and Audio Files"
+        case (false, true): return "Audio File"
+        default: return "Transcript File"
+        }
+    }
+
     // MARK: Actions
 
     private func delete(_ rec: SessionRecord, alsoFile: Bool, alsoInterview: Bool = false) {
@@ -153,6 +174,7 @@ struct SessionListView: View {
         let linked = alsoInterview ? ((try? env.store.interviews(sessionId: id)) ?? []) : []
         try? env.store.delete(id: id)
         if alsoFile, let path = rec.transcriptFile { SessionFiles.deleteTranscript(atTxtPath: path) }
+        if alsoFile, let path = rec.audioFile { SessionFiles.deleteAudio(atPath: path) }
         for saved in linked {
             // Rows, turns and screenshots go together; the Codex thread is archived too, so the CV
             // doesn't linger in its session store (SPEC-12 §Threads & turns).
