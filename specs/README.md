@@ -38,6 +38,7 @@ Legend: ✅ done · 🟢 mostly · 🟡 partial · 🔴 barely · ⬜ not starte
 | 15 | [Interview window, results & Settings](SPEC-15-interview-ui-results.md) | 🟢 built | compact layout, end summary, history, Settings → Interview |
 | 16 | [Windows parity: what macOS has that Windows does not](SPEC-16-windows-parity.md) | ⬜ not started | DB interop + v4 segments, Interview mode on Windows, caption-side gaps |
 | 17 | [Windows bring-up: what must be done on a Windows PC](SPEC-17-windows-bring-up.md) | ⬜ not started | build + tests on Windows, first launch, Interview mode, Codex, compatibility, installer, acceptance |
+| 18 | [Accent mode: two models on the RTX, Codex correction](SPEC-18-accent-pipeline.md) | ⬜ not started | S0 gate (live Codex latency, model start, LAN, more recordings); RTX agent, Standard ↔ Accent switch, live correction, final pass |
 
 **Built:** the Python **spike** (`../spike/`) that proved the ASR architecture, the
 **minimal app** (`../minimal/`) vertical slice, and the **full app** (`../app/`, Phases 1–5).
