@@ -24,7 +24,7 @@ TASK_XML = """<?xml version="1.0" encoding="UTF-16"?>
     <Enabled>true</Enabled>
   </Settings>
   <Actions Context="Author"><Exec>
-    <Command>{pythonw}</Command><Arguments>"{agent}" --port {port}</Arguments>
+    <Command>{pythonw}</Command><Arguments>"{agent}" --port {port}{extra}</Arguments>
     <WorkingDirectory>{here}</WorkingDirectory>
   </Exec></Actions>
 </Task>
@@ -41,6 +41,8 @@ def main():
     ap.add_argument("--uninstall", action="store_true")
     ap.add_argument("--start", action="store_true")
     ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--no-pairing", action="store_true",
+                    help="the agent accepts any device on this network without a pairing code")
     a = ap.parse_args()
     if sys.platform != "win32":
         sys.exit("install.py is for the Windows RTX desktop")
@@ -55,7 +57,8 @@ def main():
     # whoami, not USERDOMAIN: over SSH the latter is "WORKGROUP", which Task Scheduler rejects.
     user = subprocess.run(["whoami"], capture_output=True, text=True, check=True).stdout.strip()
     xml = TASK_XML.format(user=user,
-                          pythonw=pythonw, agent=os.path.join(HERE, "agent.py"), here=HERE, port=a.port)
+                          pythonw=pythonw, agent=os.path.join(HERE, "agent.py"), here=HERE, port=a.port,
+                          extra=" --no-pairing" if a.no_pairing else "")
     with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False, encoding="utf-16") as f:
         f.write(xml)
     try:
@@ -67,7 +70,10 @@ def main():
         "protocol=TCP", f"localport={a.port}", "profile=private")
     if a.start:
         run("schtasks", "/Run", "/TN", TASK)
-    print(f"\nInstalled. The agent starts at logon; its pairing code is in {HERE}\\state\\pairing-code.txt")
+    if a.no_pairing:
+        print("\nInstalled. The agent starts at logon. Pairing is off: any device on this network can use it.")
+    else:
+        print(f"\nInstalled. The agent starts at logon; its pairing code is in {HERE}\\state\\pairing-code.txt")
 
 
 if __name__ == "__main__":

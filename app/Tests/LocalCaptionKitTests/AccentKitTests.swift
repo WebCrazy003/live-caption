@@ -179,6 +179,17 @@ final class AccentKitTests: XCTestCase {
         XCTAssertNil(reply.secondary)
     }
 
+    func testHelloPairingFlag() throws {
+        let open = try JSONDecoder().decode(RTXProtocol.Hello.self, from: Data(#"""
+            {"name": "PC", "version": "1.0.0", "gpu": "RTX", "vram_total_mb": 24564, "paired": false, "pairing_required": false}
+            """#.utf8))
+        XCTAssertFalse(open.needsPairing)
+        let old = try JSONDecoder().decode(RTXProtocol.Hello.self, from: Data(#"""
+            {"name": "PC", "version": "1.0.0", "gpu": "RTX", "vram_total_mb": 24564, "paired": true}
+            """#.utf8))
+        XCTAssertTrue(old.needsPairing)
+    }
+
     func testPCM16() {
         let data = RTXProtocol.pcm16([0, 1, -1, 2])
         let values = data.withUnsafeBytes { Array($0.bindMemory(to: Int16.self)) }.map { Int16(littleEndian: $0) }

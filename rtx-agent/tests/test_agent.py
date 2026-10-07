@@ -8,12 +8,15 @@ import numpy as np
 import agent as agent_mod
 
 
-class AgentTest(unittest.TestCase):
+class AgentFixture:
+    """A fake-model agent on a free port, plus request helpers. `EXTRA` adds agent arguments."""
+    EXTRA = []
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         _, self.agent, self.server = agent_mod.build(
             ["--fake", "--port", "0", "--host", "127.0.0.1", "--idle-minutes", "0.01",
-             "--state-dir", self.tmp.name, "--models-dir", self.tmp.name])
+             "--state-dir", self.tmp.name, "--models-dir", self.tmp.name] + self.EXTRA)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
         self.token = None
@@ -35,6 +38,11 @@ class AgentTest(unittest.TestCase):
             with e:
                 return e.code, json.loads(e.read())
 
+    def pcm(self, seconds):
+        return (np.zeros(int(16000 * seconds), dtype="<i2")).tobytes()
+
+
+class AgentTest(AgentFixture, unittest.TestCase):
     def pair(self):
         status, body = self.call("POST", "/pair", {"code": self.agent.pairing.code, "name": "test"})
         self.assertEqual(status, 200)
@@ -49,9 +57,6 @@ class AgentTest(unittest.TestCase):
                 return st
             time.sleep(0.05)
         self.fail("load never finished")
-
-    def pcm(self, seconds):
-        return (np.zeros(int(16000 * seconds), dtype="<i2")).tobytes()
 
     def test_hello_needs_no_token_and_reports_unpaired(self):
         status, body = self.call("GET", "/hello", token=False)
@@ -167,6 +172,15 @@ class AgentTest(unittest.TestCase):
                 return
             time.sleep(0.1)
         self.fail("models were not unloaded when idle")
+
+
+class NoPairingTest(AgentFixture, unittest.TestCase):
+    EXTRA = ["--no-pairing"]
+
+    def test_open_agent_needs_no_token(self):
+        self.assertFalse(self.call("GET", "/hello", token=False)[1]["pairing_required"])
+        status, body = self.call("GET", "/status", token=False)
+        self.assertEqual((status, body["state"]), (200, "idle"))
 
 
 class JoinTokensTest(unittest.TestCase):

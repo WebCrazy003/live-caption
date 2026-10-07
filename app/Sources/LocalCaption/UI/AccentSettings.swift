@@ -43,8 +43,10 @@ struct AccentSettingsSections: View {
             TextField("Address", text: cfg.rtxAddress, prompt: Text("e.g. 192.168.1.20"))
                 .onSubmit { Task { await check() } }
             connectionLine
-            if hello != nil {
-                if paired {
+            if let hello {
+                if !hello.needsPairing {
+                    Button("Test connection") { Task { await check() } }
+                } else if paired {
                     HStack {
                         Button("Test connection") { Task { await check() } }
                         Button("Unpair", role: .destructive) { Task { await unpair() } }
@@ -74,7 +76,8 @@ struct AccentSettingsSections: View {
         if checking {
             HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Checking…").foregroundStyle(.secondary) }
         } else if let hello {
-            Label(paired ? "Paired with \(hello.name) — \(hello.gpu), \(hello.vramTotalMb / 1024) GB"
+            Label(!hello.needsPairing ? "Connected to \(hello.name) — \(hello.gpu), \(hello.vramTotalMb / 1024) GB (no pairing)"
+                  : paired ? "Paired with \(hello.name) — \(hello.gpu), \(hello.vramTotalMb / 1024) GB"
                          : "Found \(hello.name) — \(hello.gpu). Enter the pairing code it shows.",
                   systemImage: paired ? "checkmark.circle.fill" : "link")
                 .foregroundStyle(paired ? .green : .primary)
@@ -108,7 +111,7 @@ struct AccentSettingsSections: View {
         do {
             hello = try await client.hello()
             helloError = nil
-            paired = RTXToken.load() != nil && hello?.paired == true
+            paired = hello?.needsPairing == false || (RTXToken.load() != nil && hello?.paired == true)
             if paired {
                 do {
                     status = try await client.status()

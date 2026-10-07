@@ -11,9 +11,14 @@ public enum RTXProtocol {
         public let gpu: String
         public let vramTotalMb: Int
         public let paired: Bool
+        /// False when the agent runs with `--no-pairing`: every request is accepted. Absent
+        /// (older agents) means required.
+        public let pairingRequired: Bool?
+        public var needsPairing: Bool { pairingRequired ?? true }
         enum CodingKeys: String, CodingKey {
             case name, version, gpu, paired
             case vramTotalMb = "vram_total_mb"
+            case pairingRequired = "pairing_required"
         }
     }
 

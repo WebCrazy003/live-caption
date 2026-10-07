@@ -40,9 +40,12 @@ def _read_json(path, default):
 # ---------------------------------------------------------------- pairing
 
 class Pairing:
-    """One code per agent run; each paired Mac gets its own token, kept in state/tokens.json."""
+    """One code per agent run; each paired Mac gets its own token, kept in state/tokens.json.
+    With `required=False` (`--no-pairing`, owner's choice for a trusted home network) every
+    request is accepted and no code is shown."""
 
-    def __init__(self, state_dir):
+    def __init__(self, state_dir, required=True):
+        self.required = required
         self.path = os.path.join(state_dir, "tokens.json")
         self.tokens = _read_json(self.path, {})
         self.code = f"{secrets.randbelow(10**6):06d}"
@@ -72,6 +75,8 @@ class Pairing:
 
     def check(self, header):
         token = (header or "").removeprefix("Bearer ").strip()
+        if not self.required:
+            return token
         if not token or not any(hmac.compare_digest(token, t) for t in self.tokens):
             raise HTTPError(401, "not paired")
         return token
@@ -254,7 +259,7 @@ class Agent:
     def __init__(self, args):
         self.state_dir = args.state_dir
         os.makedirs(self.state_dir, exist_ok=True)
-        self.pairing = Pairing(self.state_dir)
+        self.pairing = Pairing(self.state_dir, required=not args.no_pairing)
         self.models = Models(args.models_dir, fake=args.fake)
         self.idle_s = args.idle_minutes * 60
         self.last_activity = time.time()
@@ -324,7 +329,8 @@ def make_handler(agent):
 
     def hello(h, q, _):
         return 200, {"name": agent.name, "version": VERSION, "gpu": agent.gpu,
-                     "vram_total_mb": agent.vram_total, "paired": agent.pairing.paired}
+                     "vram_total_mb": agent.vram_total, "paired": agent.pairing.paired,
+                     "pairing_required": agent.pairing.required}
 
     def pair(h, q, _):
         b = h.json_body()
@@ -402,6 +408,9 @@ def advertise(agent, port):
 
 
 def show_pairing_code(agent):
+    if not agent.pairing.required:
+        log.info("pairing is off (--no-pairing): any device on this network can use the agent")
+        return
     log.info("pairing code: %s", agent.pairing.code)
     if sys.stdout:     # None under pythonw (the scheduled task)
         print(f"LocalCaption RTX agent on {agent.name} — pairing code {agent.pairing.code}", flush=True)
@@ -422,6 +431,8 @@ def build(argv=None):
     ap.add_argument("--models-dir", default=os.path.join(HERE, "models"))
     ap.add_argument("--fake", action="store_true", help="fake models, for tests")
     ap.add_argument("--no-advertise", action="store_true")
+    ap.add_argument("--no-pairing", action="store_true",
+                    help="accept every request without a pairing token (trusted home network only)")
     args = ap.parse_args(argv)
     agent = Agent(args)
     server = ThreadingHTTPServer((args.host, args.port), make_handler(agent))
