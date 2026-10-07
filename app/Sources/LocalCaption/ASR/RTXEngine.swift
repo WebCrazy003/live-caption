@@ -104,6 +104,7 @@ final class RTXEngine: SpeechEngine, @unchecked Sendable {
 
     // MARK: Decoding
 
+    /// The moving caption: the primary model re-reads the utterance so far, with word timings.
     func transcribeInterim(_ request: SpeechRequest) async -> SpeechOutcome {
         let audio = cleaned(request.audio)
         do {

@@ -202,15 +202,24 @@ struct AccentSettingsSections: View {
                 HStack {
                     Slider(value: Binding(get: { Double(env.config.accent.endpointSilenceMs) },
                                           set: { env.config.accent.endpointSilenceMs = Int($0) }),
-                           in: 400...1500, step: 100)
+                           in: 300...1500, step: 100)
                     Text("\(env.config.accent.endpointSilenceMs) ms").monospacedDigit().frame(width: 64, alignment: .trailing)
+                }
+            }
+            LabeledContent("Longest caption") {
+                HStack {
+                    Slider(value: Binding(get: { Double(env.config.accent.maxUtteranceS) },
+                                          set: { env.config.accent.maxUtteranceS = Int($0) }),
+                           in: 4...20, step: 1)
+                    Text("\(env.config.accent.maxUtteranceS) s").monospacedDigit().frame(width: 64, alignment: .trailing)
                 }
             }
         } header: {
             Text("Audio")
         } footer: {
-            Text("A longer pause gives the models longer pieces of speech (more accurate), a shorter one "
-                 + "shows captions sooner. Applies to the next session.")
+            Text("Words appear a few at a time as they're spoken, once two reads agree on them. A caption is "
+                 + "fixed when the speaker pauses this long, or when it reaches the longest length. Applies to "
+                 + "the next session.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .onChange(of: env.config.accent.audioBandpass) { _, _ in reloadIfActive() }
@@ -221,11 +230,6 @@ struct AccentSettingsSections: View {
 
     private var correctionSection: some View {
         Section {
-            Toggle("Correct captions live", isOn: cfg.liveCorrection)
-            if env.config.accent.liveCorrection {
-                codexModelPicker("Live model", selection: cfg.liveModel, recommended: Config.Accent.recommendedLiveModel)
-                effortPicker("Live reasoning effort", selection: cfg.liveEffort, model: env.config.accent.effectiveLiveModel)
-            }
             Toggle("Improve the whole transcript after Stop", isOn: cfg.finalPass)
             if env.config.accent.finalPass {
                 codexModelPicker("Final model", selection: cfg.finalModel, recommended: Config.Accent.recommendedFinalModel)
@@ -237,9 +241,9 @@ struct AccentSettingsSections: View {
         } header: {
             Text("Correction (Codex)")
         } footer: {
-            Text("Transcript text (never audio) goes to OpenAI through your Codex sign-in. Live: low effort keeps "
-                 + "corrections about 2 s behind the captions. Final: high effort took about 2 minutes for a "
-                 + "13-minute session.")
+            Text("After Stop, the transcript text (never audio) goes to OpenAI through your Codex sign-in and comes "
+                 + "back with misheard words fixed from the whole conversation. High effort took about 1–2 minutes "
+                 + "for a 13-minute session. Live captions are never held back for it.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .task { if codex.models.isEmpty { await codex.refresh() } }

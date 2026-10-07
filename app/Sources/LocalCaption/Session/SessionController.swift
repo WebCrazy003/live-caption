@@ -29,11 +29,6 @@ final class SessionController: ObservableObject {
     @Published private(set) var savedAudioURL: URL?
     /// A recording problem. Never stops the captions.
     @Published var recordingIssue: String?
-    /// Accent mode (SPEC-18): raw captions still waiting for their live correction, shown muted
-    /// after the committed text.
-    @Published private(set) var pendingRaw = ""
-    /// Live correction stopped for this session (signed out, usage limit…). Captions go on raw.
-    @Published var correctionIssue: String?
     /// The final pass on the last saved session: nil when none runs.
     @Published private(set) var finalPass: FinalPassState?
 
@@ -66,10 +61,6 @@ final class SessionController: ObservableObject {
     private var prepareTask: Task<Void, Never>?
     /// This session runs in Accent mode (fixed at Start).
     private(set) var isAccentSession = false
-    private var corrector: LiveCorrector?
-    /// Segments shown as committed text; the rest are `pendingRaw`. Corrections settle in order.
-    private var settledCount = 0
-    private var settledStarts: Set<Int> = []
     /// Secondary texts that arrived before their segment was journalled.
     private var earlySecondary: [Int: String] = [:]
     /// The models this session uses (`primary+secondary`), fixed at Start.
@@ -194,18 +185,19 @@ final class SessionController: ObservableObject {
         sessionId = UUID()
         startDate = Date()
         isAccentSession = env.config.accent.enabled
+        orchestrator.splitsStableWords = isAccentSession
         showingSaved = false
         let a = env.config.accent
         sessionModels = isAccentSession ? [a.primaryModel, a.secondaryModel].filter { !$0.isEmpty }.joined(separator: "+") : nil
         orchestrator.applyTuning(
             endpointSilenceMs: isAccentSession ? env.config.accent.endpointSilenceMs : env.config.asr.endpointSilenceMs,
             interimIntervalMs: env.config.asr.interimIntervalMs,
-            maxUtteranceS: env.config.asr.maxUtteranceS,
+            maxUtteranceS: isAccentSession ? env.config.accent.maxUtteranceS : env.config.asr.maxUtteranceS,
             vadSensitivity: env.config.audio.vadSensitivity)
         sessionName = name ?? (env.config.general.sessionNamePrefix + TimeFormat.fileStamp(startDate))
         transcript = Transcript(); paragraphs = []; current = ""
         savedTxtURL = nil; saveError = nil; savedAudioURL = nil; recordingIssue = nil
-        startCorrection()
+        earlySecondary = [:]; finalPass = nil
         do { journal = try JournalWriter(sessionId: sessionId) }
         catch { saveError = "Could not create recovery journal: \(error.localizedDescription)"; phase = .failed; return }
         let source = env.config.audio.recordSource
@@ -259,7 +251,6 @@ final class SessionController: ObservableObject {
         recorder?.pause()
         await orchestrator.stopAndFinalize()
         await orchestrator.waitForSecondaries(timeout: 5)
-        await finishCorrection()
         phase = await save() ? .saved : .failed
         showingSaved = phase == .saved
         if reloadAfterSession, phase == .saved { reloadEngine() }
@@ -322,74 +313,22 @@ final class SessionController: ObservableObject {
             saveError = "Recovery journal write failed: \(error.localizedDescription). Stop to save the transcript."
         }
         transcript.append(seg)
-        if let corrector {
-            corrector.add(number: transcript.segments.count, startMs: startMs, primary: text)
-            if let alt = earlySecondary.removeValue(forKey: startMs) { secondaryArrived(startMs, alt) }
-            updatePendingRaw()
-        } else {
-            if let alt = earlySecondary.removeValue(forKey: startMs) { secondaryArrived(startMs, alt) }
-            settle(startMs)
-        }
+        if let alt = earlySecondary.removeValue(forKey: startMs) { secondaryArrived(startMs, alt) }
+        addToParagraphs(text)
     }
 
-    // MARK: Accent mode: secondary text and live correction (SPEC-18)
+    // MARK: Accent mode: the secondary model's text (SPEC-18)
 
+    /// It arrives after its caption and is kept for the final pass after Stop.
     private func secondaryArrived(_ startMs: Int, _ text: String) {
         let patch = SegmentPatch(tStartMs: startMs, altText: text)
         guard transcript.apply(patch) else { earlySecondary[startMs] = text; return }
         Task { try? await journal?.append(patch) }
-        corrector?.setSecondary(startMs: startMs, text: text)
-    }
-
-    private func startCorrection() {
-        settledCount = 0; settledStarts = []; earlySecondary = [:]
-        pendingRaw = ""; correctionIssue = nil; finalPass = nil
-        corrector = nil
-        let a = env.config.accent
-        guard isAccentSession, a.liveCorrection else { return }
-        let c = LiveCorrector(engine: env.correctionEngine, options: .init(
-            model: a.effectiveLiveModel, effort: a.liveEffort, vocabulary: a.vocabulary,
-            twoSources: !a.secondaryModel.isEmpty))
-        c.onResult = { [weak self] start, text in self?.liveCorrected(start, text) }
-        c.onStopped = { [weak self] message in
-            self?.correctionIssue = "Live correction stopped: \(message) Captions continue uncorrected."
-        }
-        corrector = c
-    }
-
-    private func finishCorrection() async {
-        guard let corrector else { return }
-        await corrector.drain(timeout: 10)
-        await corrector.finish()
-        self.corrector = nil
-    }
-
-    private func liveCorrected(_ startMs: Int, _ text: String?) {
-        if let text {
-            let patch = SegmentPatch(tStartMs: startMs, liveText: text)
-            if transcript.apply(patch) { Task { try? await journal?.append(patch) } }
-        }
-        settle(startMs)
-    }
-
-    /// Mark a segment final for display; the settled prefix moves into the paragraphs.
-    private func settle(_ startMs: Int) {
-        settledStarts.insert(startMs)
-        let segs = transcript.segments
-        while settledCount < segs.count, settledStarts.contains(segs[settledCount].tStartMs) {
-            addToParagraphs(segs[settledCount].bestText)
-            settledCount += 1
-        }
-        updatePendingRaw()
-    }
-
-    private func updatePendingRaw() {
-        pendingRaw = transcript.segments.dropFirst(settledCount).map(\.text).joined(separator: " ")
     }
 
     private func rebuildParagraphs() {
         paragraphs = []; current = ""
-        transcript.segments.prefix(settledCount).forEach { addToParagraphs($0.bestText) }
+        transcript.segments.forEach { addToParagraphs($0.bestText) }
     }
 
     // MARK: Clipboard (write-only; never reads — SPEC.md §9.4)
@@ -517,7 +456,6 @@ final class SessionController: ObservableObject {
                 }
                 if savedSessionId == id && phase == .saved {
                     transcript = improved
-                    settledCount = improved.segments.count
                     rebuildParagraphs()
                     finalPass = .done
                 }
@@ -544,7 +482,7 @@ final class SessionController: ObservableObject {
         paragraphs = []; current = ""
         segments.forEach { addToParagraphs($0.bestText) }
         if !current.isEmpty { paragraphs.append(current); current = "" }
-        settledCount = segments.count; pendingRaw = ""; finalPass = nil
+        finalPass = nil
         isAccentSession = rec.isAccent
         sessionName = rec.sessionName
         startDate = TimeFormat.parseISO(rec.createdAt) ?? Date()

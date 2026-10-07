@@ -222,10 +222,9 @@ struct ActiveSessionView: View {
     private var captionView: some View {
         CaptionView(
             paragraphs: controller.paragraphs,
-            current: controller.current,
-            // Accent mode: raw captions waiting for their correction show muted, like interim text.
-            hypothesis: [controller.pendingRaw, controller.orchestrator.hypothesis]
-                .filter { !$0.isEmpty }.joined(separator: " "),
+            // Accent mode streams words: the ones two reads agreed on show as normal text.
+            current: [controller.current, controller.orchestrator.stableHypothesis].filter { !$0.isEmpty }.joined(separator: " "),
+            hypothesis: controller.orchestrator.tailHypothesis,
             isReady: isLive,
             fontSize: Double(env.config.caption.fontSize),
             autoScroll: env.config.caption.autoScroll
@@ -385,9 +384,6 @@ struct ActiveSessionView: View {
             if !controller.hasUnsavedSession && (controller.phase == .failed || controller.phase == .ready) {
                 Button("Retry") { controller.retryPrepare() }
             }
-        }
-        if let issue = controller.correctionIssue {
-            Label(issue, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).font(.callout)
         }
         finalPassLine
         if !controller.hasUnsavedSession, let saveErr = controller.saveError {

@@ -66,6 +66,22 @@ What the numbers say, and what they do not:
 - **One recording.** The word list was written after hearing it. Everything above must be
   re-checked on more recordings — S0.5.
 
+## Owner change (2026-10-07): no live correction
+
+**Live Codex correction is removed from Accent mode.** In a real call, a caption only turned final
+after the speaker paused, the RTX answered, the secondary text arrived and a Codex turn finished —
+about 10 s from the first word of a long sentence. Captions are now final as soon as the primary
+model answers (0.5 s p50 / 1.0 s p90 after the speech ends). The secondary model still runs and
+its text is kept per segment for the **final pass after Stop, which stays** (37.0% vs 50.1% WER on
+the reference clip). Sections below that describe live correction (`LiveCorrector`, muted raw
+captions, `live_*` config keys, S0.1) are history; the `live_text` column stays for sessions saved
+before this change.
+
+**Streaming words (same day).** Final captions alone arrived ~20 words at a time. The primary
+model now re-reads the utterance every 500 ms on the RTX (interim lane, with word timings); words
+two consecutive reads agree on show as normal text (`StableWords`), only the changing tail is
+muted, and the final caption at the pause (default **500 ms**, longest **8 s**) replaces them.
+
 ## Implementation notes (2026-10-07)
 
 What was built differs from the text below in these places:

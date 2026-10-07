@@ -12,6 +12,12 @@ import OSLog
 @MainActor
 final class StreamingOrchestrator: ObservableObject {
     @Published var hypothesis = ""
+    /// Accent mode: `hypothesis` split into words two reads agreed on, and the changing tail.
+    @Published private(set) var stableHypothesis = ""
+    @Published private(set) var tailHypothesis = ""
+    /// Set by the session for Accent sessions.
+    var splitsStableWords = false
+    private var stableWords = StableWords()
     @Published var status = "Preparing…"
     @Published var detail = ""
     @Published var downloadFraction = 0.0
@@ -140,7 +146,7 @@ final class StreamingOrchestrator: ObservableObject {
             throw NSError(domain: "StreamingOrchestrator", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Capture is already active or the speech model is not ready."])
         }
-        errorText = nil; detail = ""; hypothesis = ""
+        errorText = nil; detail = ""; setHypothesis("")
         let session = UUID()
         activeCaptureID = session
         let buffer = CaptureBuffer()
@@ -152,7 +158,7 @@ final class StreamingOrchestrator: ObservableObject {
             final: { await engine.transcribeFinal($0) })
         self.pipeline = pipeline
         pipeline.onHypothesis = { [weak self] text in
-            self?.hypothesis = text
+            self?.setHypothesis(text)
             self?.logger.info("caption_published session=\(session.uuidString, privacy: .public)")
         }
         pipeline.onFinal = { [weak self] text, start, end in
@@ -229,11 +235,18 @@ final class StreamingOrchestrator: ObservableObject {
             if let processor = self.processor { self.receive(await processor.poll(finish: true)) }
             await self.pipeline?.finish()
             self.processor = nil; self.pipeline = nil
-            self.hypothesis = ""; self.detail = ""
+            self.setHypothesis(""); self.detail = ""
         }
         endingTask = task
         await task.value
         endingTask = nil
+    }
+
+    private func setHypothesis(_ text: String) {
+        hypothesis = text
+        guard splitsStableWords else { stableHypothesis = ""; tailHypothesis = text; return }
+        if text.isEmpty { stableWords.reset() }
+        (stableHypothesis, tailHypothesis) = stableWords.update(text)
     }
 
     // MARK: helpers

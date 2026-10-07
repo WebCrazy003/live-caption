@@ -14,9 +14,7 @@ final class AccentKitTests: XCTestCase {
         XCTAssertEqual(cfg.accent.primaryModel, "parakeet-tdt-0.6b-v2")
         XCTAssertEqual(cfg.accent.secondaryModel, "whisper-large-v3")
         XCTAssertTrue(cfg.accent.audioBandpass && cfg.accent.audioLevel)
-        XCTAssertEqual(cfg.accent.effectiveLiveModel, "gpt-6-luna")
         XCTAssertEqual(cfg.accent.effectiveFinalModel, "gpt-6.1-sol")
-        XCTAssertEqual(cfg.accent.liveEffort, "low")
         XCTAssertEqual(cfg.accent.finalEffort, "high")
         let none = try JSONDecoder().decode(Config.self, from: Data(#"{"schema_version": 2}"#.utf8))
         XCTAssertEqual(none.accent, Config.Accent())
@@ -188,6 +186,30 @@ final class AccentKitTests: XCTestCase {
             {"name": "PC", "version": "1.0.0", "gpu": "RTX", "vram_total_mb": 24564, "paired": true}
             """#.utf8))
         XCTAssertTrue(old.needsPairing)
+    }
+
+    // MARK: Streaming words
+
+    func testStableWordsGrowAsReadsAgree() {
+        var s = StableWords()
+        XCTAssertEqual(s.update("I was").stable, "")
+        var r = s.update("I was just watching")
+        XCTAssertEqual(r.stable, "I was"); XCTAssertEqual(r.tail, "just watching")
+        r = s.update("I was just watching what Victor")
+        XCTAssertEqual(r.stable, "I was just watching"); XCTAssertEqual(r.tail, "what Victor")
+        r = s.update("I was just watching what, Victor's doing")
+        XCTAssertEqual(r.stable, "I was just watching what,", "punctuation doesn't break agreement")
+    }
+
+    func testStableWordsDoNotFlickerBackButResetWhenTheReadChanges() {
+        var s = StableWords()
+        _ = s.update("pay stack now")
+        XCTAssertEqual(s.update("pay stack now please").stable, "pay stack now")
+        XCTAssertEqual(s.update("pay stack now please").stable, "pay stack now please")
+        // The final took that utterance; the next one starts fresh.
+        XCTAssertEqual(s.update("so then").stable, "")
+        s.reset()
+        XCTAssertEqual(s.update("").tail, "")
     }
 
     func testPCM16() {
