@@ -3,7 +3,7 @@ import Foundation
 extension Config {
     /// Accent mode (SPEC-18): speech models on the user's RTX desktop, Codex correction live and
     /// at Stop. Merge-default like `interview`: a config without the group gets these defaults.
-    /// The pairing token is not here — it lives in the Keychain.
+    /// The pairing token is not here — it is in `rtx-token` beside config.json (0600).
     public struct Accent: Codable, Equatable {
         public static let defaultPort = 8765
         public static let defaultPrimaryModel = "parakeet-tdt-0.6b-v2"

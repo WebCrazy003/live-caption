@@ -190,7 +190,7 @@ holds **no models until asked**, so it costs no VRAM when Accent mode is not in 
 
 On first start (and whenever no Mac is paired) the agent shows a **6-digit pairing code** in a
 small window and writes it to `rtx-agent/pairing-code.txt`. The Mac sends the code once; the agent
-returns a random token, the Mac keeps it in the Keychain. Every other call needs
+returns a random token, the Mac keeps it in a private file (`rtx-token`, 0600) beside `config.json` — not the Keychain, which asks for the login password after every rebuild of a self-signed development build. Every other call needs
 `Authorization: Bearer <token>`. *Unpair* on either side revokes it.
 
 ### API
@@ -326,7 +326,7 @@ Merge-default (missing → defaults), no schema bump — same treatment as `summ
 | `accent.enabled` | `false` | the Standard ↔ Accent switch, remembered |
 | `accent.rtx_address` | `""` | `host[:port]`; port defaults to 8765 |
 | `accent.rtx_name` | `""` | paired agent's PC name (display only) |
-| — token — | | Keychain item `LocalCaption RTX token`, never in `config.json` |
+| — token — | | file `rtx-token` (0600) beside `config.json`, never in `config.json` |
 | `accent.primary_model` | `"parakeet-tdt-0.6b-v2"` | catalog id |
 | `accent.secondary_model` | `"whisper-large-v3"` | catalog id, or `""` for none |
 | `accent.audio_bandpass` | `true` | 80 Hz–7.5 kHz before sending |
@@ -365,7 +365,7 @@ agent runs on Windows but is a separate program, not part of the Windows app.
 | **S0** | Spike gate — below. Nothing else starts until it passes or the user accepts a miss. | Mac + RTX |
 | 1 | `rtx-agent/`: API, catalog, load/unload/idle-unload, pairing, mDNS, `install.py`, tests | RTX |
 | 2 | Replay CLI in `Benchmark`: feed a `.wav`/`.m4a` through cleanup → segmenter → RTX → corrector → final pass, write P/W/live/final text files and a WER report. All acceptance numbers come from it. | Mac |
-| 3 | `RTXClient` (discovery, pairing, Keychain token, status polling) + `RTXEngine` + `alt` in `SpeechOutcome` + audio cleanup + drop/retry/pause handling | Mac |
+| 3 | `RTXClient` (discovery, pairing, token file, status polling) + `RTXEngine` + `alt` in `SpeechOutcome` + audio cleanup + drop/retry/pause handling | Mac |
 | 4 | Mode switch (chooser + top bar), entering-mode flow (`/load`, progress, Start gating), privacy notice | Mac |
 | 5 | Data: segment fields, `v6_accent`, sidecar, `.txt` best-text export, journal `correction` kind | Kit |
 | 6 | `LiveCorrector` + caption view replacement (raw muted → corrected normal, `[?]` highlighted) | Mac |

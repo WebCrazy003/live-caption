@@ -1,6 +1,5 @@
 import Foundation
 import Network
-import Security
 import LocalCaptionKit
 
 /// HTTP client for the RTX agent (SPEC-18 §RTX agent). Thread-safe: the speech engine calls
@@ -109,31 +108,26 @@ enum RTXError: Error, Equatable, LocalizedError {
     }
 }
 
-/// The pairing token, in the login Keychain (SPEC-18: never in `config.json`).
+/// The pairing token: a private file (0600) in the app's Application Support folder, beside
+/// `config.json` and Codex's own sign-in. Not the Keychain: a development build is self-signed
+/// and changes on every rebuild, so the Keychain would ask for the login password each time.
 enum RTXToken {
-    private static let service = "LocalCaption RTX token"
-    private static let account = "rtx-agent"
+    static var url: URL { AppPaths.root.appendingPathComponent("rtx-token") }
 
     static func load() -> String? {
-        var out: CFTypeRef?
-        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-                                kSecAttrAccount as String: account, kSecReturnData as String: true]
-        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let data = out as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        guard let s = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        let token = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return token.isEmpty ? nil : token
     }
 
     static func save(_ token: String) {
-        delete()
-        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-                                kSecAttrAccount as String: account, kSecValueData as String: Data(token.utf8),
-                                kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock]
-        SecItemAdd(q as CFDictionary, nil)
+        let fm = FileManager.default
+        try? fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        fm.createFile(atPath: url.path, contents: Data(token.utf8), attributes: [.posixPermissions: 0o600])
     }
 
     static func delete() {
-        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-                                kSecAttrAccount as String: account]
-        SecItemDelete(q as CFDictionary)
+        try? FileManager.default.removeItem(at: url)
     }
 }
 
