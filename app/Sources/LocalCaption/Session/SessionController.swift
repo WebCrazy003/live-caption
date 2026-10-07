@@ -45,7 +45,10 @@ final class SessionController: ObservableObject {
 
     /// True once any final has been committed — gates the "Copy last N" button.
     var hasTranscript: Bool { !transcript.isEmpty }
-    var hasUnsavedSession: Bool { journal != nil || (!transcript.isEmpty && phase != .saved) }
+    var hasUnsavedSession: Bool { journal != nil || (!transcript.isEmpty && phase != .saved && !showingSaved) }
+    /// The transcript on screen is a saved session (just stopped, or opened). It stays saved when
+    /// the speech engine reloads underneath it (the Standard ↔ Accent switch), which moves `phase`.
+    private var showingSaved = false
 
     let orchestrator = StreamingOrchestrator()
 
@@ -143,7 +146,7 @@ final class SessionController: ObservableObject {
                                             finalModel: env.config.asr.finalModel)
         }
         guard !Task.isCancelled else { return }
-        phase = orchestrator.modelReady ? .ready : .failed
+        if !orchestrator.modelReady { phase = .failed } else { phase = showingSaved ? .saved : .ready }
     }
 
     private func makeRTXEngine() -> RTXEngine? {
@@ -191,6 +194,7 @@ final class SessionController: ObservableObject {
         sessionId = UUID()
         startDate = Date()
         isAccentSession = env.config.accent.enabled
+        showingSaved = false
         let a = env.config.accent
         sessionModels = isAccentSession ? [a.primaryModel, a.secondaryModel].filter { !$0.isEmpty }.joined(separator: "+") : nil
         orchestrator.applyTuning(
@@ -257,6 +261,7 @@ final class SessionController: ObservableObject {
         await orchestrator.waitForSecondaries(timeout: 5)
         await finishCorrection()
         phase = await save() ? .saved : .failed
+        showingSaved = phase == .saved
         if reloadAfterSession, phase == .saved { reloadEngine() }
     }
 
@@ -549,6 +554,7 @@ final class SessionController: ObservableObject {
         savedAudioURL = rec.audioFile.map { URL(fileURLWithPath: $0) }
         saveError = nil; recordingIssue = nil
         phase = .saved
+        showingSaved = true
     }
 
     // MARK: Clock (sample-based; frozen during pause)
