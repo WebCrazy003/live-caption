@@ -13,6 +13,7 @@ final class AppEnvironment: ObservableObject {
         didSet {
             persist()
             codexPath.set(config.interview.codexPath)
+            ScreenShareShield.shared.isEnabled = config.window.hideFromScreenShare
         }
     }
     let store: Store
@@ -71,6 +72,7 @@ final class AppEnvironment: ObservableObject {
 
         self.pendingRecoveries = Journal.pending()
         codexPath.set(config.interview.codexPath)
+        ScreenShareShield.shared.isEnabled = config.window.hideFromScreenShare
         importLegacyInterviews()
         sweepInterviews()
         if ((try? store.importTranscriptFiles()) ?? 0) > 0 {

@@ -46,6 +46,7 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(cfg.caption.autoScroll, Config.Caption().autoScroll)      // default true
         XCTAssertEqual(cfg.general.sessionNamePrefix, Config.General().sessionNamePrefix)
         XCTAssertEqual(cfg.asr.finalModel, Config.ASR().finalModel)
+        XCTAssertTrue(cfg.window.hideFromScreenShare, "older configs hide from screen sharing by default")
     }
 
     func testCorruptFileRepairsWithBackup() throws {

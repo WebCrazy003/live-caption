@@ -96,6 +96,7 @@ struct SettingsView: View {
 
         Section {
             Toggle("Always on top", isOn: $env.config.window.alwaysOnTop)
+            Toggle("Hide from screen sharing", isOn: $env.config.window.hideFromScreenShare)
             VStack(alignment: .leading) {
                 LabeledContent("Opacity", value: String(format: "%.2f", env.config.window.opacity))
                 Slider(value: $env.config.window.opacity, in: 0.3...1.0)
@@ -103,7 +104,8 @@ struct SettingsView: View {
         } header: {
             Text("Window")
         } footer: {
-            Text("Applied live. Note: an always-on-top window can be captured if you screen-share.")
+            Text("Applied live. Hide from screen sharing keeps every LocalCaption window off "
+                 + "screen shares, recordings and screenshots — you still see it on your own screen.")
                 .font(.caption).foregroundStyle(.secondary)
         }
 

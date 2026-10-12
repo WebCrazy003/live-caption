@@ -179,23 +179,29 @@ public struct Config: Codable, Equatable {
 
     public struct Window: Codable, Equatable {
         public var alwaysOnTop: Bool
+        /// Keep the app's windows out of screen sharing and screenshots (shown only on this Mac).
+        public var hideFromScreenShare: Bool
         public var opacity: Double
         public var width: Double
         public var height: Double
         public var x: Double?
         public var y: Double?
-        public init(alwaysOnTop: Bool = true, opacity: Double = 1.0,
+        public init(alwaysOnTop: Bool = true, hideFromScreenShare: Bool = true, opacity: Double = 1.0,
                     width: Double = 860, height: Double = 620, x: Double? = nil, y: Double? = nil) {
-            self.alwaysOnTop = alwaysOnTop; self.opacity = opacity
+            self.alwaysOnTop = alwaysOnTop; self.hideFromScreenShare = hideFromScreenShare
+            self.opacity = opacity
             self.width = width; self.height = height; self.x = x; self.y = y
         }
         enum CodingKeys: String, CodingKey {
             case alwaysOnTop = "always_on_top"
+            case hideFromScreenShare = "hide_from_screen_share"
             case opacity, width, height, x, y
         }
         public init(from d: Decoder) throws {
             let c = try d.container(keyedBy: CodingKeys.self); let x = Window()
             alwaysOnTop = try c.decodeIfPresent(Bool.self, forKey: .alwaysOnTop) ?? x.alwaysOnTop
+            hideFromScreenShare = try c.decodeIfPresent(Bool.self, forKey: .hideFromScreenShare)
+                ?? x.hideFromScreenShare
             opacity = try c.decodeIfPresent(Double.self, forKey: .opacity) ?? x.opacity
             width = try c.decodeIfPresent(Double.self, forKey: .width) ?? x.width
             height = try c.decodeIfPresent(Double.self, forKey: .height) ?? x.height
