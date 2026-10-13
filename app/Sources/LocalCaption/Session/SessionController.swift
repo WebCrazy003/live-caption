@@ -136,6 +136,7 @@ final class SessionController: ObservableObject {
             interimIntervalMs: env.config.asr.interimIntervalMs,
             maxUtteranceS: env.config.asr.maxUtteranceS,
             vadSensitivity: env.config.audio.vadSensitivity)
+        orchestrator.outputDeviceUID = env.config.audio.outputDevice
         sessionName = name ?? (env.config.general.sessionNamePrefix + TimeFormat.fileStamp(startDate))
         transcript = Transcript(); paragraphs = []; current = ""
         savedTxtURL = nil; saveError = nil; savedAudioURL = nil; recordingIssue = nil

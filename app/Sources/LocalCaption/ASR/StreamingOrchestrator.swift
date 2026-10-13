@@ -30,7 +30,9 @@ final class StreamingOrchestrator: ObservableObject {
 
     private var engine: SpeechEngine?
     var modelLabel: String { modelReady ? engine?.label ?? "" : "" }
-    private var capture: SystemAudioCapture?
+    private var capture: CallAudioCapture?
+    /// The output device to caption (Core Audio UID); empty = all sound. Set by the session at Start.
+    var outputDeviceUID = ""
     private var processor: CaptureProcessor?
     private var pipeline: CaptionPipeline?
     private var loopTask: Task<Void, Never>?
@@ -146,16 +148,20 @@ final class StreamingOrchestrator: ObservableObject {
             self?.logger.info("session=\(metric.session.uuidString, privacy: .public) utterance=\(metric.utterance) window_start_ms=\(metric.windowStartMs) window_end_ms=\(metric.windowEndMs) final=\(metric.isFinal) queue_ms=\(metric.queueMs) decode_ms=\(metric.decodeMs) audio_lag_ms=\(metric.audioLagMs) outcome=\(metric.outcome, privacy: .public) fallbacks=\(metric.fallbacks)")
             self?.logger.info("final_queue_depth=\(metric.finalQueueDepth) final_backlog_ms=\(metric.finalBacklogMs)")
         }
-        let capture = SystemAudioCapture(
-            recorder: callRecorder,
-            onSamples: { buffer.append($0) },
-            onError: { [weak self] error in
-                Task { @MainActor in
-                    guard let self, self.activeCaptureID == session else { return }
-                    self.errorText = String(describing: error)
-                    self.onCaptureMustPause?()
-                }
-            })
+        let onError: (Error) -> Void = { [weak self] error in
+            Task { @MainActor in
+                guard let self, self.activeCaptureID == session else { return }
+                self.errorText = String(describing: error)
+                self.onCaptureMustPause?()
+            }
+        }
+        let capture: CallAudioCapture
+        if !outputDeviceUID.isEmpty, #available(macOS 14.2, *) {
+            capture = DeviceAudioCapture(deviceUID: outputDeviceUID, recorder: callRecorder,
+                                         onSamples: { buffer.append($0) }, onError: onError)
+        } else {
+            capture = SystemAudioCapture(recorder: callRecorder, onSamples: { buffer.append($0) }, onError: onError)
+        }
         self.capture = capture
         do { try await capture.start() }
         catch {

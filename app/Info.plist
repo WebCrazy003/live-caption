@@ -25,5 +25,8 @@
          Settings ▸ Record audio is set to "My microphone". -->
     <key>NSMicrophoneUsageDescription</key>
     <string>Local Caption records your microphone to an audio file when you turn on “Record audio: My microphone” in Settings. Captions still come from the call audio.</string>
+    <!-- Settings ▸ General ▸ Captions listen to: one output device, through a Core Audio tap. -->
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>Local Caption listens to the output device you chose in Settings to caption the call.</string>
 </dict>
 </plist>

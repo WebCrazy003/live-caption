@@ -9,6 +9,7 @@ struct SettingsView: View {
     @EnvironmentObject var env: AppEnvironment
     @State private var folderError: String?
     @State private var micDenied = false
+    @State private var outputDevices: [AudioOutputDevices.Device] = []
 
     private let interimModels = ["tiny.en", "base.en", "small.en"]
     private let finalModels = ["small.en", "large-v3-turbo", "large-v3", "distil-large-v3"]
@@ -65,6 +66,28 @@ struct SettingsView: View {
                 Label(folderError, systemImage: "exclamationmark.triangle")
                     .font(.caption).foregroundStyle(.orange)
             }
+        }
+
+        Section {
+            Picker("Captions listen to", selection: $env.config.audio.outputDevice) {
+                Text("All sound").tag("")
+                ForEach(outputDevices) { Text($0.name).tag($0.id) }
+                if !env.config.audio.outputDevice.isEmpty,
+                   !outputDevices.contains(where: { $0.id == env.config.audio.outputDevice }) {
+                    Text("Not connected").tag(env.config.audio.outputDevice)
+                }
+            }
+            .disabled(!Self.canPickOutput)
+            .onAppear { outputDevices = AudioOutputDevices.all() }
+        } header: {
+            Text("Speaker")
+        } footer: {
+            Text(Self.canPickOutput
+                 ? "All sound captions everything the Mac plays. Pick the speakers or headphones the call plays "
+                   + "through to caption only that — sound sent to other outputs is ignored. Applied when you "
+                   + "next press Start; macOS asks once to allow recording system audio."
+                 : "Choosing one output device needs macOS 14.2 or later. Captions use all sound.")
+                .font(.caption).foregroundStyle(.secondary)
         }
 
         Section {
@@ -167,6 +190,10 @@ struct SettingsView: View {
                  + "audio; pick turbo for hard/noisy audio at higher latency.")
                 .font(.caption).foregroundStyle(.secondary)
         }
+    }
+
+    private static var canPickOutput: Bool {
+        if #available(macOS 14.2, *) { return true } else { return false }
     }
 
     private func pickFolder() {

@@ -92,19 +92,25 @@ public struct Config: Codable, Equatable {
         public var vadSensitivity: Int
         /// What to save as an audio file beside the transcript. Off by default (owner, 2026-10-06).
         public var recordSource: RecordSource
-        public init(vadSensitivity: Int = 2, recordSource: RecordSource = .off) {
+        /// The output device (Core Audio UID) the captions listen to; empty = every sound the Mac
+        /// plays (owner, 2026-10-13).
+        public var outputDevice: String
+        public init(vadSensitivity: Int = 2, recordSource: RecordSource = .off, outputDevice: String = "") {
             self.vadSensitivity = vadSensitivity
             self.recordSource = recordSource
+            self.outputDevice = outputDevice
         }
         enum CodingKeys: String, CodingKey {
             case vadSensitivity = "vad_sensitivity"
             case recordSource = "record_source"
+            case outputDevice = "output_device"
         }
         public init(from d: Decoder) throws {
             let c = try d.container(keyedBy: CodingKeys.self); let x = Audio()
             vadSensitivity = try c.decodeIfPresent(Int.self, forKey: .vadSensitivity) ?? x.vadSensitivity
             // An unknown value (a newer build's) reads as off rather than failing the whole config.
             recordSource = (try? c.decodeIfPresent(RecordSource.self, forKey: .recordSource)) ?? x.recordSource
+            outputDevice = try c.decodeIfPresent(String.self, forKey: .outputDevice) ?? x.outputDevice
         }
     }
 

@@ -15,9 +15,7 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unc
     private let onError: (Error) -> Void
     /// The call recording, if on: gets each buffer at its native rate, before downsampling.
     private let recorder: CallAudioRecorder?
-    private var converter: AVAudioConverter?
-    private let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
-                                             sampleRate: 16000, channels: 1, interleaved: false)!
+    private let resampler = MonoResampler()
     private let audioQueue = DispatchQueue(label: "systemaudio.audio")
     private let screenQueue = DispatchQueue(label: "systemaudio.screen")
     // Accessed only on audioQueue. The fence in stop defines the capture cutoff.
@@ -88,29 +86,49 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unc
                 guard let srcBuffer = AVAudioPCMBuffer(pcmFormat: srcFormat,
                                                        bufferListNoCopy: abl.unsafePointer) else { return }
                 recorder?.append(srcBuffer)
-                if converter == nil { converter = AVAudioConverter(from: srcFormat, to: targetFormat) }
-                guard let converter else { return }
-
-                let ratio = targetFormat.sampleRate / srcFormat.sampleRate
-                let capacity = AVAudioFrameCount(Double(srcBuffer.frameLength) * ratio) + 32
-                guard let outBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { return }
-
-                var provided = false
-                var convErr: NSError?
-                converter.convert(to: outBuffer, error: &convErr) { _, statusPtr in
-                    if provided { statusPtr.pointee = .noDataNow; return nil }
-                    provided = true
-                    statusPtr.pointee = .haveData
-                    return srcBuffer
-                }
-                if let convErr { onError(convErr); return }
-                if let ch = outBuffer.floatChannelData {
-                    out = Array(UnsafeBufferPointer(start: ch[0], count: Int(outBuffer.frameLength)))
-                }
+                do { out = try resampler.convert(srcBuffer) } catch { onError(error) }
             }
         } catch {
             onError(error); return nil
         }
         return out
+    }
+}
+
+/// Audio the captions are made from: every sound the Mac plays (ScreenCaptureKit), or one
+/// output device's (`DeviceAudioCapture`).
+protocol CallAudioCapture: AnyObject {
+    func start() async throws
+    func stop() async
+}
+
+extension SystemAudioCapture: CallAudioCapture {}
+
+/// Native-rate PCM → 16 kHz mono Float32, the rate the speech models take. One per capture.
+final class MonoResampler {
+    private var converter: AVAudioConverter?
+    private let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
+                                             sampleRate: 16000, channels: 1, interleaved: false)!
+
+    func convert(_ srcBuffer: AVAudioPCMBuffer) throws -> [Float] {
+        let srcFormat = srcBuffer.format
+        if converter == nil { converter = AVAudioConverter(from: srcFormat, to: targetFormat) }
+        guard let converter else { return [] }
+
+        let ratio = targetFormat.sampleRate / srcFormat.sampleRate
+        let capacity = AVAudioFrameCount(Double(srcBuffer.frameLength) * ratio) + 32
+        guard let outBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { return [] }
+
+        var provided = false
+        var convErr: NSError?
+        converter.convert(to: outBuffer, error: &convErr) { _, statusPtr in
+            if provided { statusPtr.pointee = .noDataNow; return nil }
+            provided = true
+            statusPtr.pointee = .haveData
+            return srcBuffer
+        }
+        if let convErr { throw convErr }
+        guard let ch = outBuffer.floatChannelData else { return [] }
+        return Array(UnsafeBufferPointer(start: ch[0], count: Int(outBuffer.frameLength)))
     }
 }
