@@ -362,6 +362,63 @@ struct AnswerCard: View {
     }
 }
 
+/// Minimal view in Interview mode (owner, 2026-10-13): only the questions and answers, newest at
+/// the bottom. Asking still works through the hotkeys.
+struct MinimalConversation: View {
+    @ObservedObject var interview: InterviewController
+    let fontSize: Double
+    let hotkey: String
+
+    private var turns: [InterviewRecord.Turn] { interview.turns.filter { $0.kind != .skill } }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 14) {
+                    if turns.isEmpty {
+                        Text("Questions and answers appear here. Press \(hotkey) when the interviewer finishes a question.")
+                            .font(.callout).foregroundStyle(.secondary)
+                    }
+                    ForEach(turns) { turn in
+                        turnView(turn).id(turn.n)
+                        if turn.n != turns.last?.n { Divider() }
+                    }
+                    Color.clear.frame(height: 1).id("bottom")
+                }
+                .padding(.top, 22)   // clear of the hidden title bar, where the window is dragged
+            }
+            .onChange(of: interview.turns.count) { _, _ in withAnimation { proxy.scrollTo("bottom") } }
+            .onChange(of: interview.turns.last?.answer.count ?? 0) { _, _ in proxy.scrollTo("bottom") }
+        }
+    }
+
+    private func turnView(_ turn: InterviewRecord.Turn) -> some View {
+        let (question, answer) = Self.split(turn)
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(question)
+                .font(.system(size: fontSize * 0.9, weight: .semibold)).foregroundStyle(.secondary)
+                .lineLimit(3).textSelection(.enabled)
+            if answer.isEmpty && interview.streamingTurn == turn.n {
+                ProgressView().controlSize(.small)
+            } else if turn.status == .failed {
+                Label(turn.error ?? "Failed", systemImage: "exclamationmark.triangle").foregroundStyle(.red)
+            } else {
+                MarkdownText(markdown: answer, fontSize: fontSize)
+            }
+        }
+    }
+
+    /// The model's `**Q:**` line is the question; otherwise what was sent.
+    static func split(_ turn: InterviewRecord.Turn) -> (question: String, answer: String) {
+        let lines = turn.answer.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+        if let first = lines.first, first.hasPrefix("**Q:**") {
+            let q = first.dropFirst("**Q:**".count).trimmingCharacters(in: .whitespaces)
+            return ("Q: " + q, lines.count > 1 ? String(lines[1]).trimmingCharacters(in: .whitespacesAndNewlines) : "")
+        }
+        return (turn.kind == .regenerate ? turn.question : "Q: " + turn.question, turn.answer)
+    }
+}
+
 /// One screenshot in the tray, with a remove button.
 private struct PendingThumbnail: View {
     let item: InterviewController.PendingImage

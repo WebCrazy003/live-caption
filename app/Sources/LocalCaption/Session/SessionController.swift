@@ -29,20 +29,12 @@ final class SessionController: ObservableObject {
     @Published private(set) var savedAudioURL: URL?
     /// A recording problem. Never stops the captions.
     @Published var recordingIssue: String?
-    /// The final pass on the last saved session: nil when none runs.
-    @Published private(set) var finalPass: FinalPassState?
-
-    enum FinalPassState: Equatable {
-        case running, done
-        case failed(String)
-    }
-
 
     /// True once any final has been committed — gates the "Copy last N" button.
     var hasTranscript: Bool { !transcript.isEmpty }
     var hasUnsavedSession: Bool { journal != nil || (!transcript.isEmpty && phase != .saved && !showingSaved) }
     /// The transcript on screen is a saved session (just stopped, or opened). It stays saved when
-    /// the speech engine reloads underneath it (the Standard ↔ Accent switch), which moves `phase`.
+    /// the speech engine reloads underneath it, which moves `phase`.
     private var showingSaved = false
 
     let orchestrator = StreamingOrchestrator()
@@ -59,14 +51,6 @@ final class SessionController: ObservableObject {
     private var recorder: SessionAudioRecorder?
     private var terminateObserver: NSObjectProtocol?
     private var prepareTask: Task<Void, Never>?
-    /// This session runs in Accent mode (fixed at Start).
-    private(set) var isAccentSession = false
-    /// Secondary texts that arrived before their segment was journalled.
-    private var earlySecondary: [Int: String] = [:]
-    /// The models this session uses (`primary+secondary`), fixed at Start.
-    private var sessionModels: String?
-    /// Accent settings changed while recording: reload once the session is saved.
-    private var reloadAfterSession = false
 
     var displayName: String { sessionName.isEmpty ? "New Session" : sessionName }
 
@@ -94,7 +78,6 @@ final class SessionController: ObservableObject {
         orchestratorObservation = orchestrator.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
-        orchestrator.onSecondary = { [weak self] start, text in self?.secondaryArrived(start, text) }
         orchestrator.onCaptureMustPause = { [weak self] in
             guard let self else { return }
             self.capturePauseRequested = true
@@ -115,7 +98,7 @@ final class SessionController: ObservableObject {
 
     // MARK: Lifecycle
 
-    /// Get the speech engine for the current Standard/Accent choice ready.
+    /// Get the speech engine ready.
     func prepare() async {
         prepareTask?.cancel()
         let task = Task { await self.prepareNow() }
@@ -125,47 +108,10 @@ final class SessionController: ObservableObject {
 
     private func prepareNow() async {
         phase = .preparing
-        if env.config.accent.enabled {
-            guard let engine = makeRTXEngine() else {
-                orchestrator.errorText = RTXError.notConfigured.localizedDescription
-                phase = .failed
-                return
-            }
-            await orchestrator.prepare(engine)
-        } else {
-            await orchestrator.prepareModel(interimModel: env.config.asr.interimModel,
-                                            finalModel: env.config.asr.finalModel)
-        }
+        await orchestrator.prepareModel(interimModel: env.config.asr.interimModel,
+                                        finalModel: env.config.asr.finalModel)
         guard !Task.isCancelled else { return }
         if !orchestrator.modelReady { phase = .failed } else { phase = showingSaved ? .saved : .ready }
-    }
-
-    private func makeRTXEngine() -> RTXEngine? {
-        let a = env.config.accent
-        guard let url = a.agentURL else { return nil }
-        return RTXEngine(client: RTXClient(baseURL: url, token: RTXToken.load()),
-                         settings: .init(primary: a.primaryModel, secondary: a.secondaryModel.isEmpty ? nil : a.secondaryModel,
-                                         bandpass: a.audioBandpass, level: a.audioLevel))
-    }
-
-    /// The Standard ↔ Accent switch, and reloading after Accent settings change. Only while
-    /// nothing is recording or unsaved.
-    var canSwitchSpeech: Bool { !transitioning && !hasUnsavedSession && ![.recording, .pausing, .paused, .saving].contains(phase) }
-
-    func switchSpeech(accent: Bool) {
-        guard canSwitchSpeech else { return }
-        env.config.accent.enabled = accent
-        reloadEngine()
-    }
-
-    /// Drop the engine and prepare again with the current settings. While a session runs, this
-    /// waits until it is saved.
-    func reloadEngine() {
-        guard canSwitchSpeech else { reloadAfterSession = true; return }
-        reloadAfterSession = false
-        prepareTask?.cancel()
-        orchestrator.unload()
-        Task { await prepare() }
     }
 
     func retryPrepare() {
@@ -184,20 +130,15 @@ final class SessionController: ObservableObject {
         defer { finishTransition() }
         sessionId = UUID()
         startDate = Date()
-        isAccentSession = env.config.accent.enabled
-        orchestrator.splitsStableWords = isAccentSession
         showingSaved = false
-        let a = env.config.accent
-        sessionModels = isAccentSession ? [a.primaryModel, a.secondaryModel].filter { !$0.isEmpty }.joined(separator: "+") : nil
         orchestrator.applyTuning(
-            endpointSilenceMs: isAccentSession ? env.config.accent.endpointSilenceMs : env.config.asr.endpointSilenceMs,
+            endpointSilenceMs: env.config.asr.endpointSilenceMs,
             interimIntervalMs: env.config.asr.interimIntervalMs,
-            maxUtteranceS: isAccentSession ? env.config.accent.maxUtteranceS : env.config.asr.maxUtteranceS,
+            maxUtteranceS: env.config.asr.maxUtteranceS,
             vadSensitivity: env.config.audio.vadSensitivity)
         sessionName = name ?? (env.config.general.sessionNamePrefix + TimeFormat.fileStamp(startDate))
         transcript = Transcript(); paragraphs = []; current = ""
         savedTxtURL = nil; saveError = nil; savedAudioURL = nil; recordingIssue = nil
-        earlySecondary = [:]; finalPass = nil
         do { journal = try JournalWriter(sessionId: sessionId) }
         catch { saveError = "Could not create recovery journal: \(error.localizedDescription)"; phase = .failed; return }
         let source = env.config.audio.recordSource
@@ -250,10 +191,8 @@ final class SessionController: ObservableObject {
         stopClock()
         recorder?.pause()
         await orchestrator.stopAndFinalize()
-        await orchestrator.waitForSecondaries(timeout: 5)
         phase = await save() ? .saved : .failed
         showingSaved = phase == .saved
-        if reloadAfterSession, phase == .saved { reloadEngine() }
     }
 
     // MARK: Audio recording
@@ -313,22 +252,7 @@ final class SessionController: ObservableObject {
             saveError = "Recovery journal write failed: \(error.localizedDescription). Stop to save the transcript."
         }
         transcript.append(seg)
-        if let alt = earlySecondary.removeValue(forKey: startMs) { secondaryArrived(startMs, alt) }
         addToParagraphs(text)
-    }
-
-    // MARK: Accent mode: the secondary model's text (SPEC-18)
-
-    /// It arrives after its caption and is kept for the final pass after Stop.
-    private func secondaryArrived(_ startMs: Int, _ text: String) {
-        let patch = SegmentPatch(tStartMs: startMs, altText: text)
-        guard transcript.apply(patch) else { earlySecondary[startMs] = text; return }
-        Task { try? await journal?.append(patch) }
-    }
-
-    private func rebuildParagraphs() {
-        paragraphs = []; current = ""
-        transcript.segments.forEach { addToParagraphs($0.bestText) }
     }
 
     // MARK: Clipboard (write-only; never reads — SPEC.md §9.4)
@@ -379,16 +303,11 @@ final class SessionController: ObservableObject {
         let duration = orchestrator.recordedMs / 1000
         let saved: SessionRecord
         do {
-            let accent = env.config.accent
-            let runsFinalPass = isAccentSession && accent.finalPass && !transcript.isEmpty
             saved = try env.store.insert(SessionRecord(
                 sessionName: sessionName,
                 createdAt: TimeFormat.iso(startDate),
                 endedAt: TimeFormat.iso(end),
-                durationSeconds: duration,
-                speechMode: isAccentSession ? SessionRecord.accentSpeech : SessionRecord.standardSpeech,
-                models: sessionModels,
-                correctionStatus: runsFinalPass ? SessionRecord.Correction.running : SessionRecord.Correction.none),
+                durationSeconds: duration),
                 segments: transcript.segments)
         } catch {
             saveError = "Could not save the session: \(error.localizedDescription)"
@@ -414,57 +333,7 @@ final class SessionController: ObservableObject {
         }
         saveRecording(sessionId: saved.id, txtURL: savedTxtURL, folder: folder)
         NotificationCenter.default.post(name: .sessionsChanged, object: nil)
-        if saved.correctionStatus == SessionRecord.Correction.running, let id = saved.id {
-            runFinalPass(sessionId: id, segments: transcript.segments, txtURL: savedTxtURL,
-                         name: sessionName, start: startDate, end: end, duration: duration)
-        }
         return true
-    }
-
-    /// Run the final pass again on a saved Accent session (after a failure, or with new settings).
-    func retryFinalPass(sessionId id: Int64) {
-        guard let rec = try? env.store.fetch(id: id), rec.isAccent,
-              let segments = try? env.store.segments(sessionId: id), !segments.isEmpty else { return }
-        let start = TimeFormat.parseISO(rec.createdAt) ?? Date()
-        runFinalPass(sessionId: id, segments: segments, txtURL: rec.transcriptFile.map { URL(fileURLWithPath: $0) },
-                     name: rec.sessionName, start: start,
-                     end: rec.endedAt.flatMap(TimeFormat.parseISO) ?? start, duration: rec.durationSeconds)
-    }
-
-    /// Accent mode's final pass (SPEC-18): runs after the raw save, so Stop never waits for it.
-    /// Writes each segment's final text to the database, re-exports the `.txt`/`.json`, and
-    /// updates the captions if this session is still on screen. Also Retry from Sessions.
-    func runFinalPass(sessionId id: Int64, segments: [TranscriptSegment], txtURL: URL?,
-                      name: String, start: Date, end: Date, duration: Int) {
-        if savedSessionId == id { finalPass = .running }
-        let a = env.config.accent
-        let store = env.store
-        let showTimestamps = env.config.caption.showTimestamps
-        Task {
-            do {
-                try store.setCorrectionStatus(id: id, SessionRecord.Correction.running)
-                let texts = try await FinalPass.run(segments: segments, engine: env.correctionEngine,
-                                                    model: a.effectiveFinalModel, effort: a.finalEffort,
-                                                    vocabulary: a.vocabulary)
-                try store.setFinalTexts(sessionId: id, texts)
-                try store.setCorrectionStatus(id: id, SessionRecord.Correction.done)
-                var improved = Transcript(segments: segments)
-                for (startMs, text) in texts { improved.apply(SegmentPatch(tStartMs: startMs, finalText: text)) }
-                if let txtURL {
-                    try? TranscriptWriter.write(transcript: improved, txtURL: txtURL, sessionName: name, start: start,
-                                                end: end, durationSeconds: duration, showTimestamps: showTimestamps)
-                }
-                if savedSessionId == id && phase == .saved {
-                    transcript = improved
-                    rebuildParagraphs()
-                    finalPass = .done
-                }
-            } catch {
-                try? store.setCorrectionStatus(id: id, SessionRecord.Correction.failed)
-                if savedSessionId == id && phase == .saved { finalPass = .failed(error.localizedDescription) }
-            }
-            NotificationCenter.default.post(name: .sessionsChanged, object: nil)
-        }
     }
 
     // MARK: Opening a saved session
@@ -482,8 +351,6 @@ final class SessionController: ObservableObject {
         paragraphs = []; current = ""
         segments.forEach { addToParagraphs($0.bestText) }
         if !current.isEmpty { paragraphs.append(current); current = "" }
-        finalPass = nil
-        isAccentSession = rec.isAccent
         sessionName = rec.sessionName
         startDate = TimeFormat.parseISO(rec.createdAt) ?? Date()
         elapsed = TimeFormat.clock(rec.durationSeconds)

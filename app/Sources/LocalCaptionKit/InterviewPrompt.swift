@@ -110,6 +110,33 @@ public enum InterviewPrompt {
 
     public static let regenerate = "Give me a different answer to that last question."
 
+    // MARK: Answer format (owner, 2026-10-13) — Mac only, not in the shared golden vectors
+
+    /// Appended to every Ask, Regenerate and typed message, so it holds even after a skill has
+    /// set its own answer format. Code and diagrams go in fenced blocks the panel renders.
+    public static func withAnswerFormat(_ message: String, style: Config.Interview.AnswerStyle) -> String {
+        var rules = ["Put any code in a fenced code block tagged with its language (```swift). "
+                     + "If a diagram would make a design or flow clearer, draw it as a Mermaid "
+                     + "fenced block (```mermaid) and keep the spoken answer outside it."]
+        if let rule = styleRule(style) { rules.append(rule) }
+        return message + "\n\nANSWER FORMAT: " + rules.joined(separator: " ")
+    }
+
+    /// Nil for Standard: the skill's or the default format stands.
+    public static func styleRule(_ style: Config.Interview.AnswerStyle) -> String? {
+        switch style {
+        case .standard:
+            return nil
+        case .easyEnglish:
+            return "Use easy English: short, common words and short sentences that are easy to say out loud. "
+                + "No idioms; keep technical terms only where the question needs them."
+        case .bullets:
+            return "Write the answer as short bullet points, one idea per bullet, that I can glance at while I talk."
+        case .sentencePerLine:
+            return "Put every sentence on its own line, with a blank line between sentences."
+        }
+    }
+
     // MARK: End of interview (SPEC-15)
 
     public static let summaryTranscriptMaxWords = 15_000

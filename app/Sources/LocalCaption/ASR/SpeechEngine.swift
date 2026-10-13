@@ -1,13 +1,11 @@
 import Foundation
 import LocalCaptionKit
 
-/// What the streaming orchestrator needs from a speech engine: Standard mode's on-device
-/// WhisperKit pair, or Accent mode's models on the RTX desktop (SPEC-18).
+/// What the streaming orchestrator needs from a speech engine: the on-device WhisperKit pair.
 protocol SpeechEngine: AnyObject {
     /// For the status line, e.g. "tiny.en · small.en".
     var label: String { get }
-    /// Get ready to decode: download/load models (Standard) or reach the RTX and load there
-    /// (Accent). Throws with a message the session screen shows.
+    /// Get ready to decode: download/load models. Throws with a message the session screen shows.
     func prepare(onStatus: @escaping (String) -> Void,
                  onDownload: @escaping (String, Double) -> Void) async throws
     func transcribeInterim(_ request: SpeechRequest) async -> SpeechOutcome

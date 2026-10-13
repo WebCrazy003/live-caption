@@ -54,6 +54,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Info.plist "$PLIST"
 lipo -create "${SLICES[@]}" -output "$APP/Contents/MacOS/$NAME"
+cp Resources/* "$APP/Contents/Resources/"   # mermaid.js for diagrams in answers
 # SwiftPM resource bundles from dependencies (GRDB/swift-crypto privacy manifests, swift-transformers
 # fallback tokenizer configs). Contents/Resources is the only place codesign allows them.
 for b in "$BIN_DIR"/*.bundle; do

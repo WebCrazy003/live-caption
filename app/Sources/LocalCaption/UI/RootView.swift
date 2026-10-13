@@ -21,10 +21,15 @@ struct RootView: View {
                     SettingsLink { Label("Settings", systemImage: "gearshape") }
                 }
             }
+            .toolbar(chromeless ? .hidden : .automatic, for: .windowToolbar)
             .sheet(isPresented: .constant(!env.pendingRecoveries.isEmpty)) {
                 RecoveryView()
             }
             .background(WindowAccessor(alwaysOnTop: env.config.window.alwaysOnTop,
-                                       opacity: env.config.window.opacity))
+                                       opacity: env.config.window.opacity,
+                                       chromeless: chromeless))
     }
+
+    /// Minimal view hides the title bar and toolbar too.
+    private var chromeless: Bool { env.minimal && env.modeChosen }
 }

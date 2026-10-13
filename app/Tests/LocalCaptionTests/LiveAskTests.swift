@@ -43,8 +43,13 @@ final class LiveAskTests: XCTestCase {
         return interview
     }
 
+    /// What was sent, without the answer-format rules every answer request ends with.
     private var askTexts: [String] {
-        engine.sent.compactMap { if case .text(let t)? = $0.input.first { return t }; return nil }
+        engine.sent.compactMap { if case .text(let t)? = $0.input.first { return Self.unformatted(t) }; return nil }
+    }
+
+    private static func unformatted(_ text: String) -> String {
+        text.components(separatedBy: "\n\nANSWER FORMAT: ").first ?? text
     }
 
     // MARK: Selection → turn
@@ -142,6 +147,23 @@ final class LiveAskTests: XCTestCase {
         XCTAssertEqual(interview.turns.map(\.status), [.completed, .completed])
     }
 
+    // MARK: Answer style
+
+    func testEveryAnswerRequestCarriesTheAnswerStyle() async {
+        let interview = await preparedInterview()
+        env.config.interview.answerStyle = .bullets
+        transcript = ([], "why us", 1000)
+        await interview.ask()
+        await interview.regenerate()
+        await interview.sendTyped("shorter")
+        let texts = engine.sent.suffix(3).compactMap { if case .text(let t)? = $0.input.first { return t }; return nil }
+        XCTAssertEqual(texts, [InterviewPrompt.withAnswerFormat(InterviewPrompt.ask("why us"), style: .bullets),
+                               InterviewPrompt.withAnswerFormat(InterviewPrompt.regenerate, style: .bullets),
+                               InterviewPrompt.withAnswerFormat("shorter", style: .bullets)])
+        XCTAssertTrue(texts[0].contains(InterviewPrompt.styleRule(.bullets)!))
+        XCTAssertTrue(texts[0].contains("```mermaid"), "diagrams come as Mermaid blocks")
+    }
+
     // MARK: Typed / quick / regenerate
 
     func testTypedAndRegenerateGoToTheSameThread() async throws {
@@ -222,7 +244,8 @@ final class LiveAskTests: XCTestCase {
 
         let sent = try XCTUnwrap(engine.sent.last)
         XCTAssertEqual(sent.input.count, 3, "text + both screenshots")
-        XCTAssertEqual(sent.input.first, .text(InterviewPrompt.ask("can you walk me through this", imageCount: 2)))
+        XCTAssertEqual(sent.input.first, .text(InterviewPrompt.withAnswerFormat(
+            InterviewPrompt.ask("can you walk me through this", imageCount: 2), style: .standard)))
         XCTAssertTrue(interview.pendingImages.isEmpty, "the tray empties on send")
         let turn = try XCTUnwrap(interview.turns.last)
         XCTAssertEqual(turn.images, ["1-1.png", "1-2.png"])

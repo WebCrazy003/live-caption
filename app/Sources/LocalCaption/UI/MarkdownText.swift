@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// Renders the small Markdown subset the coach writes — headings, bullets, numbered lists,
-/// paragraphs, inline bold/italic/code — at a given font size. SwiftUI's `Text(markdown:)`
-/// only does inline syntax, so block structure is handled here line by line.
+/// paragraphs, inline bold/italic/code, and fenced code / Mermaid blocks (in their own panels)
+/// — at a given font size. SwiftUI's `Text(markdown:)` only does inline syntax, so block
+/// structure is handled here line by line.
 struct MarkdownText: View {
     let markdown: String
     var fontSize: Double = 15
@@ -22,20 +23,27 @@ struct MarkdownText: View {
         case bullet(String, indent: Int)
         case numbered(String, number: String)
         case paragraph(String)
-        case code(String)
+        case code(CodeBlock)
     }
 
     private var blocks: [Block] {
         var out: [Block] = []
         var paragraph: [String] = []
         var code: [String]?
+        var language = ""
         func flush() {
             if !paragraph.isEmpty { out.append(.paragraph(paragraph.joined(separator: " "))); paragraph = [] }
         }
         for raw in markdown.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n") {
-            if raw.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
-                if let c = code { out.append(.code(c.joined(separator: "\n"))); code = nil }
-                else { flush(); code = [] }
+            let fence = raw.trimmingCharacters(in: .whitespaces)
+            if fence.hasPrefix("```") {
+                if let c = code {
+                    out.append(.code(CodeBlock(language: language, code: c.joined(separator: "\n"))))
+                    code = nil
+                } else {
+                    flush(); code = []
+                    language = fence.dropFirst(3).split(separator: " ").first.map { $0.lowercased() } ?? ""
+                }
                 continue
             }
             if code != nil { code!.append(raw); continue }
@@ -56,7 +64,7 @@ struct MarkdownText: View {
                 paragraph.append(line)
             }
         }
-        if let c = code { out.append(.code(c.joined(separator: "\n"))) }
+        if let c = code { out.append(.code(CodeBlock(language: language, code: c.joined(separator: "\n"), closed: false))) }
         flush()
         return out
     }
@@ -79,10 +87,8 @@ struct MarkdownText: View {
             }
         case .paragraph(let s):
             inline(s).font(.system(size: fontSize))
-        case .code(let s):
-            Text(s).font(.system(size: fontSize * 0.9, design: .monospaced))
-                .padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+        case .code(let block):
+            CodeBlockPanel(block: block, fontSize: fontSize)
         }
     }
 

@@ -168,11 +168,18 @@ struct InterviewSettingsSections: View {
                 Text("Long").tag(Config.Interview.AnswerLength.long)
             }
             .pickerStyle(.segmented)
+            Picker("Answer style", selection: cfg.answerStyle) {
+                Text("Standard").tag(Config.Interview.AnswerStyle.standard)
+                Text("Easy English").tag(Config.Interview.AnswerStyle.easyEnglish)
+                Text("Bullet points").tag(Config.Interview.AnswerStyle.bullets)
+                Text("Line break after each sentence").tag(Config.Interview.AnswerStyle.sentencePerLine)
+            }
         } header: {
             Text("Model & answers")
         } footer: {
             Text("Low effort answers fastest (about 1–2 s to first words with \(Config.Interview.recommendedModel)). "
-                 + "Model, answer length and custom instructions apply when the next interview's coach starts.")
+                 + "Model, answer length and custom instructions apply when the next interview's coach starts; "
+                 + "answer style applies from the next answer, even over an answering skill's format.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

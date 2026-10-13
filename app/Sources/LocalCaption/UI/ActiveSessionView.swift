@@ -13,7 +13,7 @@ struct ActiveSessionView: View {
     @State private var showingIssues = false
     @State private var showingPrivacyNotice = false
     @State private var showingEndPrompt = false
-    @State private var showingAccentNotice = false
+    @State private var pointerInMinimal = false
     /// Interview mode layout (owner, 2026-10-02): captions can be hidden, and the border between
     /// captions and answers is draggable. Both are remembered.
     @AppStorage("interview.captionsHidden") private var captionsHidden = false
@@ -30,8 +30,9 @@ struct ActiveSessionView: View {
     var body: some View {
         Group {
             if !env.modeChosen {
-                ModeChooserView(lastMode: env.config.interview.mode, choose: chooseMode,
-                                accent: env.config.accent.enabled, setAccent: setAccent)
+                ModeChooserView(lastMode: env.config.interview.mode, choose: chooseMode)
+            } else if showsMinimal {
+                minimalView
             } else {
                 VStack(alignment: .leading, spacing: 10) {
                     header
@@ -44,7 +45,7 @@ struct ActiveSessionView: View {
                 }
             }
         }
-        .padding()
+        .padding(showsMinimal ? 8 : 16)
         .navigationTitle(controller.displayName)
         .task { if controller.phase == .preparing { await controller.prepare() } }
         .sheet(isPresented: $showingPrivacyNotice) {
@@ -56,15 +57,6 @@ struct ActiveSessionView: View {
                     showingPrivacyNotice = false
                 },
                 cancel: { showingPrivacyNotice = false })
-        }
-        .sheet(isPresented: $showingAccentNotice) {
-            AccentPrivacyNotice(
-                accept: {
-                    env.config.accent.noticeAccepted = true
-                    showingAccentNotice = false
-                    controller.switchSpeech(accent: true)
-                },
-                cancel: { showingAccentNotice = false })
         }
         .sheet(isPresented: $showingEndPrompt) {
             EndInterviewSheet(interview: interview, transcript: controller.committedText,
@@ -132,13 +124,6 @@ struct ActiveSessionView: View {
         env.modeChosen = true
     }
 
-    /// The Standard ↔ Accent switch. Accent shows the privacy notice once.
-    private func setAccent(_ on: Bool) {
-        guard on != env.config.accent.enabled, controller.canSwitchSpeech else { return }
-        if on && !env.config.accent.noticeAccepted { showingAccentNotice = true; return }
-        controller.switchSpeech(accent: on)
-    }
-
     /// Back to the first screen; only while nothing is recording or unsaved.
     private var changeModeButton: some View {
         Button { env.modeChosen = false } label: {
@@ -156,16 +141,43 @@ struct ActiveSessionView: View {
         }
     }
 
+    // MARK: Minimal view (owner, 2026-10-13)
+
+    /// Only while there are captions or answers to show: the chooser, preparation and the
+    /// finished-interview replay keep their normal screens.
+    private var showsMinimal: Bool { env.minimal && (!isInterviewMode || showsInterviewLayout) }
+
+    /// The captions alone, or in Interview mode the questions and answers alone. The way back is
+    /// a button that appears on hover, Esc, or View → Minimal View (⇧⌘M).
+    private var minimalView: some View {
+        Group {
+            if isInterviewMode {
+                MinimalConversation(interview: interview, fontSize: Double(env.config.caption.fontSize),
+                                    hotkey: Hotkey.resolve(env.config.interview.hotkey).description)
+            } else {
+                captionView
+            }
+        }
+        .ignoresSafeArea(edges: .top)
+        .onHover { pointerInMinimal = $0 }
+        .overlay(alignment: .topTrailing) { MinimalExitButton(visible: pointerInMinimal) { env.minimal = false } }
+        .onExitCommand { env.minimal = false }
+    }
+
+    private var minimalButton: some View {
+        Button { env.minimal = true } label: {
+            Label("Minimal view", systemImage: "arrow.down.right.and.arrow.up.left")
+        }
+        .labelStyle(.iconOnly).buttonStyle(.bordered).controlSize(.small)
+        .help(isInterviewMode ? "Minimal view — only the questions and answers (⇧⌘M)"
+                              : "Minimal view — only the captions (⇧⌘M)")
+    }
+
     // MARK: Header (name · status pill · elapsed)
 
     private var header: some View {
         HStack(spacing: 10) {
             if canChangeMode { changeModeButton }
-            if controller.canSwitchSpeech {
-                SpeechSwitch(accent: env.config.accent.enabled, set: setAccent, compact: true).frame(width: 170)
-            } else if controller.isAccentSession {
-                Label("Accent", systemImage: "waveform.badge.magnifyingglass").font(.caption).foregroundStyle(.secondary)
-            }
             statusPill
             if isLive && controller.recordingSource != .off { recordingBadge }
             if controller.orchestrator.errorText != nil || controller.saveError != nil
@@ -209,9 +221,10 @@ struct ActiveSessionView: View {
                 .accessibilityLabel(captionsHidden ? "Show captions" : "Hide captions")
             }
             if isInterviewMode { fontControls }
+            if !isInterviewMode || showsInterviewLayout { minimalButton }
             Label(controller.orchestrator.modelLabel, systemImage: "waveform")
                 .font(.caption).foregroundStyle(.secondary)
-                .help(env.config.accent.enabled ? "Speech models on your RTX desktop" : "Speech model in use (on-device)")
+                .help("Speech model in use (on-device)")
         }
     }
 
@@ -222,9 +235,8 @@ struct ActiveSessionView: View {
     private var captionView: some View {
         CaptionView(
             paragraphs: controller.paragraphs,
-            // Accent mode streams words: the ones two reads agreed on show as normal text.
-            current: [controller.current, controller.orchestrator.stableHypothesis].filter { !$0.isEmpty }.joined(separator: " "),
-            hypothesis: controller.orchestrator.tailHypothesis,
+            current: controller.current,
+            hypothesis: controller.orchestrator.hypothesis,
             isReady: isLive,
             fontSize: Double(env.config.caption.fontSize),
             autoScroll: env.config.caption.autoScroll
@@ -385,7 +397,6 @@ struct ActiveSessionView: View {
                 Button("Retry") { controller.retryPrepare() }
             }
         }
-        finalPassLine
         if !controller.hasUnsavedSession, let saveErr = controller.saveError {
             Label(saveErr, systemImage: "exclamationmark.triangle").foregroundStyle(.red).font(.callout)
         }
@@ -402,30 +413,6 @@ struct ActiveSessionView: View {
                         .help(audio.path)
                 }
             }.font(.callout)
-        }
-    }
-
-    /// Accent mode's final pass on the session just saved (SPEC-18 §Final pass).
-    @ViewBuilder private var finalPassLine: some View {
-        switch controller.finalPass {
-        case .running?:
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.small)
-                Text("Improving the transcript with \(env.config.accent.effectiveFinalModel)… you can start a new session meanwhile.")
-            }.font(.callout).foregroundStyle(.secondary)
-        case .done?:
-            Label("Transcript improved — the saved files have the corrected text.", systemImage: "sparkles")
-                .font(.callout).foregroundStyle(.green)
-        case .failed(let message)?:
-            HStack(spacing: 8) {
-                Label("Couldn't improve the transcript: \(message)", systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.orange)
-                if let id = controller.savedSessionId {
-                    Button("Retry") { controller.retryFinalPass(sessionId: id) }.buttonStyle(.link)
-                }
-            }.font(.callout)
-        case nil:
-            EmptyView()
         }
     }
 
@@ -591,5 +578,21 @@ private struct InterviewHeaderChips: View {
         .font(.caption).foregroundStyle(color)
         .padding(.horizontal, 6).padding(.vertical, 2)
         .background(color.opacity(0.1), in: Capsule())
+    }
+}
+
+/// Minimal view's way out: invisible until the pointer is over the window.
+private struct MinimalExitButton: View {
+    let visible: Bool
+    let exit: () -> Void
+
+    var body: some View {
+        Button(action: exit) { Image(systemName: "arrow.up.left.and.arrow.down.right") }
+            .buttonStyle(.bordered).controlSize(.small)
+            .help("Leave minimal view (Esc or ⇧⌘M)")
+            .accessibilityLabel("Leave minimal view")
+            .opacity(visible ? 1 : 0)
+            .animation(.easeInOut(duration: 0.15), value: visible)
+            .padding(4)
     }
 }

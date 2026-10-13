@@ -666,9 +666,14 @@ final class InterviewController: ObservableObject {
         }
         guard await ensureThread() != nil else { NSSound.beep(); return }
         let pending = takePending()
-        await submit(Request(kind: .ask, text: InterviewPrompt.ask(sel.text, imageCount: pending.images.count),
+        await submit(Request(kind: .ask, text: formatted(InterviewPrompt.ask(sel.text, imageCount: pending.images.count)),
                              question: sel.text.isEmpty ? "(screenshot)" : sel.text, images: pending.images,
                              span: (sel.fromMs, sel.toMs), onAccepted: pending.onAccepted, askText: sel.text))
+    }
+
+    /// Settings → Interview → Answer style, read at send time so a change applies to the next answer.
+    private func formatted(_ message: String) -> String {
+        InterviewPrompt.withAnswerFormat(message, style: env.config.interview.answerStyle)
     }
 
     /// The Send button: typed text plus every pending screenshot.
@@ -678,7 +683,7 @@ final class InterviewController: ObservableObject {
         let pending = takePending()
         let body = t.isEmpty ? "(see the attached screenshot(s))" : t
         let message = pending.images.isEmpty ? body : body + "\n(\(pending.images.count) screenshot(s) attached.)"
-        await submit(Request(kind: .typed, text: message, question: t.isEmpty ? "(screenshot)" : t,
+        await submit(Request(kind: .typed, text: formatted(message), question: t.isEmpty ? "(screenshot)" : t,
                              images: pending.images, onAccepted: pending.onAccepted))
     }
 
@@ -686,7 +691,7 @@ final class InterviewController: ObservableObject {
     /// A different answer to the latest question (latest card only).
     func regenerate() async {
         guard let last = turns.last(where: { $0.kind != .skill }) else { return }
-        await submit(Request(kind: .regenerate, text: InterviewPrompt.regenerate,
+        await submit(Request(kind: .regenerate, text: formatted(InterviewPrompt.regenerate),
                              question: "Another answer: \(last.question)"))
     }
 
@@ -720,7 +725,7 @@ final class InterviewController: ObservableObject {
         let text = [old.askText, new.askText].filter { !$0.isEmpty }.joined(separator: " ")
         let images = old.images + new.images
         let both = [old.onAccepted, new.onAccepted].compactMap { $0 }
-        return Request(kind: .ask, text: InterviewPrompt.ask(text, imageCount: images.count),
+        return Request(kind: .ask, text: formatted(InterviewPrompt.ask(text, imageCount: images.count)),
                        question: text.isEmpty ? "(screenshot)" : text, images: images,
                        span: (old.span?.from ?? new.span?.from ?? 0, new.span?.to ?? old.span?.to ?? 0),
                        onAccepted: both.isEmpty ? nil : { both.forEach { $0() } }, askText: text)

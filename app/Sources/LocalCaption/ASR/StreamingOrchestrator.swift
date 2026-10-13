@@ -12,12 +12,6 @@ import OSLog
 @MainActor
 final class StreamingOrchestrator: ObservableObject {
     @Published var hypothesis = ""
-    /// Accent mode: `hypothesis` split into words two reads agreed on, and the changing tail.
-    @Published private(set) var stableHypothesis = ""
-    @Published private(set) var tailHypothesis = ""
-    /// Set by the session for Accent sessions.
-    var splitsStableWords = false
-    private var stableWords = StableWords()
     @Published var status = "Preparing…"
     @Published var detail = ""
     @Published var downloadFraction = 0.0
@@ -30,8 +24,6 @@ final class StreamingOrchestrator: ObservableObject {
     var onSpeechEnded: ((String) -> Void)?
     var onFinalized: ((String) -> Void)?
     var onCaptureMustPause: (() -> Void)?
-    /// Accent mode: a final's secondary-model text, arriving after its caption (start ms, text).
-    var onSecondary: ((Int, String) -> Void)?
     /// Set by the session for the length of a recording; each capture (start and every resume)
     /// feeds it.
     var callRecorder: CallAudioRecorder?
@@ -65,12 +57,11 @@ final class StreamingOrchestrator: ObservableObject {
     }
 
     /// Get `engine` ready and make it the one captions use. Idempotent while the same engine is
-    /// ready; call `unload()` first to switch engines (the Standard ↔ Accent switch).
+    /// ready; call `unload()` first to switch engines.
     func prepare(_ engine: SpeechEngine) async {
         guard !modelReady else { return }
         errorText = nil
         self.engine = engine
-        if let rtx = engine as? RTXEngine { wire(rtx) }
         do {
             try await engine.prepare(
                 onStatus: { [weak self] s in Task { @MainActor in self?.status = s } },
@@ -91,7 +82,7 @@ final class StreamingOrchestrator: ObservableObject {
         }
     }
 
-    /// Drop the current engine (switching Standard ↔ Accent). Only while nothing is captured.
+    /// Drop the current engine. Only while nothing is captured.
     func unload() {
         guard capture == nil else { return }
         engine?.shutdown()
@@ -100,28 +91,6 @@ final class StreamingOrchestrator: ObservableObject {
         isDownloading = false
         status = "Preparing…"
         errorText = nil
-    }
-
-    /// Accent mode at Stop: let the last utterances' secondary texts arrive (bounded).
-    func waitForSecondaries(timeout: TimeInterval) async {
-        guard let rtx = engine as? RTXEngine else { return }
-        await rtx.waitForSecondaries(timeout: timeout)
-        await Task.yield()     // the delivery hops to the main actor
-    }
-
-    private func wire(_ rtx: RTXEngine) {
-        rtx.onSecondary = { [weak self] start, text in
-            Task { @MainActor in self?.onSecondary?(start, text) }
-        }
-        rtx.onConnection = { [weak self] problem in
-            Task { @MainActor in self?.detail = problem ?? "" }
-        }
-        rtx.onMustPause = { [weak self] in
-            Task { @MainActor in
-                self?.errorText = "The RTX desktop has been unreachable for 30 seconds. Pausing; press Resume when it's back."
-                self?.onCaptureMustPause?()
-            }
-        }
     }
 
     // MARK: Capture lifecycle
@@ -134,7 +103,6 @@ final class StreamingOrchestrator: ObservableObject {
 
     func resumeCapture() async throws {
         await endingTask?.value
-        (engine as? RTXEngine)?.resetOutage()
         try await beginCapture()
     }
 
@@ -244,9 +212,6 @@ final class StreamingOrchestrator: ObservableObject {
 
     private func setHypothesis(_ text: String) {
         hypothesis = text
-        guard splitsStableWords else { stableHypothesis = ""; tailHypothesis = text; return }
-        if text.isEmpty { stableWords.reset() }
-        (stableHypothesis, tailHypothesis) = stableWords.update(text)
     }
 
     // MARK: helpers
@@ -257,7 +222,6 @@ final class StreamingOrchestrator: ObservableObject {
     }
 
     private func friendlyError(_ error: Error) -> String {
-        if let rtx = error as? RTXError { return rtx.localizedDescription }
         let e = String(describing: error)
         if e.localizedCaseInsensitiveContains("declined") || e.localizedCaseInsensitiveContains("permission")
             || e.localizedCaseInsensitiveContains("TCC") || e.localizedCaseInsensitiveContains("not authorized") {

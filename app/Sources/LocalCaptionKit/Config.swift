@@ -22,7 +22,6 @@ public struct Config: Codable, Equatable {
     public var clipboard: Clipboard
     public var summary: Summary
     public var interview: Interview
-    public var accent: Accent
 
     public init(
         schemaVersion: Int = Config.currentSchemaVersion,
@@ -33,8 +32,7 @@ public struct Config: Codable, Equatable {
         window: Window = Window(),
         clipboard: Clipboard = Clipboard(),
         summary: Summary = Summary(),
-        interview: Interview = Interview(),
-        accent: Accent = Accent()
+        interview: Interview = Interview()
     ) {
         self.schemaVersion = schemaVersion
         self.general = general
@@ -45,12 +43,11 @@ public struct Config: Codable, Equatable {
         self.clipboard = clipboard
         self.summary = summary
         self.interview = interview
-        self.accent = accent
     }
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
-        case general, audio, asr, caption, window, clipboard, summary, interview, accent
+        case general, audio, asr, caption, window, clipboard, summary, interview
     }
 
     public init(from decoder: Decoder) throws {
@@ -67,8 +64,6 @@ public struct Config: Codable, Equatable {
         summary = try c.decodeIfPresent(Summary.self, forKey: .summary) ?? d.summary
         // Merge-default (SPEC-11), same treatment as `summary`: no schema bump.
         interview = try c.decodeIfPresent(Interview.self, forKey: .interview) ?? d.interview
-        // Merge-default (SPEC-18), same treatment again.
-        accent = try c.decodeIfPresent(Accent.self, forKey: .accent) ?? d.accent
     }
 
     // MARK: Groups
@@ -273,6 +268,10 @@ public struct Config: Codable, Equatable {
     public struct Interview: Codable, Equatable {
         public enum Mode: String, Codable, CaseIterable, Sendable { case caption, interview }
         public enum AnswerLength: String, Codable, CaseIterable, Sendable { case short, medium, long }
+        /// How answers read on screen (owner, 2026-10-13); sent with every answer request.
+        public enum AnswerStyle: String, Codable, CaseIterable, Sendable {
+            case standard, easyEnglish = "easy_english", bullets, sentencePerLine = "sentence_per_line"
+        }
         public enum SendMode: String, Codable, CaseIterable, Sendable {
             case sinceLastAsk = "since_last_ask"
             case lastSentences = "last_sentences"
@@ -295,6 +294,7 @@ public struct Config: Codable, Equatable {
         public var reasoningEffort: String
         public var prepReasoningEffort: String
         public var answerLength: AnswerLength
+        public var answerStyle: AnswerStyle
         public var customInstructions: String
         public var hotkey: String
         /// Select an area of the screen and add it to the prompt (owner, 2026-10-02).
@@ -315,6 +315,7 @@ public struct Config: Codable, Equatable {
                     reasoningEffort: String = "low",
                     prepReasoningEffort: String = "medium",
                     answerLength: AnswerLength = .medium,
+                    answerStyle: AnswerStyle = .standard,
                     customInstructions: String = "",
                     hotkey: String = Hotkey.defaultString,
                     screenshotHotkey: String = Hotkey.defaultScreenshotString,
@@ -328,7 +329,8 @@ public struct Config: Codable, Equatable {
             self.mode = mode; self.privacyAcknowledged = privacyAcknowledged
             self.engine = engine; self.codexPath = codexPath; self.model = model
             self.reasoningEffort = reasoningEffort; self.prepReasoningEffort = prepReasoningEffort
-            self.answerLength = answerLength; self.customInstructions = customInstructions
+            self.answerLength = answerLength; self.answerStyle = answerStyle
+            self.customInstructions = customInstructions
             self.hotkey = hotkey
             self.screenshotHotkey = screenshotHotkey
             self.sendMode = sendMode; self.sendSentences = sendSentences; self.maxWords = maxWords
@@ -350,6 +352,7 @@ public struct Config: Codable, Equatable {
             case reasoningEffort = "reasoning_effort"
             case prepReasoningEffort = "prep_reasoning_effort"
             case answerLength = "answer_length"
+            case answerStyle = "answer_style"
             case customInstructions = "custom_instructions"
             case hotkey
             case screenshotHotkey = "screenshot_hotkey"
@@ -379,6 +382,7 @@ public struct Config: Codable, Equatable {
             reasoningEffort = try c.decodeIfPresent(String.self, forKey: .reasoningEffort) ?? x.reasoningEffort
             prepReasoningEffort = try c.decodeIfPresent(String.self, forKey: .prepReasoningEffort) ?? x.prepReasoningEffort
             answerLength = try value(.answerLength, x.answerLength)
+            answerStyle = try value(.answerStyle, x.answerStyle)
             customInstructions = try c.decodeIfPresent(String.self, forKey: .customInstructions) ?? x.customInstructions
             hotkey = try c.decodeIfPresent(String.self, forKey: .hotkey) ?? x.hotkey
             screenshotHotkey = try c.decodeIfPresent(String.self, forKey: .screenshotHotkey) ?? x.screenshotHotkey

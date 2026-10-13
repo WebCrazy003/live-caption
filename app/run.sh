@@ -16,6 +16,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp Info.plist "$APP/Contents/Info.plist"
 cp .build/debug/LocalCaption "$APP/Contents/MacOS/LocalCaption"
+cp Resources/* "$APP/Contents/Resources/"   # mermaid.js for diagrams in answers
 
 echo "▶ Signing…"
 if security find-certificate -c "$IDENTITY" "$KEYCHAIN" >/dev/null 2>&1; then

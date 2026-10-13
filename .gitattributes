@@ -6,3 +6,5 @@
 *.swift text eol=lf
 *.xaml text eol=lf
 testdata/** text eol=lf
+# Vendored, minified mermaid.js (diagrams in interview answers): no diffs.
+app/Resources/mermaid.min.js -diff linguist-vendored

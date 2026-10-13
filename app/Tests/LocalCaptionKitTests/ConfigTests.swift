@@ -94,4 +94,14 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(c.audio.recordSource, .off)
         XCTAssertEqual(c.audio.vadSensitivity, 2)
     }
+
+    func testAnswerStyleDefaultsStandardAndRoundTrips() throws {
+        XCTAssertEqual(Config().interview.answerStyle, .standard)
+        var c = Config(); c.interview.answerStyle = .sentencePerLine
+        let json = String(data: try JSONEncoder().encode(c), encoding: .utf8)!
+        XCTAssertTrue(json.contains(#""answer_style":"sentence_per_line""#))
+        XCTAssertEqual(try JSONDecoder().decode(Config.self, from: Data(json.utf8)).interview.answerStyle, .sentencePerLine)
+        let unknown = try JSONDecoder().decode(Config.self, from: Data(#"{"interview":{"answer_style":"haiku"}}"#.utf8))
+        XCTAssertEqual(unknown.interview.answerStyle, .standard)
+    }
 }

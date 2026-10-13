@@ -14,7 +14,7 @@ struct SettingsView: View {
     private let finalModels = ["small.en", "large-v3-turbo", "large-v3", "distil-large-v3"]
 
     /// Settings tabs; the last one used is reopened.
-    private enum Tab: String { case general, captions, accent, interview, asking, prompts, codex }
+    private enum Tab: String { case general, captions, interview, asking, prompts, codex }
     @AppStorage("settings.tab") private var tab: Tab = .general
 
     var body: some View {
@@ -23,8 +23,6 @@ struct SettingsView: View {
                 .tabItem { Label("General", systemImage: "gearshape") }.tag(Tab.general)
             page { captionSections }
                 .tabItem { Label("Captions", systemImage: "captions.bubble") }.tag(Tab.captions)
-            page { AccentSettingsSections(codex: env.codex) }
-                .tabItem { Label("Accent mode", systemImage: "waveform.badge.magnifyingglass") }.tag(Tab.accent)
             page { InterviewSettingsSections(page: .interview, codex: env.codex) }
                 .tabItem { Label("Interview", systemImage: "person.2.wave.2") }.tag(Tab.interview)
             page { InterviewSettingsSections(page: .asking, codex: env.codex) }
