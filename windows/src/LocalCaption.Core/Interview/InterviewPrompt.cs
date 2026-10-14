@@ -31,8 +31,7 @@ public static class InterviewPrompt
             How this conversation works:
             1. Before and during the interview I apply interview skills. A skill message gives the skill's
                definition (the first time) and ends with its command, such as "/discovery-cv" or
-               "/apply-instruction tech". Follow that skill exactly. Facts about me come from my CV, the job
-               description and this conversation.
+               "/apply-instruction tech". Follow that skill exactly.
             2. During the live interview I send messages that start with "INTERVIEWER SAID:". That text is a
                live speech-to-text transcript of the interviewer. It may contain recognition mistakes,
                missing punctuation, half sentences, small talk, or more than one question. Work out what
@@ -41,7 +40,7 @@ public static class InterviewPrompt
 
             How to answer an INTERVIEWER SAID message:
             - Once an answering skill such as /apply-instruction is active, its rules decide the answer's
-              content, length and format, and replace the defaults in this list.
+              content, length and format.
             - Until then: first line "**Q:** " and the question as you understood it, in at most 12 words;
               then the answer in the first person as me, in natural spoken English. {LengthRule(length)}
             - Everything in the answer must be something I can say out loud to the interviewer. Never mention
