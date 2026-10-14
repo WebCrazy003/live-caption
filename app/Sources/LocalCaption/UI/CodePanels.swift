@@ -120,6 +120,7 @@ struct CodeViewerWindow: View {
     @ObservedObject var viewer = CodeViewer.shared
     @EnvironmentObject var env: AppEnvironment
     @State private var copied = false
+    @StateObject private var zoom = DiagramZoom()
 
     var body: some View {
         Group {
@@ -128,6 +129,7 @@ struct CodeViewerWindow: View {
                     HStack {
                         Text(block.title).font(.headline)
                         Spacer()
+                        if block.isMermaid { zoomControls }
                         Button { copy(block.code) { copied = $0 } } label: {
                             Label(copied ? "Copied" : (block.isMermaid ? "Copy source" : "Copy code"),
                                   systemImage: copied ? "checkmark" : "doc.on.doc")
@@ -135,7 +137,7 @@ struct CodeViewerWindow: View {
                     }
                     if block.isMermaid {
                         VSplitView {
-                            MermaidDiagram(source: block.code, interactive: true, maxHeight: nil)
+                            MermaidDiagram(source: block.code, interactive: true, maxHeight: nil, zoom: zoom)
                                 .frame(minHeight: 200)
                             codeBox(block).frame(minHeight: 80)
                         }
@@ -156,6 +158,19 @@ struct CodeViewerWindow: View {
                                    autosaveName: "LocalCaptionCodeViewer"))
     }
 
+    /// Zoom out / in / fit. Drag pans; pinch or ⌘-scroll zooms; double-click fits.
+    private var zoomControls: some View {
+        HStack(spacing: 2) {
+            Button { zoom.run("zoomBy(1/1.25)") } label: { Image(systemName: "minus.magnifyingglass") }
+                .help("Zoom out (⌘−)").keyboardShortcut("-", modifiers: .command)
+            Button { zoom.run("fit()") } label: { Image(systemName: "arrow.up.left.and.down.right.magnifyingglass") }
+                .help("Fit the diagram (⌘0)").keyboardShortcut("0", modifiers: .command)
+            Button { zoom.run("zoomBy(1.25)") } label: { Image(systemName: "plus.magnifyingglass") }
+                .help("Zoom in (⌘+)").keyboardShortcut("=", modifiers: .command)
+        }
+        .buttonStyle(.bordered)
+    }
+
     private func codeBox(_ block: CodeBlock) -> some View {
         ScrollView([.vertical, .horizontal]) {
             Text(block.code)
@@ -173,12 +188,13 @@ struct CodeViewerWindow: View {
 // MARK: - Mermaid rendering
 
 /// A Mermaid diagram drawn by mermaid.js in a web view. Inline (`interactive == false`) it sizes
-/// to the diagram and passes scrolling to the answer list; in the window it fills the space and
-/// pinch-zooms. If the diagram can't be drawn, its source is shown with the reason.
+/// to the diagram and passes scrolling to the answer list; in the window it fills the space, drags
+/// to pan and zooms. If the diagram can't be drawn, its source is shown with the reason.
 struct MermaidDiagram: View {
     let source: String
     let interactive: Bool
     let maxHeight: CGFloat?
+    var zoom: DiagramZoom?
     @Environment(\.colorScheme) private var colorScheme
     @State private var height: CGFloat = 120
     @State private var failure: String?
@@ -192,7 +208,7 @@ struct MermaidDiagram: View {
             }
         } else {
             let web = MermaidWebView(source: source, dark: colorScheme == .dark, interactive: interactive,
-                                     onHeight: { height = $0 }, onFailure: { failure = $0 })
+                                     zoom: zoom, onHeight: { height = $0 }, onFailure: { failure = $0 })
             if interactive {
                 web
             } else {
@@ -206,6 +222,7 @@ private struct MermaidWebView: NSViewRepresentable {
     let source: String
     let dark: Bool
     let interactive: Bool
+    let zoom: DiagramZoom?
     let onHeight: (CGFloat) -> Void
     let onFailure: (String) -> Void
 
@@ -226,7 +243,7 @@ private struct MermaidWebView: NSViewRepresentable {
         let web = interactive ? WKWebView(frame: .zero, configuration: config)
                               : PassThroughWebView(frame: .zero, configuration: config)
         web.setValue(false, forKey: "drawsBackground")
-        web.allowsMagnification = interactive
+        zoom?.web = web
         return web
     }
 
@@ -247,26 +264,79 @@ private struct MermaidWebView: NSViewRepresentable {
         // JSON string literal; "</" escaped so the source can't close the <script> element.
         let data = (try? JSONEncoder().encode(source)) ?? Data("\"\"".utf8)
         let literal = String(decoding: data, as: UTF8.self).replacingOccurrences(of: "</", with: "<\\/")
-        let fit = interactive ? "max-width:100%;max-height:100vh;" : "max-width:100%;height:auto;"
         return """
         <!doctype html><html><head><meta charset="utf-8">
-        <style>html,body{margin:0;padding:0;background:transparent;overflow:\(interactive ? "auto" : "hidden");}
-        body{display:flex;justify-content:center;align-items:\(interactive ? "center" : "flex-start");min-height:\(interactive ? "100vh" : "0");}
-        #out svg{\(fit)}</style>
+        <style>html,body{margin:0;padding:0;background:transparent;overflow:hidden;}
+        \(interactive ? Self.panZoomStyle : Self.inlineStyle)</style>
         </head><body><div id="out"></div><script>
         const post = m => window.webkit.messageHandlers.mermaid.postMessage(m);
+        \(interactive ? Self.panZoomScript : "")
         (async () => {
           try {
             if (!window.mermaid) throw new Error("the diagram library is missing from the app");
             mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "\(dark ? "dark" : "default")" });
             const { svg } = await mermaid.render("d" + Date.now(), \(literal));
             document.getElementById("out").innerHTML = svg;
+            if (window.ready) ready();
             post({ height: document.getElementById("out").getBoundingClientRect().height + 4 });
           } catch (e) { post({ error: String((e && e.message) || e) }); }
         })();
         </script></body></html>
         """
     }
+
+    private static let inlineStyle = """
+        body{display:flex;justify-content:center;} #out svg{max-width:100%;height:auto;}
+        """
+
+    private static let panZoomStyle = """
+        body{width:100vw;height:100vh;cursor:grab;user-select:none;} body.dragging{cursor:grabbing;}
+        #out{position:absolute;left:0;top:0;transform-origin:0 0;}
+        #out svg{max-width:none !important;display:block;}
+        """
+
+    /// The window's diagram: drag to pan, pinch / ⌘-scroll to zoom at the pointer, scroll to pan,
+    /// double-click to fit. `zoomBy` and `fit` are also called by the toolbar buttons.
+    private static let panZoomScript = """
+        let s = 1, x = 0, y = 0, w = 0, h = 0;
+        const out = () => document.getElementById("out");
+        const apply = () => { out().style.transform = `translate(${x}px,${y}px) scale(${s})`; };
+        let fitted = false;
+        function fit() {
+          if (!w || !innerWidth || !innerHeight) return;
+          fitted = true;
+          s = Math.min(innerWidth / w, innerHeight / h) * 0.95;
+          x = (innerWidth - w * s) / 2; y = (innerHeight - h * s) / 2; apply();
+        }
+        function zoomBy(f, cx = innerWidth / 2, cy = innerHeight / 2) {
+          const n = Math.min(20, Math.max(0.05, s * f)); f = n / s;
+          x = cx - (cx - x) * f; y = cy - (cy - y) * f; s = n; apply();
+        }
+        function ready() {
+          const svg = out().querySelector("svg"); if (!svg) return;
+          const vb = svg.viewBox && svg.viewBox.baseVal;
+          w = vb && vb.width ? vb.width : svg.getBoundingClientRect().width;
+          h = vb && vb.height ? vb.height : svg.getBoundingClientRect().height;
+          svg.setAttribute("width", w); svg.setAttribute("height", h); svg.style.maxWidth = "none";
+          fit();
+        }
+        let drag = null;
+        addEventListener("mousedown", e => { drag = { mx: e.clientX, my: e.clientY, x, y }; document.body.classList.add("dragging"); });
+        addEventListener("mousemove", e => { if (!drag) return; x = drag.x + e.clientX - drag.mx; y = drag.y + e.clientY - drag.my; apply(); });
+        addEventListener("mouseup", () => { drag = null; document.body.classList.remove("dragging"); });
+        addEventListener("dblclick", fit);
+        addEventListener("wheel", e => {
+          e.preventDefault();
+          if (e.ctrlKey || e.metaKey) zoomBy(Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY);
+          else { x -= e.deltaX; y -= e.deltaY; apply(); }
+        }, { passive: false });
+        // WebKit reports a trackpad pinch as gesture events, not ⌘-wheel.
+        let pinch = 1;
+        addEventListener("gesturestart", e => { e.preventDefault(); pinch = 1; });
+        addEventListener("gesturechange", e => { e.preventDefault(); zoomBy(e.scale / pinch, e.clientX, e.clientY); pinch = e.scale; });
+        let lastW = innerWidth, lastH = innerHeight;
+        addEventListener("resize", () => { if (!fitted) { fit(); lastW = innerWidth; lastH = innerHeight; return; } x += (innerWidth - lastW) / 2; y += (innerHeight - lastH) / 2; lastW = innerWidth; lastH = innerHeight; apply(); });
+        """
 
     final class Coordinator: NSObject, WKScriptMessageHandler {
         var loaded: String?
@@ -279,6 +349,13 @@ private struct MermaidWebView: NSViewRepresentable {
             if let e = body["error"] as? String { onFailure(e.components(separatedBy: "\n").first ?? e) }
         }
     }
+}
+
+/// Runs the window diagram's zoom functions from the toolbar.
+@MainActor
+final class DiagramZoom: ObservableObject {
+    weak var web: WKWebView?
+    func run(_ js: String) { web?.evaluateJavaScript(js) }
 }
 
 /// Inline diagrams never scroll themselves: the wheel goes to the answer list around them.

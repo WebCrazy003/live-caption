@@ -34,18 +34,19 @@ struct ActiveSessionView: View {
             } else if showsMinimal {
                 minimalView
             } else {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 6) {
                     header
                     modelStatusArea
                     Divider()
                     captionArea
-                    // Interview mode keeps the transport inside the captions panel, and the
-                    // preparation stage has none (owner, 2026-10-02).
-                    if !isInterviewMode || showsReplay { transportBar }
+                    // Interview mode has Start / Stop in the header and no copy controls
+                    // (owner, 2026-10-14).
+                    if !isInterviewMode { transportBar }
                 }
             }
         }
-        .padding(showsMinimal ? 8 : 16)
+        .padding(showsMinimal ? 8 : 10)
+        .controlSize(.small)
         .navigationTitle(controller.displayName)
         .task { if controller.phase == .preparing { await controller.prepare() } }
         .sheet(isPresented: $showingPrivacyNotice) {
@@ -125,11 +126,12 @@ struct ActiveSessionView: View {
     }
 
     /// Back to the first screen; only while nothing is recording or unsaved.
-    private var changeModeButton: some View {
+    private func changeModeButton(compact: Bool) -> some View {
         Button { env.modeChosen = false } label: {
             Label(isInterviewMode ? "Interview" : "Caption only", systemImage: "arrow.left.arrow.right")
         }
-        .buttonStyle(.bordered).controlSize(.small)
+        .buttonStyle(.bordered)
+        .iconOnly(compact)
         .help("Change mode — back to Caption only / Interview")
     }
 
@@ -152,8 +154,8 @@ struct ActiveSessionView: View {
     private var minimalView: some View {
         Group {
             if isInterviewMode {
-                MinimalConversation(interview: interview, fontSize: Double(env.config.caption.fontSize),
-                                    hotkey: Hotkey.resolve(env.config.interview.hotkey).description)
+                MinimalConversation(interview: interview, liveQuestion: interview.liveQuestion(),
+                                    isLive: isLive, fontSize: Double(env.config.caption.fontSize))
             } else {
                 captionView
             }
@@ -168,24 +170,37 @@ struct ActiveSessionView: View {
         Button { env.minimal = true } label: {
             Label("Minimal view", systemImage: "arrow.down.right.and.arrow.up.left")
         }
-        .labelStyle(.iconOnly).buttonStyle(.bordered).controlSize(.small)
+        .labelStyle(.iconOnly).buttonStyle(.bordered)
         .help(isInterviewMode ? "Minimal view — only the questions and answers (⇧⌘M)"
                               : "Minimal view — only the captions (⇧⌘M)")
     }
 
     // MARK: Header (name · status pill · elapsed)
 
+    /// One row; when the window is narrow, labels give way to icons (each keeps its tooltip).
     private var header: some View {
-        HStack(spacing: 10) {
-            if canChangeMode { changeModeButton }
+        ViewThatFits(in: .horizontal) {
+            headerRow(compact: false)
+            headerRow(compact: true)
+        }
+    }
+
+    private func headerRow(compact: Bool) -> some View {
+        HStack(spacing: 6) {
+            if canChangeMode { changeModeButton(compact: compact) }
+            // Interview mode: Start / Pause / End on top (owner, 2026-10-14).
+            if isInterviewMode && !showsPreparation {
+                HStack(spacing: 4) { transportControls }.iconOnly(compact)
+            }
             statusPill
             if isLive && controller.recordingSource != .off { recordingBadge }
             if controller.orchestrator.errorText != nil || controller.saveError != nil
                 || controller.recordingIssue != nil {
                 Button { showingIssues.toggle() } label: {
-                    Label("Session issues", systemImage: "info.circle")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Image(systemName: "info.circle").foregroundStyle(.secondary)
                 }
+                .buttonStyle(.borderless)
+                .help("Session issues")
                 .popover(isPresented: $showingIssues) {
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Session issues").font(.headline)
@@ -197,34 +212,34 @@ struct ActiveSessionView: View {
                 }
             }
             if isInterviewMode { InterviewHeaderChips(interview: interview, codex: env.codex) }
-            Spacer()
+            Spacer(minLength: 4)
             if isLive {
-                Text(controller.elapsed).font(.headline).monospacedDigit()
+                Text(controller.elapsed).font(.callout.weight(.medium)).monospacedDigit()
             }
             if showsInterviewLayout && !isLive && controller.phase != .saving {
                 Button { withAnimation { interview.showingPreparation = true } } label: {
                     Label("Preparation", systemImage: "slider.horizontal.3")
                 }
-                .buttonStyle(.bordered).controlSize(.small)
+                .buttonStyle(.bordered)
+                .iconOnly(compact)
                 .help("Back to the preparation (interview details, CV, JD, mode)")
             }
-            // With captions hidden there's no captions panel to hold Start / Stop: keep them here.
-            if showsInterviewLayout && captionsHidden {
-                HStack(spacing: 6) { transportControls }.labelStyle(.iconOnly).controlSize(.small)
-            }
             if showsInterviewLayout {
-                Button { withAnimation { captionsHidden.toggle() } } label: {
-                    Label("Captions", systemImage: captionsHidden ? "eye.slash" : "eye")
+                Button { captionsHidden.toggle() } label: {
+                    Label(captionsHidden ? "Show captions" : "Hide captions",
+                          systemImage: captionsHidden ? "captions.bubble" : "captions.bubble.fill")
                 }
-                .buttonStyle(.bordered).controlSize(.small)
+                .buttonStyle(.bordered)
+                .labelStyle(.iconOnly)
                 .help(captionsHidden ? "Show the caption panel" : "Hide the caption panel — answers get the whole width")
-                .accessibilityLabel(captionsHidden ? "Show captions" : "Hide captions")
             }
             if isInterviewMode { fontControls }
             if !isInterviewMode || showsInterviewLayout { minimalButton }
-            Label(controller.orchestrator.modelLabel, systemImage: "waveform")
-                .font(.caption).foregroundStyle(.secondary)
-                .help("Speech model in use (on-device)")
+            if !compact && !isInterviewMode {
+                Label(controller.orchestrator.modelLabel, systemImage: "waveform")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .help("Speech model in use (on-device)")
+            }
         }
     }
 
@@ -269,13 +284,20 @@ struct ActiveSessionView: View {
     /// The interview window often sits in a narrow strip beside the call (SPEC-15 §Responsive
     /// layout): side by side ≥ 820 pt, stacked below. Never tabs: the divider is draggable in both,
     /// and with captions hidden the answers fill the space.
-    private var interviewLayout: some View {
+    @ViewBuilder private var interviewLayout: some View {
+        // Decided out here, not inside the GeometryReader, so Hide / Show captions redraws at once.
+        if captionsHidden {
+            interviewPanel
+        } else {
+            splitLayout
+        }
+    }
+
+    private var splitLayout: some View {
         GeometryReader { geo in
             let w = geo.size.width
             Group {
-                if captionsHidden {
-                    interviewPanel
-                } else if sideBySide(width: w) {
+                if sideBySide(width: w) {
                     ResizableSplit(axis: .horizontal, fraction: $captionShareWide,
                                    defaultFraction: Self.defaultCaptionShareWide, minFirst: 220, minSecond: 300) {
                         captionColumn.padding(.trailing, 6)
@@ -327,13 +349,8 @@ struct ActiveSessionView: View {
         }
     }
 
-    /// Interview mode: the captions with Start / Pause / Stop, Auto-copy and Copy last N under them.
-    private var captionColumn: some View {
-        VStack(spacing: 8) {
-            captionView
-            transportBar
-        }
-    }
+    /// Interview mode's caption panel: just the captions (Start / Stop are in the header).
+    private var captionColumn: some View { captionView }
 
     private var interviewPanel: some View {
         InterviewPanel(interview: interview, fontSize: Double(env.config.caption.fontSize))
@@ -354,7 +371,7 @@ struct ActiveSessionView: View {
         case .ready:
             pill(color: .secondary, text: "Ready", filled: false)
         case .preparing:
-            HStack(spacing: 6) { ProgressView().controlSize(.small); Text(controller.orchestrator.status).font(.headline) }
+            HStack(spacing: 6) { ProgressView().controlSize(.small); Text(controller.orchestrator.status).font(.callout.weight(.medium)) }
         case .failed:
             pill(color: .red, text: "Error", filled: false)
         }
@@ -374,7 +391,7 @@ struct ActiveSessionView: View {
             Circle().fill(filled ? color : .clear)
                 .overlay(Circle().stroke(color, lineWidth: filled ? 0 : 1.5))
                 .frame(width: 9, height: 9)
-            Text(text).font(.headline)
+            Text(text).font(.callout.weight(.medium))
         }
     }
 

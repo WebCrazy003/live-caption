@@ -14,6 +14,7 @@ final class AppEnvironment: ObservableObject {
             persist()
             codexPath.set(config.interview.codexPath)
             ScreenShareShield.shared.isEnabled = config.window.hideFromScreenShare
+            applyTheme()
         }
     }
     let store: Store
@@ -63,6 +64,7 @@ final class AppEnvironment: ObservableObject {
         self.pendingRecoveries = Journal.pending()
         codexPath.set(config.interview.codexPath)
         ScreenShareShield.shared.isEnabled = config.window.hideFromScreenShare
+        applyTheme()
         importLegacyInterviews()
         sweepInterviews()
         if ((try? store.importTranscriptFiles()) ?? 0) > 0 {
@@ -137,6 +139,17 @@ final class AppEnvironment: ObservableObject {
         self.config = config; self.store = store
         configWasRepaired = false; configURL = nil
         codexPath.set(config.interview.codexPath)
+    }
+
+    /// Settings ▸ General ▸ Appearance, for every window (Settings and sheets included).
+    func applyTheme() {
+        let appearance: NSAppearance? = switch config.window.theme {
+        case .system: nil
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
+        }
+        guard let app = NSApp else { return }
+        if app.appearance != appearance { app.appearance = appearance }
     }
 
     private func persist() {

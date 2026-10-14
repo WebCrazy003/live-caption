@@ -116,6 +116,12 @@ struct SettingsView: View {
         }
 
         Section {
+            Picker("Appearance", selection: $env.config.window.theme) {
+                Text("System").tag(Config.Window.Theme.system)
+                Text("Light").tag(Config.Window.Theme.light)
+                Text("Dark").tag(Config.Window.Theme.dark)
+            }
+            .pickerStyle(.segmented)
             Toggle("Always on top", isOn: $env.config.window.alwaysOnTop)
             Toggle("Hide from screen sharing", isOn: $env.config.window.hideFromScreenShare)
             VStack(alignment: .leading) {

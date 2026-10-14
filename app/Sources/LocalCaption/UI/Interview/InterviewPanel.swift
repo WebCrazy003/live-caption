@@ -18,7 +18,7 @@ struct InterviewPanel: View {
     private let clipboardPoll = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             header
             if let status = interview.status {
                 Text(status).font(.caption).foregroundStyle(.orange).lineLimit(2)
@@ -42,7 +42,7 @@ struct InterviewPanel: View {
 
     private func headerRow(compact: Bool) -> some View {
         HStack(spacing: 6) {
-            if !compact { Text("Interview").font(.headline) }
+            if !compact { Text("Interview").font(.callout.weight(.semibold)) }
             profileButtons(compact: compact)
             liveCodingButton(compact: compact)
             Spacer(minLength: 4)
@@ -97,7 +97,7 @@ struct InterviewPanel: View {
     private var cards: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
+                LazyVStack(alignment: .leading, spacing: 6) {
                     if interview.turns.isEmpty {
                         Text("Press \(hotkeyLabel) (or Ask) when the interviewer "
                              + "finishes a question. You can also just start — the coach is ready either way.")
@@ -107,9 +107,8 @@ struct InterviewPanel: View {
                         AnswerCard(turn: turn, isLatest: turn.n == interview.turns.last?.n,
                                    isExpanded: turn.n == interview.turns.last?.n || expanded.contains(turn.n),
                                    isStreaming: interview.streamingTurn == turn.n,
-                                   image: interview.image(named:), fontSize: fontSize,
-                                   toggle: { if expanded.contains(turn.n) { expanded.remove(turn.n) } else { expanded.insert(turn.n) } },
-                                   regenerate: turn.kind == .skill ? nil : { Task { await interview.regenerate() } })
+                                   fontSize: fontSize,
+                                   toggle: { if expanded.contains(turn.n) { expanded.remove(turn.n) } else { expanded.insert(turn.n) } })
                             .id(turn.n)
                     }
                     Color.clear.frame(height: 1).id("bottom")
@@ -238,20 +237,15 @@ struct InterviewPanel: View {
     }
 }
 
-/// One turn: the answer (streaming), its state, and Copy / Regenerate / Sent text. Shared with
-/// the read-only history view, where `regenerate` is nil.
+/// One turn: the answer (streaming) and, if it failed or was cut off, why. Shared with the
+/// read-only history view.
 struct AnswerCard: View {
     let turn: InterviewRecord.Turn
     let isLatest: Bool
     let isExpanded: Bool
     let isStreaming: Bool
-    /// Loads a stored screenshot by name (from the interview database).
-    let image: (String) -> NSImage?
     let fontSize: Double
     let toggle: () -> Void
-    let regenerate: (() -> Void)?
-    @State private var showingSent = false
-    @State private var copied = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -270,7 +264,7 @@ struct AnswerCard: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(10)
+        .padding(8)
         .background(isLatest ? Color.accentColor.opacity(0.06) : Color.secondary.opacity(0.05),
                     in: RoundedRectangle(cornerRadius: 8))
     }
@@ -290,23 +284,8 @@ struct AnswerCard: View {
         } else {
             MarkdownText(markdown: turn.answer, fontSize: fontSize)
         }
-        HStack(spacing: 10) {
-            statusBadge
-            Spacer()
-            if let ttft = turn.ttftMs {
-                Text(String(format: "%.1f s", Double(ttft) / 1000)).font(.caption2).foregroundStyle(.tertiary)
-                    .help("Time to first words")
-            }
-            Button { showingSent.toggle() } label: { Image(systemName: "text.quote") }
-                .buttonStyle(.borderless).help("What was sent")
-                .popover(isPresented: $showingSent) { sentPopover }
-            if isLatest && !isStreaming, let regenerate {
-                Button(action: regenerate) { Image(systemName: "arrow.clockwise") }
-                    .buttonStyle(.borderless).help("Give me a different answer")
-            }
-            Button { copy() } label: { Image(systemName: copied ? "checkmark" : "doc.on.doc") }
-                .buttonStyle(.borderless).help("Copy answer").disabled(turn.answer.isEmpty)
-        }
+        // No footer (answer time, copy, regenerate) — owner, 2026-10-14. Only a problem shows.
+        statusBadge
     }
 
     @ViewBuilder private var statusBadge: some View {
@@ -316,22 +295,6 @@ struct AnswerCard: View {
                         .foregroundStyle(.red).lineLimit(2)
         case .streaming, .completed: EmptyView()
         }
-    }
-
-    private var sentPopover: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Sent").font(.headline)
-                Text(turn.question).textSelection(.enabled).font(.callout)
-                ForEach(turn.images, id: \.self) { name in
-                    if let img = image(name) {
-                        Image(nsImage: img).resizable().scaledToFit().frame(maxHeight: 160)
-                    }
-                }
-            }
-            .padding()
-        }
-        .frame(width: 360, height: 300)
     }
 
     private var kindLabel: String {
@@ -352,52 +315,66 @@ struct AnswerCard: View {
         }
         return turn.question
     }
-
-    private func copy() {
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(turn.answer, forType: .string)
-        copied = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
-    }
 }
 
-/// Minimal view in Interview mode (owner, 2026-10-13): only the questions and answers, newest at
-/// the bottom. Asking still works through the hotkeys.
+/// Minimal view in Interview mode (owner, 2026-10-13/14): questions and answers only. The last
+/// question is the live caption of what the interviewer is saying; Ask keeps it as the question,
+/// with its answer under it. At the bottom: the coach box, the hotkey hints and any screenshots.
 struct MinimalConversation: View {
     @ObservedObject var interview: InterviewController
+    @EnvironmentObject var env: AppEnvironment
+    @ObservedObject var hotkey = GlobalHotkey.shared
+    @ObservedObject var screenshotHotkey = GlobalHotkey.screenshot
+    /// What the interviewer has said since the last Ask.
+    let liveQuestion: String
+    let isLive: Bool
     let fontSize: Double
-    let hotkey: String
+    @State private var draft = ""
+    private let clipboardPoll = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
     private var turns: [InterviewRecord.Turn] { interview.turns.filter { $0.kind != .skill } }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            conversation
+            Divider()
+            composer
+        }
+        .onReceive(clipboardPoll) { _ in interview.pollClipboard() }
+    }
+
+    private var conversation: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
-                    if turns.isEmpty {
-                        Text("Questions and answers appear here. Press \(hotkey) when the interviewer finishes a question.")
-                            .font(.callout).foregroundStyle(.secondary)
-                    }
+                LazyVStack(alignment: .leading, spacing: 12) {
                     ForEach(turns) { turn in
                         turnView(turn).id(turn.n)
-                        if turn.n != turns.last?.n { Divider() }
+                        Divider()
                     }
-                    Color.clear.frame(height: 1).id("bottom")
+                    live.id("live")
                 }
                 .padding(.top, 22)   // clear of the hidden title bar, where the window is dragged
             }
-            .onChange(of: interview.turns.count) { _, _ in withAnimation { proxy.scrollTo("bottom") } }
-            .onChange(of: interview.turns.last?.answer.count ?? 0) { _, _ in proxy.scrollTo("bottom") }
+            .onChange(of: interview.turns.count) { _, _ in withAnimation { proxy.scrollTo("live", anchor: .bottom) } }
+            .onChange(of: interview.turns.last?.answer.count ?? 0) { _, _ in proxy.scrollTo("live", anchor: .bottom) }
+            .onChange(of: liveQuestion) { _, _ in proxy.scrollTo("live", anchor: .bottom) }
+        }
+    }
+
+    /// The question being asked right now, live from the captions.
+    @ViewBuilder private var live: some View {
+        if !liveQuestion.isEmpty {
+            questionText(liveQuestion, live: true)
+        } else if turns.isEmpty {
+            Text(isLive ? "Listening… the interviewer's question appears here." : "Press Start to begin.")
+                .font(.callout).foregroundStyle(.secondary)
         }
     }
 
     private func turnView(_ turn: InterviewRecord.Turn) -> some View {
-        let (question, answer) = Self.split(turn)
-        return VStack(alignment: .leading, spacing: 6) {
-            Text(question)
-                .font(.system(size: fontSize * 0.9, weight: .semibold)).foregroundStyle(.secondary)
-                .lineLimit(3).textSelection(.enabled)
+        VStack(alignment: .leading, spacing: 6) {
+            questionText(Self.question(turn), live: false)
+            let answer = Self.answer(turn)
             if answer.isEmpty && interview.streamingTurn == turn.n {
                 ProgressView().controlSize(.small)
             } else if turn.status == .failed {
@@ -408,14 +385,73 @@ struct MinimalConversation: View {
         }
     }
 
-    /// The model's `**Q:**` line is the question; otherwise what was sent.
-    static func split(_ turn: InterviewRecord.Turn) -> (question: String, answer: String) {
-        let lines = turn.answer.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
-        if let first = lines.first, first.hasPrefix("**Q:**") {
-            let q = first.dropFirst("**Q:**".count).trimmingCharacters(in: .whitespaces)
-            return ("Q: " + q, lines.count > 1 ? String(lines[1]).trimmingCharacters(in: .whitespacesAndNewlines) : "")
+    private func questionText(_ text: String, live: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: live ? "waveform" : "questionmark.circle.fill")
+                .foregroundStyle(live ? Color.red : Color.accentColor)
+                .symbolEffect(.variableColor.iterative, isActive: live && isLive)
+            Text(text)
+                .font(.system(size: fontSize * 0.9, weight: .semibold))
+                .foregroundStyle(live ? .primary : .secondary)
+                .textSelection(.enabled)
         }
-        return (turn.kind == .regenerate ? turn.question : "Q: " + turn.question, turn.answer)
+    }
+
+    /// What was asked: the interviewer's words, or what was typed.
+    static func question(_ turn: InterviewRecord.Turn) -> String { turn.question }
+
+    /// The answer without the model's `**Q:**` line — the question is already shown above it.
+    static func answer(_ turn: InterviewRecord.Turn) -> String {
+        let lines = turn.answer.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+        guard let first = lines.first, first.hasPrefix("**Q:**") else { return turn.answer }
+        return lines.count > 1 ? String(lines[1]).trimmingCharacters(in: .whitespacesAndNewlines) : ""
+    }
+
+    // MARK: Bottom: screenshots, the coach box, hints
+
+    private var composer: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if !interview.pendingImages.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(interview.pendingImages) { item in
+                            PendingThumbnail(item: item) { interview.removePending(item.id) }
+                        }
+                    }
+                }
+            }
+            HStack(alignment: .bottom, spacing: 6) {
+                TextField("Type to the coach…", text: $draft, axis: .vertical)
+                    .lineLimit(1...4)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 7).padding(.vertical, 4)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.35)))
+                    .onSubmit(send)
+                Button { Task { await interview.takeScreenshot() } } label: { Image(systemName: "camera.viewfinder") }
+                    .disabled(interview.capturing)
+                    .help("Add a screenshot (\(label(screenshotHotkey, fallback: .defaultScreenshot)))")
+                Button(action: send) { Image(systemName: "paperplane.fill") }
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && interview.pendingImages.isEmpty)
+                    .help("Send")
+            }
+            Text("\(label(hotkey, fallback: nil)) answer the question · \(label(screenshotHotkey, fallback: .defaultScreenshot)) add a screenshot"
+                 + (interview.pendingImages.isEmpty ? "" : " · \(interview.pendingImages.count) screenshot(s) go with the next answer"))
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+
+    private func label(_ registration: GlobalHotkey, fallback: Hotkey?) -> String {
+        if case .registered(let hk) = registration.state { return hk.description }
+        if let fallback { return Hotkey.resolve(env.config.interview.screenshotHotkey, fallback: fallback).description }
+        return Hotkey.resolve(env.config.interview.hotkey).description
+    }
+
+    private func send() {
+        guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !interview.pendingImages.isEmpty else { return }
+        let text = draft
+        draft = ""
+        Task { await interview.sendTyped(text) }
     }
 }
 

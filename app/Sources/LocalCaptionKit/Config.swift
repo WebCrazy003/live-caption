@@ -179,6 +179,10 @@ public struct Config: Codable, Equatable {
     }
 
     public struct Window: Codable, Equatable {
+        /// Light, dark, or following macOS (owner, 2026-10-14).
+        public enum Theme: String, Codable, CaseIterable, Sendable { case system, light, dark }
+
+        public var theme: Theme
         public var alwaysOnTop: Bool
         /// Keep the app's windows out of screen sharing and screenshots (shown only on this Mac).
         public var hideFromScreenShare: Bool
@@ -187,19 +191,23 @@ public struct Config: Codable, Equatable {
         public var height: Double
         public var x: Double?
         public var y: Double?
-        public init(alwaysOnTop: Bool = true, hideFromScreenShare: Bool = true, opacity: Double = 1.0,
+        public init(theme: Theme = .system, alwaysOnTop: Bool = true, hideFromScreenShare: Bool = true,
+                    opacity: Double = 1.0,
                     width: Double = 860, height: Double = 620, x: Double? = nil, y: Double? = nil) {
+            self.theme = theme
             self.alwaysOnTop = alwaysOnTop; self.hideFromScreenShare = hideFromScreenShare
             self.opacity = opacity
             self.width = width; self.height = height; self.x = x; self.y = y
         }
         enum CodingKeys: String, CodingKey {
+            case theme
             case alwaysOnTop = "always_on_top"
             case hideFromScreenShare = "hide_from_screen_share"
             case opacity, width, height, x, y
         }
         public init(from d: Decoder) throws {
             let c = try d.container(keyedBy: CodingKeys.self); let x = Window()
+            theme = (try? c.decodeIfPresent(Theme.self, forKey: .theme)) ?? x.theme
             alwaysOnTop = try c.decodeIfPresent(Bool.self, forKey: .alwaysOnTop) ?? x.alwaysOnTop
             hideFromScreenShare = try c.decodeIfPresent(Bool.self, forKey: .hideFromScreenShare)
                 ?? x.hideFromScreenShare

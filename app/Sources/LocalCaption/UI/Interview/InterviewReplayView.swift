@@ -186,13 +186,12 @@ struct InterviewReplayView: View {
                     AnswerCard(turn: turn, isLatest: false,
                                isExpanded: open.contains(turn.n) || interview.streamingTurn == turn.n,
                                isStreaming: interview.streamingTurn == turn.n,
-                               image: interview.image(named:), fontSize: fontSize,
+                               fontSize: fontSize,
                                toggle: {
                                    var set = open
                                    if set.contains(turn.n) { set.remove(turn.n) } else { set.insert(turn.n) }
                                    expanded = set
-                               },
-                               regenerate: nil)
+                               })
                 }
                 Color.clear.frame(height: 1).id("end")
             }

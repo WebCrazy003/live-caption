@@ -21,7 +21,7 @@ struct InterviewSettingsSections: View {
     var body: some View {
         Group {
             switch page {
-            case .interview: skillsSection; modelSection; layoutSection; privacySection
+            case .interview: skillsSection; modelSection; layoutSection
             case .asking: hotkeySection; sendingSection; screenshotSection
             case .prompts: promptsSection
             case .codex: codexSection; usageSection
@@ -268,21 +268,6 @@ struct InterviewSettingsSections: View {
             }
         } header: {
             Text("Prompts")
-        }
-    }
-
-    // MARK: After + privacy
-
-    private var privacySection: some View {
-        Section {
-            Text("Interview mode sends your CV, the job description and your skills (when you run a skill step), "
-                 + "the interviewer's recent words (on each Ask) and, if enabled, clipboard screenshots to OpenAI "
-                 + "through Codex. Caption only mode sends nothing.")
-                .font(.callout).foregroundStyle(.secondary)
-            Button("Show the notice again next time") { env.config.interview.privacyAcknowledged = false }
-                .disabled(!env.config.interview.privacyAcknowledged)
-        } header: {
-            Text("Privacy")
         }
     }
 }

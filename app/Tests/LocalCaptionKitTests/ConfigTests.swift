@@ -104,4 +104,14 @@ final class ConfigTests: XCTestCase {
         let unknown = try JSONDecoder().decode(Config.self, from: Data(#"{"interview":{"answer_style":"haiku"}}"#.utf8))
         XCTAssertEqual(unknown.interview.answerStyle, .standard)
     }
+
+    func testThemeDefaultsToSystemAndRoundTrips() throws {
+        XCTAssertEqual(Config().window.theme, .system)
+        var c = Config(); c.window.theme = .dark
+        let json = String(data: try JSONEncoder().encode(c), encoding: .utf8)!
+        XCTAssertTrue(json.contains(#""theme":"dark""#))
+        XCTAssertEqual(try JSONDecoder().decode(Config.self, from: Data(json.utf8)).window.theme, .dark)
+        let unknown = try JSONDecoder().decode(Config.self, from: Data(#"{"window":{"theme":"sepia"}}"#.utf8))
+        XCTAssertEqual(unknown.window.theme, .system)
+    }
 }

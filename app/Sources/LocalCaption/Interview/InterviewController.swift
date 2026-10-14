@@ -676,6 +676,14 @@ final class InterviewController: ObservableObject {
         InterviewPrompt.withAnswerFormat(message, style: env.config.interview.answerStyle)
     }
 
+    /// What the interviewer has said since the last Ask — Minimal view's live question. Reads the
+    /// same selection an Ask would send, without moving the mark.
+    func liveQuestion() -> String {
+        guard let src = transcriptSource?() else { return "" }
+        return AskSelection.select(segments: src.segments, interim: src.interim, mode: .sinceLastAsk, mark: mark,
+                                   pressAudioMs: src.audioMs, maxWords: env.config.interview.clampedMaxWords).text
+    }
+
     /// The Send button: typed text plus every pending screenshot.
     func sendTyped(_ text: String) async {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)

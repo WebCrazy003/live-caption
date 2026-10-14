@@ -22,6 +22,7 @@ struct RootView: View {
                 }
             }
             .toolbar(chromeless ? .hidden : .automatic, for: .windowToolbar)
+            .onAppear { env.applyTheme() }   // NSApp may not exist yet when the environment loads
             .sheet(isPresented: .constant(!env.pendingRecoveries.isEmpty)) {
                 RecoveryView()
             }
